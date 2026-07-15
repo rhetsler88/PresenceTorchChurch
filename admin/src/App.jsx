@@ -12,8 +12,8 @@ import Channels from "@admin/pages/Channels";
 import AccessRequests from "@admin/pages/AccessRequests";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Shield } from "lucide-react";
 import BackToAppLink from "@admin/components/BackToAppLink";
+import AppLogo from "@/components/branding/AppLogo";
 import { getDisplayName } from "@/lib/userUtils";
 import { formatAuthError } from "@/api/client";
 
@@ -64,7 +64,7 @@ function AdminGate({
       <div className="min-h-screen flex items-center justify-center bg-background p-6">
         <div className="max-w-md w-full bg-card border border-border rounded-2xl p-8">
           <div className="text-center mb-6">
-            <Shield className="w-12 h-12 text-primary mx-auto mb-4" />
+            <AppLogo className="w-16 h-16 mx-auto mb-4" />
             <h1 className="text-xl font-bold text-foreground mb-2">Admin Dashboard</h1>
             <p className="text-sm text-muted-foreground">
               Sign in with a super admin or organization admin account to manage organizations,
@@ -121,7 +121,7 @@ function AdminGate({
   return (
     <div className="min-h-screen flex items-center justify-center bg-background p-6">
       <div className="max-w-md w-full bg-card border border-border rounded-2xl p-8 text-center">
-        <Shield className="w-12 h-12 text-primary mx-auto mb-4" />
+        <AppLogo className="w-16 h-16 mx-auto mb-4" />
         <h1 className="text-xl font-bold text-foreground mb-2">Admin access required</h1>
         <p className="text-sm text-muted-foreground mb-2">
           Signed in as{" "}

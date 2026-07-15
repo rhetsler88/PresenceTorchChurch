@@ -1,10 +1,10 @@
 import React, { useState } from "react";
-import { Radio } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useAuth } from "@/lib/AuthContext";
 import { formatAuthError } from "@/api/client";
+import AppLogo from "@/components/branding/AppLogo";
 
 const MODES = {
   signin: "signin",
@@ -127,9 +127,7 @@ export default function Login() {
     <div className="min-h-screen flex flex-col items-center justify-center bg-background dark p-6">
       <div className="w-full max-w-sm">
         <div className="flex flex-col items-center mb-8">
-          <div className="w-16 h-16 rounded-2xl bg-primary/10 flex items-center justify-center mb-4">
-            <Radio className="w-8 h-8 text-primary" />
-          </div>
+          <AppLogo className="w-20 h-20 mb-4" />
           <h1 className="text-2xl font-bold text-foreground">Presence Torch</h1>
           <p className="text-sm text-muted-foreground text-center mt-2">
             Push-to-talk communication for your team

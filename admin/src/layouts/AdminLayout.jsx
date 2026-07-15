@@ -15,6 +15,7 @@ import { getDisplayName } from "@/lib/userUtils";
 import { useBootstrapDatabase } from "@admin/hooks/useBootstrapDatabase";
 import InitializeDatabaseBanner from "@admin/components/InitializeDatabaseBanner";
 import BackToAppLink from "@admin/components/BackToAppLink";
+import AppLogo from "@/components/branding/AppLogo";
 
 const navItems = [
   { to: "/", icon: LayoutDashboard, label: "Dashboard", end: true },
@@ -38,10 +39,15 @@ export default function AdminLayout({ user }) {
     <div className="min-h-screen bg-background flex">
       <aside className="w-64 min-h-screen border-r border-border bg-card flex flex-col shrink-0">
         <div className="p-5 border-b border-border">
-          <p className="text-xs font-bold uppercase tracking-widest text-primary">
-            Presence Torch
-          </p>
-          <h1 className="text-lg font-bold text-foreground mt-1">Admin Dashboard</h1>
+          <div className="flex items-center gap-3 mb-3">
+            <AppLogo className="w-10 h-10" />
+            <div className="min-w-0">
+              <p className="text-xs font-bold uppercase tracking-widest text-primary">
+                Presence Torch
+              </p>
+              <h1 className="text-lg font-bold text-foreground leading-tight">Admin Dashboard</h1>
+            </div>
+          </div>
           <p className="text-xs text-muted-foreground mt-1 truncate">
             {getDisplayName(user)}
             {user.role === "super_admin" ? " · Super Admin" : " · Org Admin"}

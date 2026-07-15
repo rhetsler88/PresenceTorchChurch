@@ -5,6 +5,7 @@ import { useAuth } from "@/lib/AuthContext";
 import { isPlatformAdmin } from "@/lib/userUtils";
 import { Button } from "@/components/ui/button";
 import { Radio, Check, ArrowRight, ArrowLeft, LogOut, MailCheck } from "lucide-react";
+import AppLogo from "@/components/branding/AppLogo";
 import { toast } from "sonner";
 
 export default function Onboarding() {
@@ -160,6 +161,10 @@ export default function Onboarding() {
           <LogOut className="w-3 h-3" />
           Use a different account
         </button>
+
+        <div className="flex flex-col items-center mb-4">
+          <AppLogo className="w-14 h-14 mb-2" />
+        </div>
 
         <div className="flex items-center gap-2 mb-6">
           <div className={`flex-1 h-1 rounded-full ${step >= 1 ? "bg-primary" : "bg-muted"}`} />

@@ -7,9 +7,10 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { UserCog, LogOut } from "lucide-react";
+import { UserCog, LogOut, Shield } from "lucide-react";
 import { useAuth } from "@/lib/AuthContext";
 import { getDisplayName, getInitials } from "@/lib/userUtils";
+import { ADMIN_APP_URL } from "@/lib/appLinks";
 import EditProfileDialog from "@/components/profile/EditProfileDialog";
 
 export default function UserMenu() {
@@ -20,6 +21,7 @@ export default function UserMenu() {
 
   const displayName = getDisplayName(user);
   const initials = getInitials(user);
+  const isPlatformAdmin = user.role === "super_admin" || user.role === "admin";
 
   return (
     <>
@@ -52,6 +54,14 @@ export default function UserMenu() {
             <UserCog className="w-4 h-4" />
             Change name
           </DropdownMenuItem>
+          {isPlatformAdmin && (
+            <DropdownMenuItem asChild>
+              <a href={ADMIN_APP_URL}>
+                <Shield className="w-4 h-4" />
+                Admin dashboard
+              </a>
+            </DropdownMenuItem>
+          )}
           <DropdownMenuSeparator />
           <DropdownMenuItem
             className="text-destructive focus:text-destructive"

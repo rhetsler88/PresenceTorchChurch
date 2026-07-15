@@ -7,14 +7,14 @@ import {
   Radio,
   Inbox,
   LogOut,
-  ExternalLink,
+  Database,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/lib/AuthContext";
 import { getDisplayName } from "@/lib/userUtils";
-import { WEB_APP_URL } from "@/lib/appLinks";
 import { useBootstrapDatabase } from "@admin/hooks/useBootstrapDatabase";
 import InitializeDatabaseBanner from "@admin/components/InitializeDatabaseBanner";
+import BackToAppLink from "@admin/components/BackToAppLink";
 
 const navItems = [
   { to: "/", icon: LayoutDashboard, label: "Dashboard", end: true },
@@ -43,6 +43,17 @@ export default function AdminLayout({ user }) {
         </div>
 
         <nav className="flex-1 p-3 space-y-1">
+          {bootstrap.needsSeed && bootstrap.canInitialize && (
+            <button
+              type="button"
+              onClick={() => bootstrap.seedMutation.mutate()}
+              disabled={bootstrap.seedMutation.isPending}
+              className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium bg-amber-500/10 text-amber-400 border border-amber-500/30 hover:bg-amber-500/20 transition-colors mb-2"
+            >
+              <Database className="w-4 h-4" />
+              {bootstrap.seedMutation.isPending ? "Initializing..." : "Initialize database"}
+            </button>
+          )}
           {navItems.map(({ to, icon: Icon, label, end }) => (
             <NavLink
               key={to}
@@ -63,16 +74,10 @@ export default function AdminLayout({ user }) {
         </nav>
 
         <div className="p-3 border-t border-border space-y-1">
-          <Button
+          <BackToAppLink
             variant="ghost"
-            className="w-full justify-start gap-2 text-muted-foreground"
-            asChild
-          >
-            <a href={WEB_APP_URL}>
-              <ExternalLink className="w-4 h-4" />
-              Back to app
-            </a>
-          </Button>
+            className="w-full justify-start text-muted-foreground"
+          />
           <Button
             variant="ghost"
             className="w-full justify-start gap-2 text-muted-foreground"

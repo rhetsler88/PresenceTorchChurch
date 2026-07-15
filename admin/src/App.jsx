@@ -12,13 +12,74 @@ import Channels from "@admin/pages/Channels";
 import AccessRequests from "@admin/pages/AccessRequests";
 import { Button } from "@/components/ui/button";
 import { Shield } from "lucide-react";
+import BackToAppLink from "@admin/components/BackToAppLink";
+import { getDisplayName } from "@/lib/userUtils";
 
 function canAccessAdmin(user) {
   return user?.role === "super_admin" || user?.role === "admin";
 }
 
+function AdminGate({ user, authError, navigateToLogin, logout }) {
+  const needsSignIn = !user || authError?.type === "auth_required";
+
+  if (needsSignIn) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background p-6">
+        <div className="max-w-md w-full bg-card border border-border rounded-2xl p-8 text-center">
+          <Shield className="w-12 h-12 text-primary mx-auto mb-4" />
+          <h1 className="text-xl font-bold text-foreground mb-2">Admin Dashboard</h1>
+          <p className="text-sm text-muted-foreground mb-6">
+            Sign in with a super admin or organization admin account to manage organizations,
+            users, and channels.
+          </p>
+          <div className="flex flex-col gap-3">
+            <Button onClick={() => navigateToLogin()}>Sign in with Google</Button>
+            <BackToAppLink className="w-full" />
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-background p-6">
+      <div className="max-w-md w-full bg-card border border-border rounded-2xl p-8 text-center">
+        <Shield className="w-12 h-12 text-primary mx-auto mb-4" />
+        <h1 className="text-xl font-bold text-foreground mb-2">Admin access required</h1>
+        <p className="text-sm text-muted-foreground mb-2">
+          Signed in as{" "}
+          <span className="font-medium text-foreground">{getDisplayName(user)}</span>
+          {user.email ? ` (${user.email})` : ""}.
+        </p>
+        <p className="text-sm text-muted-foreground mb-4">
+          Your account role is{" "}
+          <span className="font-mono text-foreground">{user.role || "user"}</span>. Only{" "}
+          <span className="font-mono text-foreground">admin</span> and{" "}
+          <span className="font-mono text-foreground">super_admin</span> can use this dashboard.
+        </p>
+        <p className="text-xs text-muted-foreground mb-6 text-left bg-muted/40 rounded-lg p-3">
+          First-time setup: open Firebase Console → Firestore →{" "}
+          <span className="font-mono">users/{user.id}</span> and set{" "}
+          <span className="font-mono">role</span> to <span className="font-mono">super_admin</span>
+          , then refresh this page. You will then see <strong>Initialize database</strong> to create
+          Safety Team and PH Kids channels.
+        </p>
+        <div className="flex flex-col gap-3">
+          <Button variant="outline" onClick={() => window.location.reload()}>
+            Refresh after role update
+          </Button>
+          <BackToAppLink className="w-full" />
+          <Button variant="ghost" onClick={() => logout(true)}>
+            Sign out
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function AdminAppRoutes() {
-  const { user, isLoadingAuth, authError, navigateToLogin } = useAuth();
+  const { user, isLoadingAuth, authError, navigateToLogin, logout } = useAuth();
 
   if (isLoadingAuth) {
     return (
@@ -28,18 +89,14 @@ function AdminAppRoutes() {
     );
   }
 
-  if (!user || authError?.type === "auth_required" || !canAccessAdmin(user)) {
+  if (!canAccessAdmin(user)) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-background p-6">
-        <div className="max-w-md w-full bg-card border border-border rounded-2xl p-8 text-center">
-          <Shield className="w-12 h-12 text-primary mx-auto mb-4" />
-          <h1 className="text-xl font-bold text-foreground mb-2">Admin access required</h1>
-          <p className="text-sm text-muted-foreground mb-6">
-            Sign in with a super admin or organization admin account to use this dashboard.
-          </p>
-          <Button onClick={() => navigateToLogin()}>Sign in with Google</Button>
-        </div>
-      </div>
+      <AdminGate
+        user={user}
+        authError={authError}
+        navigateToLogin={navigateToLogin}
+        logout={logout}
+      />
     );
   }
 

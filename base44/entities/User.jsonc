@@ -1,0 +1,51 @@
+{
+  "name": "User",
+  "type": "object",
+  "properties": {
+    "role": {
+      "type": "string",
+      "enum": [
+        "admin",
+        "director",
+        "monitor",
+        "user"
+      ],
+      "default": "user",
+      "description": "User role. Admin = full control (org-scoped), Director = channel-level admin for assigned channels, Monitor = cross-channel listening, User = single channel."
+    },
+    "directed_channels": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "default": [],
+      "description": "Channel IDs this director/lead can manage (approve members)"
+    },
+    "is_monitor": {
+      "type": "boolean",
+      "default": false,
+      "description": "Separate monitoring rights \u2014 allows cross-channel listening regardless of role"
+    },
+    "first_name": {
+      "type": "string",
+      "description": "User's first name"
+    },
+    "last_name": {
+      "type": "string",
+      "description": "User's last name or initial"
+    },
+    "onboarded": {
+      "type": "boolean",
+      "default": false,
+      "description": "Whether the user has completed onboarding"
+    },
+    "organization": {
+      "type": "string",
+      "description": "Organization or event this user belongs to"
+    },
+    "daily_code_verified_date": {
+      "type": "string",
+      "description": "Date key (yyyy-MM-dd ET) of the daily access code the user has verified"
+    }
+  }
+}

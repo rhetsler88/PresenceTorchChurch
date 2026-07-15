@@ -1,0 +1,32 @@
+{
+  "organizations": [
+    {
+      "id": "potters-house-columbus",
+      "name": "Potter's House - Columbus"
+    }
+  ],
+  "channels": [
+    {
+      "id": "safety-team",
+      "name": "Safety Team",
+      "description": "Safety team coordination",
+      "organization": "Potter's House - Columbus",
+      "color": "#3b82f6",
+      "protection_level": "green",
+      "members": [],
+      "pending_members": [],
+      "is_active": true
+    },
+    {
+      "id": "ph-kids",
+      "name": "PH Kids",
+      "description": "Potter's House Kids ministry",
+      "organization": "Potter's House - Columbus",
+      "color": "#f59e0b",
+      "protection_level": "green",
+      "members": [],
+      "pending_members": [],
+      "is_active": true
+    }
+  ]
+}

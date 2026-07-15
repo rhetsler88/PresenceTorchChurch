@@ -1,0 +1,29 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isAudio() {
+      return request.resource.contentType.matches('audio/.*');
+    }
+
+    // Live relay chunks (1-second segments during PTT)
+    match /audio/public/{allPaths=**} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn()
+        && isAudio()
+        && request.resource.size < 5 * 1024 * 1024;
+    }
+
+    // Final voice messages (stored after PTT release)
+    match /audio/private/{allPaths=**} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn()
+        && isAudio()
+        && request.resource.size < 25 * 1024 * 1024;
+    }
+  }
+}

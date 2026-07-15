@@ -1,0 +1,55 @@
+{
+  "name": "Channel",
+  "type": "object",
+  "properties": {
+    "name": {
+      "type": "string",
+      "description": "Channel name"
+    },
+    "description": {
+      "type": "string",
+      "description": "Channel description"
+    },
+    "members": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "List of approved member user IDs"
+    },
+    "pending_members": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "default": [],
+      "description": "List of user IDs pending admin approval"
+    },
+    "is_active": {
+      "type": "boolean",
+      "default": true
+    },
+    "color": {
+      "type": "string",
+      "description": "Channel accent color"
+    },
+    "protection_level": {
+      "type": "string",
+      "enum": [
+        "blue",
+        "green",
+        "yellow",
+        "red"
+      ],
+      "default": "green",
+      "description": "Protection level indicator set by monitors"
+    },
+    "organization": {
+      "type": "string",
+      "description": "Organization or event this channel belongs to"
+    }
+  },
+  "required": [
+    "name"
+  ]
+}

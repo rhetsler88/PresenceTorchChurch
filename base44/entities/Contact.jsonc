@@ -1,0 +1,37 @@
+{
+  "name": "Contact",
+  "type": "object",
+  "properties": {
+    "name": {
+      "type": "string",
+      "description": "Contact display name"
+    },
+    "phone_number": {
+      "type": "string",
+      "description": "Contact phone number"
+    },
+    "avatar_color": {
+      "type": "string",
+      "description": "Hex color for avatar"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "online",
+        "offline",
+        "busy"
+      ],
+      "default": "offline",
+      "description": "Current status"
+    },
+    "last_active": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Last active timestamp"
+    }
+  },
+  "required": [
+    "name",
+    "phone_number"
+  ]
+}

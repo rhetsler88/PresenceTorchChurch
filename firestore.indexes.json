@@ -1,0 +1,45 @@
+{
+  "indexes": [
+    {
+      "collectionGroup": "voiceMessages",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "channel_id", "order": "ASCENDING" },
+        { "fieldPath": "created_date", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "voiceMessages",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "is_transcribed", "order": "ASCENDING" },
+        { "fieldPath": "created_date", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "pttSignals",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "channel_id", "order": "ASCENDING" },
+        { "fieldPath": "created_date", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "audioChunks",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "broadcast_id", "order": "ASCENDING" },
+        { "fieldPath": "created_date", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "audioChunks",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "channel_id", "order": "ASCENDING" },
+        { "fieldPath": "created_date", "order": "DESCENDING" }
+      ]
+    }
+  ],
+  "fieldOverrides": []
+}

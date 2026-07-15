@@ -1,0 +1,54 @@
+{
+  "name": "VoiceMessage",
+  "type": "object",
+  "properties": {
+    "channel_id": {
+      "type": "string",
+      "description": "Channel this message belongs to"
+    },
+    "sender_name": {
+      "type": "string",
+      "description": "Display name of sender"
+    },
+    "sender_email": {
+      "type": "string",
+      "description": "Email of sender"
+    },
+    "audio_url": {
+      "type": "string",
+      "description": "URL to audio file"
+    },
+    "duration_seconds": {
+      "type": "number",
+      "description": "Duration of message"
+    },
+    "transcript": {
+      "type": "string",
+      "description": "AI-generated transcription"
+    },
+    "is_transcribed": {
+      "type": "boolean",
+      "default": false
+    },
+    "device_time": {
+      "type": "string",
+      "description": "Device local clock time at recording, stored as formatted string to avoid timezone conversion"
+    },
+    "device_date": {
+      "type": "string",
+      "description": "Device local date at recording (YYYY-MM-DD), used for log grouping"
+    },
+    "text_content": {
+      "type": "string",
+      "description": "Text content for text-only messages (no audio)"
+    },
+    "broadcast_id": {
+      "type": "string",
+      "description": "ID of the live relay broadcast this message originated from"
+    }
+  },
+  "required": [
+    "channel_id",
+    "sender_name"
+  ]
+}

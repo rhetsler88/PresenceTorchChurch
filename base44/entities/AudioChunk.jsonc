@@ -1,0 +1,41 @@
+{
+  "name": "AudioChunk",
+  "type": "object",
+  "properties": {
+    "broadcast_id": {
+      "type": "string",
+      "description": "Unique ID for this broadcast session"
+    },
+    "channel_id": {
+      "type": "string",
+      "description": "Channel this chunk belongs to"
+    },
+    "sender_id": {
+      "type": "string",
+      "description": "User ID of sender"
+    },
+    "sender_name": {
+      "type": "string",
+      "description": "Display name of sender"
+    },
+    "sequence": {
+      "type": "integer",
+      "description": "Sequence number within the broadcast"
+    },
+    "audio_url": {
+      "type": "string",
+      "description": "URL to the audio chunk file"
+    },
+    "is_final": {
+      "type": "boolean",
+      "default": false,
+      "description": "Whether this is the final chunk of the broadcast"
+    }
+  },
+  "required": [
+    "broadcast_id",
+    "channel_id",
+    "sender_id",
+    "sequence"
+  ]
+}

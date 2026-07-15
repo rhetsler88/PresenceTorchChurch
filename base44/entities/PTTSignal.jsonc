@@ -1,0 +1,22 @@
+{
+  "name": "PTTSignal",
+  "type": "object",
+  "properties": {
+    "channel_id": {
+      "type": "string",
+      "description": "Channel where PTT was pressed"
+    },
+    "sender_id": {
+      "type": "string",
+      "description": "User ID of the person pressing PTT"
+    },
+    "sender_name": {
+      "type": "string",
+      "description": "Display name of the person pressing PTT"
+    }
+  },
+  "required": [
+    "channel_id",
+    "sender_id"
+  ]
+}

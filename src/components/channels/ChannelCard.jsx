@@ -1,0 +1,79 @@
+import React from "react";
+import { Radio, Users, ChevronRight, Pencil, Shield } from "lucide-react";
+import ProtectionLevelControl from "@/components/monitor/ProtectionLevelControl";
+import { PROTECTION_LEVELS } from "@/components/ptt/ProtectionLevelBadge";
+
+export default function ChannelCard({ channel, isActive, isPending, onSelect, isAdmin, onRename, canManageProtection, protectionLevel, onProtectionChange }) {
+  const memberCount = channel.members?.length || 0;
+  const protConfig = PROTECTION_LEVELS[protectionLevel] || PROTECTION_LEVELS.green;
+
+  return (
+    <div
+      className={`px-4 py-3.5 rounded-xl transition-all duration-200 text-left ${
+        isActive
+          ? "bg-primary/10 border border-primary/20"
+          : isPending
+          ? "bg-amber-500/5 border border-amber-500/20"
+          : "hover:bg-muted/50 border border-transparent"
+      }`}
+    >
+      <div className="flex items-center gap-3">
+        <button
+          onClick={() => onSelect(channel)}
+          className="flex items-center gap-3 flex-1 min-w-0"
+        >
+          <div
+            className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0"
+            style={{ backgroundColor: (channel.color || "#f59e0b") + "18" }}
+          >
+            <Radio
+              className="w-5 h-5"
+              style={{ color: channel.color || "#f59e0b" }}
+            />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className={`text-sm font-semibold truncate ${isActive ? "text-primary" : "text-foreground"}`}>
+              {channel.name}
+            </p>
+            <div className="flex items-center gap-1.5 mt-0.5">
+              <Users className="w-3 h-3 text-muted-foreground" />
+              <span className="text-xs text-muted-foreground">
+                {memberCount} member{memberCount !== 1 ? "s" : ""}
+              </span>
+              {isPending && (
+                <span className="text-[10px] font-semibold text-amber-500 ml-1">Pending</span>
+              )}
+            </div>
+          </div>
+          <ChevronRight className="w-4 h-4 text-muted-foreground flex-shrink-0" />
+        </button>
+        {isAdmin && (
+          <button
+            onClick={(e) => { e.stopPropagation(); onRename(channel); }}
+            className="p-2 rounded-lg hover:bg-muted/70 text-muted-foreground hover:text-foreground transition-colors flex-shrink-0"
+            title="Rename channel"
+          >
+            <Pencil className="w-4 h-4" />
+          </button>
+        )}
+      </div>
+      {canManageProtection ? (
+        <div onClick={(e) => e.stopPropagation()} className="mt-2">
+          <ProtectionLevelControl
+            level={protectionLevel || "green"}
+            onChange={onProtectionChange}
+          />
+        </div>
+      ) : (
+        <div className="mt-2.5 flex items-center gap-3 px-4 py-2.5 rounded-xl border" style={{ backgroundColor: protConfig.bg, borderColor: protConfig.color + "40" }}>
+          <Shield className="w-5 h-5 flex-shrink-0" style={{ color: protConfig.color }} />
+          <div className="flex-1 min-w-0">
+            <p className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground leading-none">Force Protection</p>
+            <p className="text-sm font-semibold leading-tight mt-0.5" style={{ color: protConfig.color }}>{protConfig.label} — {protConfig.desc}</p>
+          </div>
+          <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: protConfig.color }} />
+        </div>
+      )}
+    </div>
+  );
+}

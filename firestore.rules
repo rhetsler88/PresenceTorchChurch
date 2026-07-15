@@ -1,0 +1,107 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function userDoc() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid));
+    }
+
+    function userExists() {
+      return isSignedIn() && userDoc().exists;
+    }
+
+    function role() {
+      return userDoc().data.role;
+    }
+
+    function isAdmin() {
+      return userExists() && role() == 'admin';
+    }
+
+    function isDirector() {
+      return userExists() && role() == 'director';
+    }
+
+    function isAdminOrDirector() {
+      return isAdmin() || isDirector();
+    }
+
+    // ── Users ──────────────────────────────────────────────────────────
+    match /users/{userId} {
+      allow read: if isSignedIn();
+
+      // First Google sign-in auto-creates profile (AuthContext.jsx)
+      allow create: if isSignedIn()
+        && request.auth.uid == userId
+        && request.resource.data.get('role', 'user') == 'user'
+        && request.resource.data.get('onboarded', false) == false;
+
+      // Users may update their own profile but cannot escalate privileges
+      allow update: if isSignedIn() && (
+        isAdmin()
+        || (
+          request.auth.uid == userId
+          && !request.resource.data.diff(resource.data)
+              .affectedKeys().hasAny(['role', 'is_monitor'])
+        )
+      );
+
+      allow delete: if isAdmin();
+    }
+
+    // ── Organizations ──────────────────────────────────────────────────
+    match /organizations/{orgId} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
+    }
+
+    // ── Channels ───────────────────────────────────────────────────────
+    match /channels/{channelId} {
+      allow read: if isSignedIn();
+      allow create: if isAdminOrDirector();
+
+      // Admins/directors manage channels; regular users may only request access
+      allow update: if isSignedIn() && (
+        isAdminOrDirector()
+        || request.resource.data.diff(resource.data)
+            .affectedKeys().hasOnly(['pending_members'])
+      );
+
+      allow delete: if isAdmin();
+    }
+
+    // ── Voice messages ─────────────────────────────────────────────────
+    match /voiceMessages/{messageId} {
+      allow read, create: if isSignedIn();
+      allow update: if isSignedIn();
+      allow delete: if isSignedIn() && isAdminOrDirector();
+    }
+
+    // ── PTT signals (realtime busy/clear tones) ────────────────────────
+    match /pttSignals/{signalId} {
+      allow read, create, delete: if isSignedIn();
+      allow update: if false;
+    }
+
+    // ── Audio chunks (live relay while PTT held) ───────────────────────
+    match /audioChunks/{chunkId} {
+      allow read, create, delete: if isSignedIn();
+      allow update: if false;
+    }
+
+    // ── Contacts ───────────────────────────────────────────────────────
+    match /contacts/{contactId} {
+      allow read, create, update, delete: if isSignedIn();
+    }
+
+    // ── Access requests (unregistered users) ───────────────────────────
+    match /accessRequests/{requestId} {
+      allow create: if isSignedIn();
+      allow read, update, delete: if isAdmin();
+    }
+  }
+}

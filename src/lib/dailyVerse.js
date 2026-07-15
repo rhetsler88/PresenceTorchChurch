@@ -1,3 +1,5 @@
+import { getCodeDateKey } from "@/lib/dailyCode";
+
 const VERSES = [
   { ref: "Psalm 23:1", text: "The Lord is my shepherd; I shall not want." },
   { ref: "Psalm 23:4", text: "Yea, though I walk through the valley of the shadow of death, I will fear no evil: for thou art with me." },
@@ -26,12 +28,16 @@ const VERSES = [
   { ref: "Proverbs 30:5", text: "Every word of God is pure: he is a shield unto them that put their trust in him." },
 ];
 
-function getDayIndex() {
-  const epoch = new Date(new Date().getFullYear(), 0, 0);
-  const dayOfYear = Math.floor((new Date() - epoch) / 86400000);
-  return dayOfYear % VERSES.length;
+function getDayIndex(date = new Date()) {
+  const dateKey = getCodeDateKey(date);
+  let hash = 0;
+  for (let i = 0; i < dateKey.length; i++) {
+    hash = ((hash << 5) - hash) + dateKey.charCodeAt(i);
+    hash |= 0;
+  }
+  return Math.abs(hash) % VERSES.length;
 }
 
-export function getDailyVerse() {
-  return VERSES[getDayIndex()];
+export function getDailyVerse(date = new Date()) {
+  return VERSES[getDayIndex(date)];
 }

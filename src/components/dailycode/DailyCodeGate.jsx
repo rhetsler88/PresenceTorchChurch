@@ -90,11 +90,11 @@ function DailyCodeEntry({ onVerified, organization }) {
     <div className="flex-1 flex flex-col items-center justify-center p-4 min-h-screen">
       <div className="w-full max-w-sm">
         {/* Social media graphic card */}
-        <div className="rounded-2xl overflow-hidden shadow-lg mb-4">
+        <div className="rounded-2xl overflow-hidden shadow-lg mb-4 bg-black">
           <img
-            src="https://media.api.com/images/public/6a00f68db5fbaa4450ad4bfe/5ffbd3da4_64f7d905-54d9-49e3-9f7f-bf3208b90be52.jpg"
-            alt="Presence Torch"
-            className="w-full h-32 object-cover"
+            src="/logo-full.png"
+            alt="Presence Torch Church"
+            className="w-full h-auto object-contain"
           />
         </div>
 

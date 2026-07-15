@@ -426,9 +426,18 @@ export const bootstrapApi = {
       const existing = channelSnap.docs.find((d) => d.id === id);
       const createdDate = existing?.data()?.created_date ?? now;
       const exists = Boolean(existing);
+      const members = existing?.data()?.members || [];
+      const shouldJoin =
+        (isSuper || isAdmin) &&
+        !members.includes(user.id) &&
+        !members.includes(user.email);
       await setDoc(
         doc(db, "channels", id),
-        { ...data, created_date: createdDate },
+        {
+          ...data,
+          created_date: createdDate,
+          ...(shouldJoin ? { members: [...members, user.id] } : {}),
+        },
         { merge: true }
       );
       if (!exists) channelCount++;

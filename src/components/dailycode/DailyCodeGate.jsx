@@ -197,7 +197,8 @@ export default function DailyCodeGate({ user, onUserUpdate, children, showBanner
     );
   }
 
-  const isAdminOrDirector = user.role === "admin" || user.role === "director";
+  const isAdminOrDirector =
+    user.role === "admin" || user.role === "super_admin" || user.role === "director";
 
   if (isAdminOrDirector) {
     return (

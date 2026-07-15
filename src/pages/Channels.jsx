@@ -72,7 +72,10 @@ export default function Channels() {
     },
   });
 
-  const canManageProtection = user?.role === "admin" || user?.role === "director";
+  const canManageProtection =
+    user?.role === "admin" ||
+    user?.role === "super_admin" ||
+    user?.role === "director";
 
   const handleSelect = (channel) => {
     if (channel.members?.includes(user?.id) || channel.members?.includes(user?.email)) {
@@ -129,7 +132,7 @@ export default function Channels() {
                 isActive={channel.members?.includes(user?.id) || channel.members?.includes(user?.email)}
                 isPending={channel.pending_members?.includes(user?.id) || channel.pending_members?.includes(user?.email)}
                 onSelect={handleSelect}
-                isAdmin={user?.role === "admin"}
+                isAdmin={user?.role === "admin" || user?.role === "super_admin"}
                 onRename={(ch) => setRenameChannel(ch)}
                 canManageProtection={canManageProtection}
                 protectionLevel={channel.protection_level || "green"}

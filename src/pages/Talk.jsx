@@ -13,7 +13,7 @@ import { useBluetoothPTTContext } from "../components/ptt/BluetoothPTTContext";
 import { playClearTone, playBusyTone } from "@/lib/pttTones";
 import { playAudioUrl, stopAudio } from "@/lib/audioPlayer";
 import { deviceDayKey } from "@/lib/deviceDate";
-import { getDisplayName } from "@/lib/userUtils";
+import { getDisplayName, canAccessChannel, isPlatformAdmin } from "@/lib/userUtils";
 import { getCodeDateKey } from "@/lib/dailyCode";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -60,10 +60,8 @@ export default function Talk() {
     queryFn: () => api.entities.User.list(),
   });
 
-  // Filter to channels where user is an approved member
-  const isMember = (channel) =>
-    channel.members?.includes(user?.id) || channel.members?.includes(user?.email);
-  const myChannels = channels.filter(isMember);
+  // Approved members, plus org/platform admins who manage those channels
+  const myChannels = channels.filter((channel) => canAccessChannel(user, channel));
 
   // Auto-select channel from URL param, last selected, or first approved channel
   useEffect(() => {
@@ -95,7 +93,10 @@ export default function Talk() {
 
   const sortedMessages = [...messages].reverse();
 
-  const canDelete = user?.role === "admin" || user?.role === "director";
+  const canDelete =
+    user?.role === "admin" ||
+    user?.role === "super_admin" ||
+    user?.role === "director";
 
   const handleLongPress = useCallback((msgId) => {
     if (!canDelete) return;
@@ -397,11 +398,28 @@ export default function Talk() {
   };
 
   if (myChannels.length === 0) {
+    const waitingOnApproval =
+      user &&
+      !isPlatformAdmin(user) &&
+      channels.some(
+        (ch) =>
+          ch.pending_members?.includes(user.id) ||
+          ch.pending_members?.includes(user.email)
+      );
+
     return (
       <div className="flex flex-col h-[calc(100vh-56px)] items-center justify-center p-6 text-center">
         <Clock className="w-12 h-12 text-muted-foreground/30 mb-3" />
-        <h2 className="text-lg font-bold text-foreground mb-1">Waiting for approval</h2>
-        <p className="text-sm text-muted-foreground max-w-xs">An admin needs to approve your channel request before you can start talking.</p>
+        <h2 className="text-lg font-bold text-foreground mb-1">
+          {channels.length === 0 ? "No channels yet" : "Waiting for approval"}
+        </h2>
+        <p className="text-sm text-muted-foreground max-w-xs">
+          {channels.length === 0
+            ? "An administrator needs to set up channels before you can start talking."
+            : waitingOnApproval
+              ? "An admin needs to approve your channel request before you can start talking."
+              : "Request access to a channel from the Channels tab to get started."}
+        </p>
       </div>
     );
   }
@@ -416,7 +434,8 @@ export default function Talk() {
               activeChannel?.members?.includes(u.id) ||
               activeChannel?.members?.includes(u.email);
             if (!isMember) return false;
-            const bypassesCode = u.role === "admin" || u.role === "director";
+            const bypassesCode =
+              u.role === "admin" || u.role === "super_admin" || u.role === "director";
             return bypassesCode || u.daily_code_verified_date === getCodeDateKey();
           }).length
         }

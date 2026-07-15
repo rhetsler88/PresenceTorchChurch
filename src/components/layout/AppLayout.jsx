@@ -4,6 +4,7 @@ import { Radio, MessageSquare, FileText, Eye, Shield, Crown } from "lucide-react
 import { useAuth } from "@/lib/AuthContext";
 import DailyCodeGate from "@/components/dailycode/DailyCodeGate";
 import UserMenu from "@/components/layout/UserMenu";
+import { isPlatformAdmin } from "@/lib/userUtils";
 import { BluetoothPTTProvider } from "@/components/ptt/BluetoothPTTContext";
 import RedAlertBanner from "@/components/ptt/RedAlertBanner";
 import useRedAlert from "@/hooks/useRedAlert";
@@ -13,8 +14,11 @@ export default function AppLayout() {
   const { user, checkUserAuth } = useAuth();
   const { alertChannel, dismiss: dismissAlert } = useRedAlert();
 
-  const isMonitor = user?.role === "monitor" || user?.role === "admin" || user?.is_monitor === true;
-  const isAdmin = user?.role === "admin";
+  const isMonitor =
+    user?.role === "monitor" ||
+    isPlatformAdmin(user) ||
+    user?.is_monitor === true;
+  const isAdmin = isPlatformAdmin(user);
   const isDirector = user?.role === "director";
 
   const navItems = [

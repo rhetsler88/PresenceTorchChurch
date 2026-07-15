@@ -81,7 +81,7 @@ export default function Admin() {
     },
   });
 
-  const isAdmin = currentUser?.role === "admin";
+  const isAdmin = currentUser?.role === "admin" || currentUser?.role === "super_admin";
   const isDirector = currentUser?.role === "director";
   const directedChannelIds = currentUser?.directed_channels || [];
   const myOrg = currentUser?.organization;

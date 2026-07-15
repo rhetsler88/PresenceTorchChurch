@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "@/api/client";
 import { useAuth } from "@/lib/AuthContext";
+import { isPlatformAdmin } from "@/lib/userUtils";
 import { Button } from "@/components/ui/button";
 import { Radio, Check, ArrowRight, ArrowLeft, LogOut, MailCheck } from "lucide-react";
 import { toast } from "sonner";
@@ -83,17 +84,27 @@ export default function Onboarding() {
       });
 
       const userId = user?.id;
+      const autoApprove = isPlatformAdmin(user);
       if (userId) {
         await Promise.all(
           [...selectedChannels]
             .map((cid) => {
               const ch = channels.find((c) => c.id === cid);
               if (!ch) return null;
-              const pending = ch.pending_members || [];
+              const pending = (ch.pending_members || []).filter((id) => id !== userId);
               const approved = ch.members || [];
-              if (!pending.includes(userId) && !approved.includes(userId)) {
+              if (approved.includes(userId) || approved.includes(user?.email)) {
+                return null;
+              }
+              if (autoApprove) {
                 return api.entities.Channel.update(cid, {
-                  pending_members: [...pending, userId],
+                  members: [...approved, userId],
+                  pending_members: pending,
+                });
+              }
+              if (!pending.includes(userId) && !ch.pending_members?.includes(userId)) {
+                return api.entities.Channel.update(cid, {
+                  pending_members: [...(ch.pending_members || []), userId],
                 });
               }
               return null;
@@ -104,7 +115,7 @@ export default function Onboarding() {
 
       await checkUserAuth();
       setDone(true);
-      toast.success("Access requests sent!");
+      toast.success(autoApprove ? "Setup complete!" : "Access requests sent!");
     } catch (e) {
       console.error(e);
       toast.error("Couldn't complete setup. Please try again.");

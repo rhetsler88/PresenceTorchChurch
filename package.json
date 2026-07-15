@@ -12,7 +12,8 @@
     "preview": "vite preview",
     "seed": "node scripts/seed-firestore.mjs",
     "dev:admin": "npm run dev --prefix admin",
-    "build:admin": "npm run build --prefix admin"
+    "build:admin": "npm run build --prefix admin",
+    "setup:domains": "node scripts/add-firebase-domains.mjs"
   },
   "dependencies": {
     "@hello-pangea/dnd": "^17.0.0",

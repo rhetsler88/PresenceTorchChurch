@@ -198,13 +198,13 @@ export default function Monitor() {
     userName: user ? getDisplayName(user) : "",
   });
 
-  // Live relay receiver — listens to ALL channels
+  // Live relay receiver ï¿½ listens to ALL channels
   const { isReceiving: isLiveReceiving, heardBroadcastsRef } = useMonitorRelayReceiver({
     userId: user?.id,
     channelIds: channels.map(c => c.id),
   });
 
-  // Subscribe to PTT signals across all channels — busy tones + channel busy state
+  // Subscribe to PTT signals across all channels ï¿½ busy tones + channel busy state
   useEffect(() => {
     if (!user) return;
     const unsub = api.entities.PTTSignal.subscribe((event) => {
@@ -395,7 +395,7 @@ export default function Monitor() {
     toast.success(`All channels set to ${level}`);
   };
 
-  // PTT send — uses relay broadcast result (already uploaded)
+  // PTT send ï¿½ uses relay broadcast result (already uploaded)
   const sendMutation = useMutation({
     mutationFn: async () => {
       const result = await stopRecording();
@@ -487,7 +487,7 @@ export default function Monitor() {
       ));
       pttSignalRefs.current = signals.map(s => s.id);
     } catch (e) {
-      // Non-critical — recording still works
+      // Non-critical ï¿½ recording still works
     }
   }, [isPTTPressed, isLiveReceiving, isChannelBusy, startRecording, channels, user]);
 

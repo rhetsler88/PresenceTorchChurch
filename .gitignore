@@ -31,3 +31,5 @@ dist-ssr
 .vite
 base44/.app.jsonc
 scripts/serviceAccountKey.json
+.vercel
+.env*

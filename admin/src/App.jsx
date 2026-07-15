@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from "react";
+import React from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
@@ -19,14 +19,6 @@ function canAccessAdmin(user) {
 
 function AdminAppRoutes() {
   const { user, isLoadingAuth, authError, navigateToLogin } = useAuth();
-  const redirectingRef = useRef(false);
-
-  useEffect(() => {
-    if (authError?.type === "auth_required" && !redirectingRef.current) {
-      redirectingRef.current = true;
-      navigateToLogin();
-    }
-  }, [authError, navigateToLogin]);
 
   if (isLoadingAuth) {
     return (
@@ -36,15 +28,7 @@ function AdminAppRoutes() {
     );
   }
 
-  if (authError?.type === "auth_required") {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-background">
-        <p className="text-sm text-muted-foreground">Redirecting to sign in...</p>
-      </div>
-    );
-  }
-
-  if (!user || !canAccessAdmin(user)) {
+  if (!user || authError?.type === "auth_required" || !canAccessAdmin(user)) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background p-6">
         <div className="max-w-md w-full bg-card border border-border rounded-2xl p-8 text-center">

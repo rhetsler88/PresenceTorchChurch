@@ -91,7 +91,7 @@ export default function Transcripts() {
   const handleExportToGoogleDoc = async () => {
     if (filtered.length === 0) return;
     setIsExporting(true);
-    const header = `PresencePoint Transcript Log — ${etzFullTimestamp(new Date())}\n${filtered.length} entries\n\n`;
+    const header = `Presence Torch Transcript Log — ${etzFullTimestamp(new Date())}\n${filtered.length} entries\n\n`;
     const body = filtered.map(m => {
       const ts = m.device_date ? `${m.device_date} ${m.device_time || ""}` : etzMediumTimestamp(m.created_date);
       const ch = channelMap[m.channel_id]?.name || "Unknown";

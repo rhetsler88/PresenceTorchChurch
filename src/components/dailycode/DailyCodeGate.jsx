@@ -93,7 +93,7 @@ function DailyCodeEntry({ onVerified, organization }) {
         <div className="rounded-2xl overflow-hidden shadow-lg mb-4">
           <img
             src="https://media.api.com/images/public/6a00f68db5fbaa4450ad4bfe/5ffbd3da4_64f7d905-54d9-49e3-9f7f-bf3208b90be52.jpg"
-            alt="PresencePoint"
+            alt="Presence Torch"
             className="w-full h-32 object-cover"
           />
         </div>
@@ -108,7 +108,7 @@ function DailyCodeEntry({ onVerified, organization }) {
               Accessing
             </p>
             <p className="text-sm font-bold text-foreground truncate">
-              {organization || "PresencePoint"}
+              {organization || "Presence Torch"}
             </p>
           </div>
         </div>

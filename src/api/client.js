@@ -17,6 +17,7 @@ import {
 } from "firebase/firestore";
 import {
   signInWithPopup,
+  signInWithRedirect,
   GoogleAuthProvider,
   signOut,
 } from "firebase/auth";
@@ -216,11 +217,18 @@ export const authApi = {
     }
   },
 
-  redirectToLogin(returnUrl) {
+  async redirectToLogin() {
     const provider = new GoogleAuthProvider();
-    signInWithPopup(auth, provider).catch((err) => {
+    try {
+      await signInWithPopup(auth, provider);
+    } catch (err) {
+      if (err?.code === "auth/popup-blocked" || err?.code === "auth/popup-closed-by-user") {
+        await signInWithRedirect(auth, provider);
+        return;
+      }
       console.error("Sign-in failed:", err);
-    });
+      throw err;
+    }
   },
 };
 

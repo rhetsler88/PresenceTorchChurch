@@ -24,8 +24,8 @@ Deno.serve(async (req) => {
     for (const adminEmail of adminEmails) {
       await base44.asServiceRole.integrations.Core.SendEmail({
         to: adminEmail,
-        subject: "New Access Request - PresencePoint",
-        body: `${fullName} (${email}) is requesting access to PresencePoint.\n\nOrganization: ${organization}\n\nTo approve, go to the Admin page in the app and invite ${email} as a user.`,
+        subject: "New Access Request - Presence Torch",
+        body: `${fullName} (${email}) is requesting access to Presence Torch.\n\nOrganization: ${organization}\n\nTo approve, go to the Admin page in the app and invite ${email} as a user.`,
       });
     }
 

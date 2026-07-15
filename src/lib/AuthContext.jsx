@@ -1,5 +1,5 @@
 import React, { createContext, useState, useContext, useEffect } from "react";
-import { onAuthStateChanged } from "firebase/auth";
+import { onAuthStateChanged, getRedirectResult } from "firebase/auth";
 import { doc, getDoc, setDoc } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase";
 import { authApi } from "@/api/client";
@@ -121,6 +121,10 @@ export const AuthProvider = ({ children }) => {
 
   useEffect(() => {
     setIsLoadingAuth(true);
+    getRedirectResult(auth).catch((error) => {
+      console.error("Redirect sign-in failed:", error);
+    });
+
     const unsub = onAuthStateChanged(auth, async (firebaseUser) => {
       if (!firebaseUser) {
         applySignedOut();
@@ -185,9 +189,7 @@ export const AuthProvider = ({ children }) => {
     await authApi.logout(shouldRedirect ? window.location.href : undefined);
   };
 
-  const navigateToLogin = () => {
-    authApi.redirectToLogin(window.location.href);
-  };
+  const navigateToLogin = () => authApi.redirectToLogin();
 
   return (
     <AuthContext.Provider

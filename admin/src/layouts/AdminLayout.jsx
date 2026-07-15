@@ -32,7 +32,7 @@ export default function AdminLayout({ user }) {
     isSuperAdmin &&
     !bootstrap.channelsLoading &&
     !bootstrap.orgsLoading &&
-    bootstrap.channels.length === 0;
+    bootstrap.needsSeed;
 
   return (
     <div className="min-h-screen bg-background flex">

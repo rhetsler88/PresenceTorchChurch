@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/api/client";
+import { isDefaultSetupComplete } from "@/lib/defaultSeed";
 import { toast } from "sonner";
 
 export function useBootstrapDatabase(user, { autoSeed = false } = {}) {
@@ -17,11 +18,12 @@ export function useBootstrapDatabase(user, { autoSeed = false } = {}) {
     queryFn: () => api.entities.Channel.list("-created_date", 200),
   });
 
-  const needsSeed = orgs.length === 0 || channels.length === 0;
+  const setupComplete = isDefaultSetupComplete(orgs, channels);
+  const needsSeed = !setupComplete;
 
   const canInitialize =
     user?.role === "super_admin" ||
-    (user?.role === "admin" && orgs.length > 0 && channels.length === 0);
+    (user?.role === "admin" && orgs.length > 0 && needsSeed);
 
   const seedMutation = useMutation({
     mutationFn: () => api.bootstrap.seedDefaults(),
@@ -47,10 +49,10 @@ export function useBootstrapDatabase(user, { autoSeed = false } = {}) {
     if (!canAutoSeed) return;
     if (autoSeedAttempted.current) return;
     if (orgsLoading || channelsLoading) return;
-    if (!needsSeed) return;
+    if (setupComplete) return;
     autoSeedAttempted.current = true;
     seedMutation.mutate();
-  }, [canAutoSeed, orgsLoading, channelsLoading, needsSeed]);
+  }, [canAutoSeed, orgsLoading, channelsLoading, setupComplete]);
 
   return {
     orgs,
@@ -58,6 +60,7 @@ export function useBootstrapDatabase(user, { autoSeed = false } = {}) {
     orgsLoading,
     channelsLoading,
     needsSeed,
+    setupComplete,
     canInitialize,
     seedMutation,
   };

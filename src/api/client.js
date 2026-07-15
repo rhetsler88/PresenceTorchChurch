@@ -30,6 +30,7 @@ import { uploadPublicAudio, uploadPrivateAudio } from "@/api/storage";
 import { getDownloadURL, ref } from "firebase/storage";
 import { storage } from "@/lib/firebase";
 import seedData from "../../scripts/seed-data.json";
+import { isDefaultSetupComplete } from "@/lib/defaultSeed";
 
 export function formatAuthError(err) {
   switch (err?.code) {
@@ -396,37 +397,41 @@ export const bootstrapApi = {
       getDocs(collection(db, "channels")),
     ]);
 
-    if (!orgSnap.empty && !channelSnap.empty) {
-      return { seeded: false, message: "Database already has organizations and channels" };
+    const existingOrgs = orgSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    const existingChannels = channelSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
+
+    if (isDefaultSetupComplete(existingOrgs, existingChannels)) {
+      return { seeded: false, message: "Safety Team and PH Kids are already set up" };
     }
 
     const now = serverTimestamp();
     let orgCount = 0;
     let channelCount = 0;
 
-    if (orgSnap.empty) {
-      if (!isSuper) {
-        throw new Error(
-          "Organizations are missing. A super admin must initialize the database first."
-        );
-      }
+    if (isSuper) {
       for (const org of seedData.organizations) {
         const { id, ...data } = org;
+        const exists = orgSnap.docs.some((d) => d.id === id);
         await setDoc(doc(db, "organizations", id), data, { merge: true });
-        orgCount++;
+        if (!exists) orgCount++;
       }
+    } else if (seedData.organizations.some((org) => !orgSnap.docs.some((d) => d.id === org.id))) {
+      throw new Error(
+        "Organizations are missing. A super admin must initialize the database first."
+      );
     }
 
-    if (channelSnap.empty) {
-      for (const channel of seedData.channels) {
-        const { id, ...data } = channel;
-        await setDoc(doc(db, "channels", id), { ...data, created_date: now }, { merge: true });
-        channelCount++;
-      }
-    }
-
-    if (orgCount === 0 && channelCount === 0) {
-      return { seeded: false, message: "Nothing to seed" };
+    for (const channel of seedData.channels) {
+      const { id, ...data } = channel;
+      const existing = channelSnap.docs.find((d) => d.id === id);
+      const createdDate = existing?.data()?.created_date ?? now;
+      const exists = Boolean(existing);
+      await setDoc(
+        doc(db, "channels", id),
+        { ...data, created_date: createdDate },
+        { merge: true }
+      );
+      if (!exists) channelCount++;
     }
 
     return {

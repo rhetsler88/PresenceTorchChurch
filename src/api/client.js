@@ -18,6 +18,10 @@ import {
 import {
   signInWithPopup,
   signInWithRedirect,
+  signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
+  sendPasswordResetEmail,
+  updateProfile,
   GoogleAuthProvider,
   signOut,
 } from "firebase/auth";
@@ -26,6 +30,35 @@ import { uploadPublicAudio, uploadPrivateAudio } from "@/api/storage";
 import { getDownloadURL, ref } from "firebase/storage";
 import { storage } from "@/lib/firebase";
 import seedData from "../../scripts/seed-data.json";
+
+export function formatAuthError(err) {
+  switch (err?.code) {
+    case "auth/email-already-in-use":
+      return "An account already exists with this email. Sign in instead.";
+    case "auth/invalid-email":
+      return "Enter a valid email address.";
+    case "auth/invalid-credential":
+    case "auth/wrong-password":
+    case "auth/user-not-found":
+      return "Incorrect email or password.";
+    case "auth/weak-password":
+      return "Password must be at least 6 characters.";
+    case "auth/too-many-requests":
+      return "Too many attempts. Please wait and try again.";
+    case "auth/network-request-failed":
+      return "Network error. Check your connection and try again.";
+    case "auth/unauthorized-domain":
+      return "This site is not authorized for sign-in yet. Add this domain in Firebase Authentication → Settings → Authorized domains.";
+    case "auth/operation-not-allowed":
+      return "Email/password sign-in is not enabled yet. Enable Email/Password in Firebase Authentication → Sign-in method.";
+    case "auth/popup-blocked":
+      return "Pop-up was blocked. Allow pop-ups for this site, or try again.";
+    case "auth/popup-closed-by-user":
+      return "Sign-in was cancelled.";
+    default:
+      return err?.message || "Something went wrong. Please try again.";
+  }
+}
 
 const CHANGE_TYPE_MAP = {
   added: "create",
@@ -253,6 +286,46 @@ export const authApi = {
       console.error("Sign-in failed:", err);
       throw err;
     }
+  },
+
+  async signInWithEmail(email, password) {
+    const cred = await signInWithEmailAndPassword(auth, email.trim(), password);
+    return cred.user;
+  },
+
+  async registerWithEmail({ email, password, firstName = "", lastName = "" }) {
+    const trimmedEmail = email.trim();
+    const first = firstName.trim();
+    const last = lastName.trim();
+    const fullName = [first, last].filter(Boolean).join(" ");
+
+    const cred = await createUserWithEmailAndPassword(auth, trimmedEmail, password);
+
+    if (fullName) {
+      await updateProfile(cred.user, { displayName: fullName });
+    }
+
+    // Ensure Firestore profile has names even if onAuthStateChanged raced ahead
+    await setDoc(
+      doc(db, "users", cred.user.uid),
+      {
+        email: trimmedEmail,
+        first_name: first,
+        last_name: last,
+        full_name: fullName,
+        role: "user",
+        onboarded: false,
+        directed_channels: [],
+        is_monitor: false,
+      },
+      { merge: true }
+    );
+
+    return cred.user;
+  },
+
+  async resetPassword(email) {
+    await sendPasswordResetEmail(auth, email.trim());
   },
 };
 

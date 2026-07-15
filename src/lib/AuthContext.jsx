@@ -23,14 +23,15 @@ async function expireSession() {
 async function loadOrCreateUser(firebaseUser) {
   const userRef = doc(db, "users", firebaseUser.uid);
   const userDoc = await getDoc(userRef);
+  const displayName = firebaseUser.displayName || "";
+  const [firstName = "", ...rest] = displayName.split(" ");
+  const lastName = rest.join(" ");
 
   if (!userDoc.exists()) {
-    const displayName = firebaseUser.displayName || "";
-    const [firstName = "", ...rest] = displayName.split(" ");
     const profile = {
       email: firebaseUser.email,
       first_name: firstName,
-      last_name: rest.join(" "),
+      last_name: lastName,
       full_name: displayName,
       role: "user",
       onboarded: false,
@@ -41,10 +42,22 @@ async function loadOrCreateUser(firebaseUser) {
     return { id: firebaseUser.uid, ...profile };
   }
 
+  const existing = userDoc.data() || {};
+  // Backfill names when Firebase displayName is set after email registration
+  if (displayName && !existing.full_name && !existing.first_name) {
+    const updates = {
+      first_name: firstName,
+      last_name: lastName,
+      full_name: displayName,
+    };
+    await setDoc(userRef, updates, { merge: true });
+    return { id: firebaseUser.uid, email: firebaseUser.email, ...existing, ...updates };
+  }
+
   return {
     id: firebaseUser.uid,
     email: firebaseUser.email,
-    ...userDoc.data(),
+    ...existing,
   };
 }
 
@@ -191,6 +204,22 @@ export const AuthProvider = ({ children }) => {
 
   const navigateToLogin = () => authApi.redirectToLogin();
 
+  const signInWithEmail = (email, password) => authApi.signInWithEmail(email, password);
+
+  const registerWithEmail = async ({ email, password, firstName, lastName }) => {
+    await authApi.registerWithEmail({ email, password, firstName, lastName });
+    // Refresh profile after registration so names from the form are reflected
+    try {
+      const currentUser = await authApi.me();
+      applyAuthenticatedUser(currentUser);
+    } catch (error) {
+      // onAuthStateChanged will still establish the session
+      console.error("Post-registration profile refresh failed:", error);
+    }
+  };
+
+  const resetPassword = (email) => authApi.resetPassword(email);
+
   return (
     <AuthContext.Provider
       value={{
@@ -203,6 +232,9 @@ export const AuthProvider = ({ children }) => {
         authChecked,
         logout,
         navigateToLogin,
+        signInWithEmail,
+        registerWithEmail,
+        resetPassword,
         checkUserAuth,
         checkAppState,
       }}

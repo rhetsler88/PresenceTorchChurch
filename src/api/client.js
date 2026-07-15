@@ -25,6 +25,7 @@ import { auth, db } from "@/lib/firebase";
 import { uploadPublicAudio, uploadPrivateAudio } from "@/api/storage";
 import { getDownloadURL, ref } from "firebase/storage";
 import { storage } from "@/lib/firebase";
+import seedData from "../../scripts/seed-data.json";
 
 const CHANGE_TYPE_MAP = {
   added: "create",
@@ -70,12 +71,38 @@ function buildQuery(collectionName, filters = {}, sortField, limitCount) {
   return query(collection(db, collectionName), ...constraints);
 }
 
+function sortItems(items, sortField) {
+  if (!sortField) return items;
+  const { field, direction } = parseSort(sortField);
+  return [...items].sort((a, b) => {
+    const av = a[field] ?? "";
+    const bv = b[field] ?? "";
+    if (av < bv) return direction === "desc" ? 1 : -1;
+    if (av > bv) return direction === "desc" ? -1 : 1;
+    return 0;
+  });
+}
+
 function createEntityApi(collectionName) {
   return {
     async list(sortField, limitCount) {
-      const q = buildQuery(collectionName, {}, sortField, limitCount);
-      const snap = await getDocs(q);
-      return snap.docs.map(docToObject);
+      let items = [];
+      try {
+        const q = buildQuery(collectionName, {}, sortField, limitCount);
+        const snap = await getDocs(q);
+        items = snap.docs.map(docToObject);
+      } catch (err) {
+        console.warn(`Sorted query failed for ${collectionName}:`, err);
+      }
+
+      // Documents missing the orderBy field are excluded from sorted queries.
+      if (items.length === 0) {
+        const snap = await getDocs(collection(db, collectionName));
+        items = sortItems(snap.docs.map(docToObject), sortField);
+        if (limitCount) items = items.slice(0, limitCount);
+      }
+
+      return items;
     },
 
     async filter(filters, sortField, limitCount) {
@@ -153,9 +180,6 @@ async function getCurrentUser() {
 export const organizationsApi = {
   async list() {
     const snap = await getDocs(collection(db, "organizations"));
-    if (snap.empty) {
-      return [{ id: "default", name: "Potter's House - Columbus" }];
-    }
     return snap.docs.map(docToObject);
   },
 
@@ -285,10 +309,66 @@ export const integrations = {
   },
 };
 
+export const bootstrapApi = {
+  async seedDefaults() {
+    const user = await getCurrentUser();
+    const isSuper = user.role === "super_admin";
+    const isAdmin = user.role === "admin";
+    if (!isSuper && !isAdmin) {
+      throw new Error("Only admins can initialize the database");
+    }
+
+    const [orgSnap, channelSnap] = await Promise.all([
+      getDocs(collection(db, "organizations")),
+      getDocs(collection(db, "channels")),
+    ]);
+
+    if (!orgSnap.empty && !channelSnap.empty) {
+      return { seeded: false, message: "Database already has organizations and channels" };
+    }
+
+    const now = serverTimestamp();
+    let orgCount = 0;
+    let channelCount = 0;
+
+    if (orgSnap.empty) {
+      if (!isSuper) {
+        throw new Error(
+          "Organizations are missing. A super admin must initialize the database first."
+        );
+      }
+      for (const org of seedData.organizations) {
+        const { id, ...data } = org;
+        await setDoc(doc(db, "organizations", id), data, { merge: true });
+        orgCount++;
+      }
+    }
+
+    if (channelSnap.empty) {
+      for (const channel of seedData.channels) {
+        const { id, ...data } = channel;
+        await setDoc(doc(db, "channels", id), { ...data, created_date: now }, { merge: true });
+        channelCount++;
+      }
+    }
+
+    if (orgCount === 0 && channelCount === 0) {
+      return { seeded: false, message: "Nothing to seed" };
+    }
+
+    return {
+      seeded: true,
+      organizations: orgCount,
+      channels: channelCount,
+    };
+  },
+};
+
 export const api = {
   entities,
   auth: authApi,
   functions: functionsApi,
   integrations,
   organizations: organizationsApi,
+  bootstrap: bootstrapApi,
 };

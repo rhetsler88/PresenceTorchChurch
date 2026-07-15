@@ -21,22 +21,26 @@ export default function Onboarding() {
   useEffect(() => {
     (async () => {
       try {
-        const [orgs, chans] = await Promise.all([
-          api.organizations.list(),
-          api.entities.Channel.list("-created_date", 100),
-        ]);
+        const orgs = await api.organizations.list();
         setOrganizations(orgs);
-        setChannels(chans);
       } catch (e) {
         toast.error("Couldn't load organizations");
+      }
+      try {
+        const chans = await api.entities.Channel.list("-created_date", 100);
+        setChannels(chans);
+      } catch (e) {
+        toast.error("Couldn't load channels");
       } finally {
         setLoading(false);
       }
     })();
   }, []);
 
+  const normalizeOrg = (value) => (value || "").trim().toLowerCase();
+
   const orgChannels = organization
-    ? channels.filter((ch) => ch.organization === organization)
+    ? channels.filter((ch) => normalizeOrg(ch.organization) === normalizeOrg(organization))
     : [];
 
   const displayName =
@@ -214,7 +218,9 @@ export default function Onboarding() {
                 </div>
               ) : orgChannels.length === 0 ? (
                 <p className="text-sm text-muted-foreground text-center py-6">
-                  No channels available for this organization yet. Contact your administrator.
+                  {channels.length === 0
+                    ? "No channels have been set up yet. Ask an administrator to initialize the database from the admin dashboard."
+                    : "No channels available for this organization yet. Contact your administrator."}
                 </p>
               ) : (
                 <div className="space-y-2 max-h-72 overflow-y-auto">

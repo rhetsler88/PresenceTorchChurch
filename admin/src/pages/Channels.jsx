@@ -18,14 +18,18 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
-import { Plus, Pencil, Trash2 } from "lucide-react";
+import { Plus, Pencil, Trash2, Radio } from "lucide-react";
 import { toast } from "sonner";
+import { useAuth } from "@/lib/AuthContext";
+import { useBootstrapDatabase } from "@admin/hooks/useBootstrapDatabase";
 
 const COLORS = ["#f59e0b", "#3b82f6", "#8b5cf6", "#ec4899", "#10b981", "#ef4444"];
 const PROTECTION_LEVELS = ["blue", "green", "yellow", "red"];
 
 export default function Channels() {
+  const { user } = useAuth();
   const queryClient = useQueryClient();
+  const { needsSeed, canInitialize, seedMutation } = useBootstrapDatabase(user);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState({
@@ -119,6 +123,30 @@ export default function Channels() {
       {isLoading ? (
         <div className="flex justify-center py-16">
           <div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+        </div>
+      ) : channels.length === 0 ? (
+        <div className="text-center py-16 bg-card border border-border rounded-xl">
+          <Radio className="w-10 h-10 text-muted-foreground mx-auto mb-3" />
+          <p className="text-sm font-medium text-foreground mb-1">No channels yet</p>
+          <p className="text-sm text-muted-foreground mb-4 max-w-md mx-auto">
+            {needsSeed
+              ? "Initialize the default Safety Team and PH Kids channels, or add a channel manually."
+              : "Add your first channel to get started."}
+          </p>
+          {canInitialize && needsSeed ? (
+            <Button
+              onClick={() => seedMutation.mutate()}
+              disabled={seedMutation.isPending}
+              className="gap-2"
+            >
+              {seedMutation.isPending ? "Initializing..." : "Initialize default channels"}
+            </Button>
+          ) : (
+            <Button onClick={openCreate} className="gap-2">
+              <Plus className="w-4 h-4" />
+              Add channel
+            </Button>
+          )}
         </div>
       ) : (
         <div className="space-y-3">

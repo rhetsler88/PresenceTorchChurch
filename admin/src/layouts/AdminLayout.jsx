@@ -7,10 +7,14 @@ import {
   Radio,
   Inbox,
   LogOut,
+  ExternalLink,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/lib/AuthContext";
 import { getDisplayName } from "@/lib/userUtils";
+import { WEB_APP_URL } from "@/lib/appLinks";
+import { useBootstrapDatabase } from "@admin/hooks/useBootstrapDatabase";
+import InitializeDatabaseBanner from "@admin/components/InitializeDatabaseBanner";
 
 const navItems = [
   { to: "/", icon: LayoutDashboard, label: "Dashboard", end: true },
@@ -22,6 +26,7 @@ const navItems = [
 
 export default function AdminLayout({ user }) {
   const { logout } = useAuth();
+  const bootstrap = useBootstrapDatabase(user, { autoSeed: true });
 
   return (
     <div className="min-h-screen bg-background flex">
@@ -57,7 +62,17 @@ export default function AdminLayout({ user }) {
           ))}
         </nav>
 
-        <div className="p-3 border-t border-border">
+        <div className="p-3 border-t border-border space-y-1">
+          <Button
+            variant="ghost"
+            className="w-full justify-start gap-2 text-muted-foreground"
+            asChild
+          >
+            <a href={WEB_APP_URL}>
+              <ExternalLink className="w-4 h-4" />
+              Back to app
+            </a>
+          </Button>
           <Button
             variant="ghost"
             className="w-full justify-start gap-2 text-muted-foreground"
@@ -70,6 +85,7 @@ export default function AdminLayout({ user }) {
       </aside>
 
       <main className="flex-1 overflow-auto">
+        <InitializeDatabaseBanner user={user} {...bootstrap} />
         <Outlet />
       </main>
     </div>

@@ -2,8 +2,8 @@ import React from "react";
 import { Database } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
-export default function InitializeDatabaseBanner({ needsSeed, canInitialize, seedMutation, user }) {
-  if (!needsSeed || !canInitialize) return null;
+export default function InitializeDatabaseBanner({ seedMutation, user, showInitialize }) {
+  if (!showInitialize) return null;
 
   const isSuperAdmin = user?.role === "super_admin";
 

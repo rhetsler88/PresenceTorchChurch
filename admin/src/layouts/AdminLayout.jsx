@@ -27,10 +27,16 @@ const navItems = [
 export default function AdminLayout({ user }) {
   const { logout } = useAuth();
   const bootstrap = useBootstrapDatabase(user, { autoSeed: true });
+  const isSuperAdmin = user?.role === "super_admin";
+  const showInitialize =
+    isSuperAdmin &&
+    !bootstrap.channelsLoading &&
+    !bootstrap.orgsLoading &&
+    bootstrap.channels.length === 0;
 
   return (
     <div className="min-h-screen bg-background flex">
-      <aside className="w-64 border-r border-border bg-card flex flex-col">
+      <aside className="w-64 min-h-screen border-r border-border bg-card flex flex-col shrink-0">
         <div className="p-5 border-b border-border">
           <p className="text-xs font-bold uppercase tracking-widest text-primary">
             Presence Torch
@@ -42,8 +48,8 @@ export default function AdminLayout({ user }) {
           </p>
         </div>
 
-        <nav className="flex-1 p-3 space-y-1">
-          {bootstrap.needsSeed && bootstrap.canInitialize && (
+        <nav className="flex-1 p-3 space-y-1 overflow-y-auto">
+          {showInitialize && (
             <button
               type="button"
               onClick={() => bootstrap.seedMutation.mutate()}
@@ -73,10 +79,10 @@ export default function AdminLayout({ user }) {
           ))}
         </nav>
 
-        <div className="p-3 border-t border-border space-y-1">
+        <div className="p-3 border-t border-border space-y-1 mt-auto">
           <BackToAppLink
             variant="ghost"
-            className="w-full justify-start text-muted-foreground"
+            className="w-full justify-start text-muted-foreground font-normal"
           />
           <Button
             variant="ghost"
@@ -89,9 +95,14 @@ export default function AdminLayout({ user }) {
         </div>
       </aside>
 
-      <main className="flex-1 overflow-auto">
-        <InitializeDatabaseBanner user={user} {...bootstrap} />
-        <Outlet />
+      <main className="flex-1 min-w-0 flex flex-col min-h-screen">
+        <div className="flex items-center justify-end gap-2 px-6 py-3 border-b border-border bg-card/50 md:hidden">
+          <BackToAppLink variant="outline" className="text-xs h-8" />
+        </div>
+        <InitializeDatabaseBanner user={user} {...bootstrap} showInitialize={showInitialize} />
+        <div className="flex-1 overflow-auto">
+          <Outlet />
+        </div>
       </main>
     </div>
   );

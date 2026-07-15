@@ -4,6 +4,7 @@ import {
   getDoc,
   getDocs,
   addDoc,
+  setDoc,
   updateDoc,
   deleteDoc,
   query,
@@ -156,6 +157,21 @@ export const organizationsApi = {
     }
     return snap.docs.map(docToObject);
   },
+
+  async create({ id, name }) {
+    const orgId = id || name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
+    await setDoc(doc(db, "organizations", orgId), { name });
+    return { id: orgId, name };
+  },
+
+  async update(id, data) {
+    await updateDoc(doc(db, "organizations", id), data);
+    return { id, ...data };
+  },
+
+  async delete(id) {
+    await deleteDoc(doc(db, "organizations", id));
+  },
 };
 
 export const entities = {
@@ -171,6 +187,7 @@ export const entities = {
   PTTSignal: createEntityApi("pttSignals"),
   AudioChunk: createEntityApi("audioChunks"),
   Contact: createEntityApi("contacts"),
+  AccessRequest: createEntityApi("accessRequests"),
 };
 
 export const authApi = {

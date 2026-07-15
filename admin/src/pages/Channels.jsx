@@ -22,20 +22,21 @@ import { Plus, Pencil, Trash2, Radio } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/lib/AuthContext";
 import { useBootstrapDatabase } from "@admin/hooks/useBootstrapDatabase";
+import { CHANNEL_COLORS } from "@/lib/channelColors";
+import ColorPicker from "@/components/channels/ColorPicker";
 
-const COLORS = ["#f59e0b", "#3b82f6", "#8b5cf6", "#ec4899", "#10b981", "#ef4444"];
 const PROTECTION_LEVELS = ["blue", "green", "yellow", "red"];
 
 export default function Channels() {
   const { user } = useAuth();
   const queryClient = useQueryClient();
-  const { needsSeed, canInitialize, seedMutation } = useBootstrapDatabase(user);
+  const { needsSeed, canInitialize, seedMutation, setupComplete } = useBootstrapDatabase(user);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState({
     name: "",
     organization: "",
-    color: "#f59e0b",
+    color: CHANNEL_COLORS[0],
     protection_level: "green",
     description: "",
   });
@@ -86,7 +87,7 @@ export default function Channels() {
     setForm({
       name: "",
       organization: orgs[0]?.name || "",
-      color: "#f59e0b",
+      color: CHANNEL_COLORS[0],
       protection_level: "green",
       description: "",
     });
@@ -98,7 +99,7 @@ export default function Channels() {
     setForm({
       name: channel.name || "",
       organization: channel.organization || "",
-      color: channel.color || "#f59e0b",
+      color: channel.color || CHANNEL_COLORS[0],
       protection_level: channel.protection_level || "green",
       description: channel.description || "",
     });
@@ -232,24 +233,14 @@ export default function Channels() {
               />
             </div>
             <div className="grid grid-cols-2 gap-3">
-              <div>
+              <div className="col-span-2 sm:col-span-1">
                 <Label>Color</Label>
-                <Select
-                  value={form.color}
-                  onValueChange={(v) => setForm({ ...form, color: v })}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {COLORS.map((c) => (
-                      <SelectItem key={c} value={c}>
-                        <span className="inline-block w-3 h-3 rounded-full mr-2" style={{ backgroundColor: c }} />
-                        {c}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <div className="mt-2">
+                  <ColorPicker
+                    value={form.color}
+                    onChange={(color) => setForm({ ...form, color })}
+                  />
+                </div>
               </div>
               <div>
                 <Label>Protection level</Label>

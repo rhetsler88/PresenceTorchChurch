@@ -101,7 +101,8 @@ export default function useRelayBroadcast({ channelId, userId, userName }) {
     recorder.ondataavailable = (event) => {
       if (!event.data || event.data.size === 0) return;
       fullChunksRef.current.push(event.data);
-      queueChunkUpload(event.data, isStoppingRef.current);
+      const cumulative = new Blob(fullChunksRef.current, { type: mimeRef.current });
+      queueChunkUpload(cumulative, isStoppingRef.current);
     };
 
     recorderRef.current = recorder;

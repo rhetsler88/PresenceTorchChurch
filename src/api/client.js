@@ -209,18 +209,28 @@ function createEntityApi(collectionName) {
     },
 
     subscribe(callback) {
-      const q = query(
-        collection(db, collectionName),
-        orderBy("created_date", "desc")
-      );
-      return onSnapshot(q, (snapshot) => {
+      const emitChanges = (snapshot) => {
         snapshot.docChanges().forEach((change) => {
           callback({
             type: CHANGE_TYPE_MAP[change.type] || change.type,
             data: docToObject(change.doc),
           });
         });
-      });
+      };
+
+      const sortedQuery = query(
+        collection(db, collectionName),
+        orderBy("created_date", "desc")
+      );
+
+      return onSnapshot(
+        sortedQuery,
+        emitChanges,
+        (err) => {
+          console.warn(`Sorted subscribe failed for ${collectionName}:`, err);
+          onSnapshot(collection(db, collectionName), emitChanges);
+        }
+      );
     },
   };
 }

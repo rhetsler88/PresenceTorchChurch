@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { api } from "@/api/client";
-import { playAudioUrl } from "@/lib/audioPlayer";
+import { playAudioTailFromUrl } from "@/lib/audioPlayer";
 
 const IDLE_TIMEOUT_MS = 8000;
 const STALL_TIMEOUT_MS = 2500;
@@ -88,6 +88,7 @@ export default function useRelayReceiver({ channelId, userId }) {
     }
 
     q.playing = true;
+    const startAt = q.playedDuration || 0;
 
     const advance = () => {
       if (!queuesRef.current[bId]) return;
@@ -103,7 +104,13 @@ export default function useRelayReceiver({ channelId, userId }) {
       playNext(bId);
     };
 
-    playAudioUrl(url, { onEnded: advance, onError: advance }).catch(advance);
+    playAudioTailFromUrl(url, startAt, { onEnded: advance, onError: advance })
+      .then(({ totalDuration }) => {
+        if (queuesRef.current[bId] && totalDuration != null) {
+          queuesRef.current[bId].playedDuration = totalDuration;
+        }
+      })
+      .catch(advance);
   }, [finishQueue, scheduleStallRecovery]);
 
   playNextRef.current = playNext;
@@ -129,6 +136,7 @@ export default function useRelayReceiver({ channelId, userId }) {
           finalReceived: false,
           finalSeq: null,
           playing: false,
+          playedDuration: 0,
         };
       }
 

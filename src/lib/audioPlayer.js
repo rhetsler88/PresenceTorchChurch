@@ -38,10 +38,17 @@ if (typeof window !== "undefined") {
  * which is already unlocked after first user interaction and bypasses HTML5 autoplay restrictions.
  */
 export async function playAudioUrl(url, { onEnded, onError } = {}) {
+  return playAudioTailFromUrl(url, 0, { onEnded, onError });
+}
+
+/**
+ * Plays audio from `startSeconds` to the end. Used for live relay where each
+ * uploaded chunk is a growing recording rather than a standalone fragment.
+ */
+export async function playAudioTailFromUrl(url, startSeconds = 0, { onEnded, onError } = {}) {
   const ctx = getContext();
   if (ctx.state === "suspended") await ctx.resume();
 
-  // Stop any currently playing audio
   stopAudio();
 
   try {
@@ -49,10 +56,30 @@ export async function playAudioUrl(url, { onEnded, onError } = {}) {
     if (!resolved) throw new Error("Could not resolve audio URL");
     const response = await fetch(resolved);
     const arrayBuffer = await response.arrayBuffer();
-    const audioBuffer = await ctx.decodeAudioData(arrayBuffer);
+    const fullBuffer = await ctx.decodeAudioData(arrayBuffer);
+    const totalDuration = fullBuffer.duration;
+    const startSample = Math.min(
+      Math.max(0, Math.floor(startSeconds * fullBuffer.sampleRate)),
+      Math.max(0, fullBuffer.length - 1)
+    );
+    const tailLength = fullBuffer.length - startSample;
+
+    if (tailLength <= 0) {
+      if (onEnded) onEnded();
+      return { totalDuration };
+    }
+
+    const tailBuffer = ctx.createBuffer(
+      fullBuffer.numberOfChannels,
+      tailLength,
+      fullBuffer.sampleRate
+    );
+    for (let ch = 0; ch < fullBuffer.numberOfChannels; ch++) {
+      tailBuffer.copyToChannel(fullBuffer.getChannelData(ch).subarray(startSample), ch);
+    }
 
     const source = ctx.createBufferSource();
-    source.buffer = audioBuffer;
+    source.buffer = tailBuffer;
     source.connect(ctx.destination);
     currentSource = source;
     currentOnEnded = onEnded;
@@ -65,7 +92,7 @@ export async function playAudioUrl(url, { onEnded, onError } = {}) {
     };
 
     source.start(0);
-    return source;
+    return { totalDuration };
   } catch (e) {
     if (onError) onError(e);
     throw e;

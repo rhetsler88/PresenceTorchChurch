@@ -99,6 +99,19 @@ function DailyCodeEntry({ onVerified, organization }) {
           />
         </div>
 
+        {/* Daily Bible verse */}
+        <div className="bg-primary/5 border border-primary/20 rounded-2xl p-5 mb-4 text-center">
+          <p className="text-[10px] font-bold text-primary uppercase tracking-wider mb-2">
+            Verse of the Day
+          </p>
+          <p className="text-base text-foreground italic leading-relaxed font-medium">
+            "{verse.text}"
+          </p>
+          <p className="text-sm font-bold text-primary mt-3">
+            — {verse.ref}
+          </p>
+        </div>
+
         {/* Organization card */}
         <div className="bg-card border border-border rounded-2xl p-4 mb-4 flex items-center gap-3">
           <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center flex-shrink-0">
@@ -160,19 +173,6 @@ function DailyCodeEntry({ onVerified, organization }) {
           <LogOut className="w-4 h-4" />
           Switch Account
         </button>
-
-        {/* Daily Bible verse */}
-        <div className="bg-primary/5 border border-primary/20 rounded-2xl p-5 mt-4 text-center">
-          <p className="text-[10px] font-bold text-primary uppercase tracking-wider mb-2">
-            Verse of the Day
-          </p>
-          <p className="text-base text-foreground italic leading-relaxed font-medium">
-            "{verse.text}"
-          </p>
-          <p className="text-sm font-bold text-primary mt-3">
-            — {verse.ref}
-          </p>
-        </div>
       </div>
     </div>
   );

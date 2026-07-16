@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { api } from "@/api/client";
+import { playRelayAudioTail, stopRelayAudio } from "@/lib/audioPlayer";
 
 const IDLE_TIMEOUT_MS = 15000;
 
@@ -19,9 +20,7 @@ export default function useMonitorRelayReceiver({ userId, channelIds }) {
   channelIdsRef.current = new Set(channelIds);
 
   const clearReceiving = useCallback(() => {
-    Object.values(queuesRef.current).forEach((q) => {
-      if (q.currentAudio) { q.currentAudio.pause(); q.currentAudio = null; }
-    });
+    stopRelayAudio();
     queuesRef.current = {};
     isReceivingRef.current = false;
     setIsReceiving(false);
@@ -38,7 +37,7 @@ export default function useMonitorRelayReceiver({ userId, channelIds }) {
 
   const playNext = useCallback((bId) => {
     const q = queuesRef.current[bId];
-    if (!q || q.currentAudio) return;
+    if (!q || q.playing) return;
 
     const url = q.chunks[q.nextSeq];
     if (!url) {
@@ -49,14 +48,16 @@ export default function useMonitorRelayReceiver({ userId, channelIds }) {
       return;
     }
 
-    const audio = new Audio(url);
-    q.currentAudio = audio;
+    q.playing = true;
+    const startSeconds = q.playedDuration || 0;
 
-    const advance = () => {
-      q.currentAudio = null;
-      delete q.chunks[q.nextSeq];
-      q.nextSeq++;
-      if (q.finalReceived && q.nextSeq > q.finalSeq) {
+    const advanceAfterPlay = () => {
+      if (!queuesRef.current[bId]) return;
+      const queue = queuesRef.current[bId];
+      queue.playing = false;
+      delete queue.chunks[queue.nextSeq];
+      queue.nextSeq += 1;
+      if (queue.finalReceived && queue.nextSeq > queue.finalSeq) {
         delete queuesRef.current[bId];
         if (Object.keys(queuesRef.current).length === 0) clearReceiving();
       } else {
@@ -64,9 +65,15 @@ export default function useMonitorRelayReceiver({ userId, channelIds }) {
       }
     };
 
-    audio.onended = advance;
-    audio.onerror = advance;
-    audio.play().catch(advance);
+    playRelayAudioTail(url, startSeconds)
+      .then(({ totalDuration }) => {
+        if (!queuesRef.current[bId]) return;
+        if (totalDuration != null) {
+          queuesRef.current[bId].playedDuration = totalDuration;
+        }
+        advanceAfterPlay();
+      })
+      .catch(advanceAfterPlay);
   }, [clearReceiving]);
 
   useEffect(() => {
@@ -79,7 +86,7 @@ export default function useMonitorRelayReceiver({ userId, channelIds }) {
 
       const chunk = event.data;
       const bId = chunk.broadcast_id;
-      if (!bId) return;
+      if (!bId || !chunk.audio_url) return;
 
       heardBroadcastsRef.current.add(bId);
 
@@ -89,7 +96,8 @@ export default function useMonitorRelayReceiver({ userId, channelIds }) {
           chunks: {},
           finalReceived: false,
           finalSeq: null,
-          currentAudio: null,
+          playing: false,
+          playedDuration: 0,
         };
       }
 

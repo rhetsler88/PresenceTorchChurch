@@ -2,11 +2,16 @@
   {
     "origin": [
       "https://presencetorchchurch.vercel.app",
+      "https://presencetorchchurch-admin.vercel.app",
+      "https://*.vercel.app",
+      "https://church.presencetorch.app",
       "http://localhost:5173",
       "http://localhost:4173",
-      "http://localhost:3000"
+      "http://localhost:3000",
+      "capacitor://localhost",
+      "http://localhost"
     ],
-    "method": ["GET", "HEAD", "PUT", "POST", "DELETE"],
+    "method": ["GET", "HEAD", "PUT", "POST", "DELETE", "OPTIONS"],
     "responseHeader": [
       "Content-Type",
       "Authorization",

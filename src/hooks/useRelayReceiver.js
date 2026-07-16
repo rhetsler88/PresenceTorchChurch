@@ -89,8 +89,9 @@ export default function useRelayReceiver({ channelId, userId }) {
     }
 
     q.playing = true;
+    const startSeconds = q.playedDuration || 0;
 
-    const advance = () => {
+    const advanceAfterPlay = () => {
       if (!queuesRef.current[bId]) return;
       const queue = queuesRef.current[bId];
       queue.playing = false;
@@ -104,7 +105,15 @@ export default function useRelayReceiver({ channelId, userId }) {
       playNext(bId);
     };
 
-    playRelayAudioTail(url, 0, { onEnded: advance, onError: advance }).catch(advance);
+    playRelayAudioTail(url, startSeconds)
+      .then(({ totalDuration }) => {
+        if (!queuesRef.current[bId]) return;
+        if (totalDuration != null) {
+          queuesRef.current[bId].playedDuration = totalDuration;
+        }
+        advanceAfterPlay();
+      })
+      .catch(advanceAfterPlay);
   }, [finishQueue, scheduleStallRecovery]);
 
   playNextRef.current = playNext;
@@ -114,7 +123,6 @@ export default function useRelayReceiver({ channelId, userId }) {
 
     const unsub = api.entities.AudioChunk.subscribe((event) => {
       if (event.type !== "create") return;
-      if (event.data?.channel_id !== channelId) return;
       if (event.data?.sender_id === userId) return;
 
       const chunk = event.data;
@@ -133,6 +141,7 @@ export default function useRelayReceiver({ channelId, userId }) {
           finalReceived: false,
           finalSeq: null,
           playing: false,
+          playedDuration: 0,
         };
       }
 
@@ -150,7 +159,7 @@ export default function useRelayReceiver({ channelId, userId }) {
       }
       resetIdleTimer();
       playNext(bId);
-    });
+    }, { channel_id: channelId });
 
     return () => {
       unsub();

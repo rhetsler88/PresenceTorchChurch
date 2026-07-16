@@ -11,6 +11,7 @@ import useRelayReceiver from "../hooks/useRelayReceiver";
 import useWiredPTT from "../hooks/useWiredPTT";
 import { useBluetoothPTTContext } from "../components/ptt/BluetoothPTTContext";
 import { playClearTone, playBusyTone } from "@/lib/pttTones";
+import { cleanupStalePTTSignals } from "@/lib/pttSignals";
 import { playAudioUrl, stopAudio } from "@/lib/audioPlayer";
 import { deviceDayKey } from "@/lib/deviceDate";
 import { getDisplayName, canAccessChannel, isPlatformAdmin } from "@/lib/userUtils";
@@ -171,10 +172,10 @@ export default function Talk() {
 
   // Subscribe to PTT signals — broadcast beeps to all channel members
   useEffect(() => {
-    if (!activeChannelId || !user) return;
+    if (!activeChannelId || !user?.id) return;
     const unsub = api.entities.PTTSignal.subscribe((event) => {
       if (event.data?.channel_id !== activeChannelId) return;
-      if (event.data?.sender_id === user.id) return; // Ignore my own signals
+      if (event.data?.sender_id === user.id) return;
 
       if (event.type === "create") {
         playClearTone();
@@ -182,7 +183,7 @@ export default function Talk() {
         if (channelBusyTimeoutRef.current) clearTimeout(channelBusyTimeoutRef.current);
         channelBusyTimeoutRef.current = setTimeout(() => {
           setIsChannelBusy(false);
-        }, 30000);
+        }, 15000);
       } else if (event.type === "delete") {
         if (channelBusyTimeoutRef.current) {
           clearTimeout(channelBusyTimeoutRef.current);
@@ -190,36 +191,39 @@ export default function Talk() {
         }
         setIsChannelBusy(false);
       }
-    });
+    }, { channel_id: activeChannelId });
     return unsub;
-  }, [activeChannelId, user]);
+  }, [activeChannelId, user?.id]);
 
   // Check for existing active signals and clean up stale ones when joining a channel
   useEffect(() => {
-    if (!activeChannelId || !user) return;
+    if (!activeChannelId || !user?.id) return;
     setIsChannelBusy(false);
-    api.entities.PTTSignal.filter({ channel_id: activeChannelId }, "-created_date", 5)
-      .then(signals => {
-        const now = Date.now();
-        signals.forEach(s => {
-          const age = now - new Date(s.created_date).getTime();
-          if (age > 15000) {
-            api.entities.PTTSignal.delete(s.id).catch(() => {});
-          } else if (s.sender_id !== user.id) {
-            setIsChannelBusy(true);
-          }
-        });
+    cleanupStalePTTSignals({ channelId: activeChannelId, excludeSenderId: user.id })
+      .then((active) => {
+        if (active.length > 0) {
+          setIsChannelBusy(true);
+          playClearTone();
+        }
       })
       .catch(() => {});
-  }, [activeChannelId, user]);
+  }, [activeChannelId, user?.id]);
 
-  // Clean up PTT signal on channel change or unmount
+  // Clean up PTT signal on channel change, tab close, or unmount
   useEffect(() => {
+    const deleteOwnSignal = () => {
+      if (!pttSignalRef.current) return;
+      const signalId = pttSignalRef.current;
+      pttSignalRef.current = null;
+      api.entities.PTTSignal.delete(signalId).catch(() => {});
+    };
+
+    const handlePageExit = () => deleteOwnSignal();
+    window.addEventListener("pagehide", handlePageExit);
+
     return () => {
-      if (pttSignalRef.current) {
-        api.entities.PTTSignal.delete(pttSignalRef.current).catch(() => {});
-        pttSignalRef.current = null;
-      }
+      window.removeEventListener("pagehide", handlePageExit);
+      deleteOwnSignal();
       if (channelBusyTimeoutRef.current) {
         clearTimeout(channelBusyTimeoutRef.current);
         channelBusyTimeoutRef.current = null;
@@ -322,29 +326,39 @@ export default function Talk() {
   };
 
   const handlePTTStart = useCallback(async () => {
-    if (!activeChannel || isPTTPressed) return;
+    if (!activeChannel || isPTTPressed || !user?.id) return;
     if (isReceiving || isLiveReceiving || isChannelBusy) {
       playBusyTone();
       return;
     }
     playClearTone();
     setIsPTTPressed(true);
-    const started = await startRecording();
-    if (!started) {
-      setIsPTTPressed(false);
-      toast.error("Microphone access denied");
-      return;
-    }
-    // Broadcast signal so other channel members hear the beeps
+
+    // Signal other members immediately — before mic permission prompt
+    let signalId = null;
     try {
       const signal = await api.entities.PTTSignal.create({
         channel_id: activeChannelId,
-        sender_id: user?.id || "",
+        sender_id: user.id,
         sender_name: getDisplayName(user),
       });
-      pttSignalRef.current = signal.id;
+      signalId = signal.id;
+      pttSignalRef.current = signalId;
     } catch (e) {
-      // Non-critical — recording still works
+      console.error("PTT signal create failed:", e);
+      setIsPTTPressed(false);
+      toast.error("Could not claim channel — try again");
+      return;
+    }
+
+    const started = await startRecording();
+    if (!started) {
+      setIsPTTPressed(false);
+      if (signalId) {
+        api.entities.PTTSignal.delete(signalId).catch(() => {});
+        pttSignalRef.current = null;
+      }
+      toast.error("Microphone access denied");
     }
   }, [activeChannel, isPTTPressed, isReceiving, isLiveReceiving, isChannelBusy, startRecording, activeChannelId, user]);
 

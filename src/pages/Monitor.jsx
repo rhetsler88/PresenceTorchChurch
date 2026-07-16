@@ -12,6 +12,7 @@ import { etzTime } from "@/lib/etz";
 import { deviceDayKey, deviceDayLabel } from "@/lib/deviceDate";
 import { getDisplayName } from "@/lib/userUtils";
 import { playClearTone, playBusyTone } from "@/lib/pttTones";
+import { cleanupStalePTTSignals } from "@/lib/pttSignals";
 import { resolveAudioUrl } from "@/lib/secureAudio";
 import useRelayBroadcast from "../hooks/useRelayBroadcast";
 import useMonitorRelayReceiver from "../hooks/useMonitorRelayReceiver";
@@ -134,6 +135,7 @@ export default function Monitor() {
   const [broadcastAll, setBroadcastAll] = useState(false);
   const [isPTTPressed, setIsPTTPressed] = useState(false);
   const [isChannelBusy, setIsChannelBusy] = useState(false);
+  const [busyChannelIds, setBusyChannelIds] = useState(() => new Set());
 
   const audioRef = useRef(null);
   const autoPlayQueueRef = useRef([]);
@@ -206,54 +208,66 @@ export default function Monitor() {
 
   // Subscribe to PTT signals across all channels � busy tones + channel busy state
   useEffect(() => {
-    if (!user) return;
+    if (!user?.id) return;
+    const channelIdSet = new Set(channels.map((c) => c.id));
+
     const unsub = api.entities.PTTSignal.subscribe((event) => {
-      if (!channels.find(c => c.id === event.data?.channel_id)) return;
+      if (!channelIdSet.has(event.data?.channel_id)) return;
       if (event.data?.sender_id === user.id) return;
 
+      const channelId = event.data.channel_id;
       if (event.type === "create") {
         playClearTone();
+        setBusyChannelIds((prev) => new Set(prev).add(channelId));
         setIsChannelBusy(true);
         if (channelBusyTimeoutRef.current) clearTimeout(channelBusyTimeoutRef.current);
         channelBusyTimeoutRef.current = setTimeout(() => {
+          setBusyChannelIds(new Set());
           setIsChannelBusy(false);
-        }, 30000);
+        }, 15000);
       } else if (event.type === "delete") {
+        setBusyChannelIds((prev) => {
+          const next = new Set(prev);
+          next.delete(channelId);
+          setIsChannelBusy(next.size > 0);
+          return next;
+        });
         if (channelBusyTimeoutRef.current) {
           clearTimeout(channelBusyTimeoutRef.current);
           channelBusyTimeoutRef.current = null;
         }
-        setIsChannelBusy(false);
       }
     });
     return unsub;
-  }, [channels, user]);
+  }, [channels, user?.id]);
 
   // Clean up stale PTT signals on mount
   useEffect(() => {
-    if (!user) return;
-    api.entities.PTTSignal.list("-created_date", 20)
-      .then(signals => {
-        const now = Date.now();
-        signals.forEach(s => {
-          const age = now - new Date(s.created_date).getTime();
-          if (age > 15000) {
-            api.entities.PTTSignal.delete(s.id).catch(() => {});
-          } else if (s.sender_id !== user.id) {
-            setIsChannelBusy(true);
-          }
-        });
+    if (!user?.id) return;
+    cleanupStalePTTSignals({ excludeSenderId: user.id })
+      .then((active) => {
+        if (active.length > 0) {
+          setBusyChannelIds(new Set(active.map((s) => s.channel_id)));
+          setIsChannelBusy(true);
+        }
       })
       .catch(() => {});
-  }, [user]);
+  }, [user?.id]);
 
   // Clean up PTT signals on unmount
   useEffect(() => {
-    return () => {
-      pttSignalRefs.current.forEach(id => {
-        api.entities.PTTSignal.delete(id).catch(() => {});
-      });
+    const deleteOwnSignals = () => {
+      const ids = [...pttSignalRefs.current];
       pttSignalRefs.current = [];
+      ids.forEach((id) => api.entities.PTTSignal.delete(id).catch(() => {}));
+    };
+
+    const handlePageExit = () => deleteOwnSignals();
+    window.addEventListener("pagehide", handlePageExit);
+
+    return () => {
+      window.removeEventListener("pagehide", handlePageExit);
+      deleteOwnSignals();
       if (channelBusyTimeoutRef.current) {
         clearTimeout(channelBusyTimeoutRef.current);
       }
@@ -466,33 +480,48 @@ export default function Monitor() {
     },
   });
 
+  const isTargetChannelBusy = broadcastAll
+    ? busyChannelIds.size > 0
+    : Boolean(targetChannelId && busyChannelIds.has(targetChannelId));
+
   const handlePTTStart = useCallback(async () => {
-    if (isPTTPressed) return;
-    if (isLiveReceiving || isChannelBusy || isPlayingRef.current) {
+    if (isPTTPressed || !user?.id) return;
+    if (isLiveReceiving || isTargetChannelBusy || isPlayingRef.current) {
       playBusyTone();
       return;
     }
     playClearTone();
     setIsPTTPressed(true);
-    startRecording();
 
-    // Create PTT signals so channel members hear the beeps
     const targetIds = broadcastAllRef.current
-      ? channels.map(c => c.id)
+      ? channels.map((c) => c.id)
       : [targetChannelIdRef.current].filter(Boolean);
+
     try {
-      const signals = await Promise.all(targetIds.map(cid =>
+      const signals = await Promise.all(targetIds.map((cid) =>
         api.entities.PTTSignal.create({
           channel_id: cid,
-          sender_id: user?.id || "",
+          sender_id: user.id,
           sender_name: getDisplayName(user),
         })
       ));
-      pttSignalRefs.current = signals.map(s => s.id);
+      pttSignalRefs.current = signals.map((s) => s.id);
     } catch (e) {
-      // Non-critical � recording still works
+      console.error("PTT signal create failed:", e);
+      setIsPTTPressed(false);
+      toast.error("Could not claim channel — try again");
+      return;
     }
-  }, [isPTTPressed, isLiveReceiving, isChannelBusy, startRecording, channels, user]);
+
+    const started = await startRecording();
+    if (!started) {
+      setIsPTTPressed(false);
+      const ids = [...pttSignalRefs.current];
+      pttSignalRefs.current = [];
+      ids.forEach((id) => api.entities.PTTSignal.delete(id).catch(() => {}));
+      toast.error("Microphone access denied");
+    }
+  }, [isPTTPressed, isLiveReceiving, isTargetChannelBusy, startRecording, channels, user]);
 
   const handlePTTStop = useCallback(() => {
     if (!isPTTPressed) return;
@@ -509,7 +538,7 @@ export default function Monitor() {
 
   const totalMessages = allMessages.length;
   const activeChannelCount = Object.values(messagesByChannel).filter(msgs => msgs.length > 0).length;
-  const showReceiving = (isLiveReceiving || !!playingId || isChannelBusy) && !isPTTPressed;
+  const showReceiving = (isLiveReceiving || !!playingId) && !isPTTPressed;
 
   return (
     <div className="min-h-screen safe-top">
@@ -642,7 +671,7 @@ export default function Monitor() {
           onBroadcastAllChange={setBroadcastAll}
           isPressed={isPTTPressed}
           isReceiving={showReceiving}
-          isChannelBusy={isChannelBusy}
+          isChannelBusy={isTargetChannelBusy && !isPTTPressed && !showReceiving}
           isSending={sendMutation.isPending}
           onStart={handlePTTStart}
           onStop={handlePTTStop}

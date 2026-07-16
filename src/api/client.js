@@ -212,34 +212,60 @@ function createEntityApi(collectionName) {
       await batch.commit();
     },
 
-    subscribe(callback) {
+    subscribe(callback, filters = null) {
+      let activeUnsub = () => {};
       let isInitial = true;
+
+      const matchesFilters = (data) => {
+        if (!filters) return true;
+        for (const [key, value] of Object.entries(filters)) {
+          if (value && typeof value === "object" && "$lt" in value) {
+            if (!(data[key] < value.$lt)) return false;
+          } else if (data[key] !== value) {
+            return false;
+          }
+        }
+        return true;
+      };
+
       const emitChanges = (snapshot) => {
         if (isInitial) {
           isInitial = false;
           return;
         }
         snapshot.docChanges().forEach((change) => {
+          const data = docToObject(change.doc);
+          if (!matchesFilters(data)) return;
           callback({
             type: CHANGE_TYPE_MAP[change.type] || change.type,
-            data: docToObject(change.doc),
+            data,
           });
         });
       };
 
-      const sortedQuery = query(
-        collection(db, collectionName),
-        orderBy("created_date", "desc")
-      );
+      const attach = (q) => {
+        activeUnsub();
+        activeUnsub = onSnapshot(
+          q,
+          emitChanges,
+          (err) => {
+            console.warn(`Subscribe failed for ${collectionName}:`, err);
+            attach(collection(db, collectionName));
+          }
+        );
+      };
 
-      return onSnapshot(
-        sortedQuery,
-        emitChanges,
-        (err) => {
-          console.warn(`Sorted subscribe failed for ${collectionName}:`, err);
-          onSnapshot(collection(db, collectionName), emitChanges);
-        }
-      );
+      try {
+        const q = filters
+          ? buildQuery(collectionName, filters, "-created_date")
+          : query(collection(db, collectionName), orderBy("created_date", "desc"));
+        attach(q);
+      } catch (err) {
+        console.warn(`Subscribe query failed for ${collectionName}:`, err);
+        attach(collection(db, collectionName));
+      }
+
+      return () => activeUnsub();
     },
   };
 }

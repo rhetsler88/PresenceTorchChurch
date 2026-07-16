@@ -13,7 +13,8 @@
     "seed": "node scripts/seed-firestore.mjs",
     "dev:admin": "npm run dev --prefix admin",
     "build:admin": "npm run build --prefix admin",
-    "setup:domains": "node scripts/add-firebase-domains.mjs"
+    "setup:domains": "node scripts/add-firebase-domains.mjs",
+    "setup:email-auth": "node scripts/enable-email-auth.mjs"
   },
   "dependencies": {
     "@hello-pangea/dnd": "^17.0.0",

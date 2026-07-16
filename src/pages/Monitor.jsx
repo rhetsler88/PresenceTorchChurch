@@ -212,16 +212,20 @@ export default function Monitor() {
       if (event.data?.sender_id === user.id) return;
 
       if (event.type === "create") {
-        playClearTone();
+        playBusyTone();
         setIsChannelBusy(true);
         if (channelBusyTimeoutRef.current) clearTimeout(channelBusyTimeoutRef.current);
-        channelBusyTimeoutRef.current = setTimeout(() => setIsChannelBusy(false), 15000);
+        channelBusyTimeoutRef.current = setTimeout(() => {
+          setIsChannelBusy(false);
+          playClearTone();
+        }, 30000);
       } else if (event.type === "delete") {
         if (channelBusyTimeoutRef.current) {
           clearTimeout(channelBusyTimeoutRef.current);
           channelBusyTimeoutRef.current = null;
         }
         setIsChannelBusy(false);
+        playClearTone();
       }
     });
     return unsub;
@@ -400,14 +404,6 @@ export default function Monitor() {
     mutationFn: async () => {
       const result = await stopRecording();
 
-      // Always clean up PTT signals so others know we're done
-      await Promise.all(
-        pttSignalRefs.current.map(id =>
-          api.entities.PTTSignal.delete(id).catch(() => {})
-        )
-      );
-      pttSignalRefs.current = [];
-
       if (!result) return null;
       const { file_url, duration, broadcast_id } = result;
 
@@ -494,6 +490,14 @@ export default function Monitor() {
   const handlePTTStop = useCallback(() => {
     if (!isPTTPressed) return;
     setIsPTTPressed(false);
+
+    const signalIds = [...pttSignalRefs.current];
+    pttSignalRefs.current = [];
+    signalIds.forEach((id) => {
+      api.entities.PTTSignal.delete(id).catch(() => {});
+    });
+    playClearTone();
+
     sendMutation.mutate();
   }, [isPTTPressed, sendMutation]);
 

@@ -177,16 +177,20 @@ export default function Talk() {
       if (event.data?.sender_id === user.id) return; // Ignore my own signals
 
       if (event.type === "create") {
-        playClearTone();
+        playBusyTone();
         setIsChannelBusy(true);
         if (channelBusyTimeoutRef.current) clearTimeout(channelBusyTimeoutRef.current);
-        channelBusyTimeoutRef.current = setTimeout(() => setIsChannelBusy(false), 15000);
+        channelBusyTimeoutRef.current = setTimeout(() => {
+          setIsChannelBusy(false);
+          playClearTone();
+        }, 30000);
       } else if (event.type === "delete") {
         if (channelBusyTimeoutRef.current) {
           clearTimeout(channelBusyTimeoutRef.current);
           channelBusyTimeoutRef.current = null;
         }
         setIsChannelBusy(false);
+        playClearTone();
       }
     });
     return unsub;
@@ -243,12 +247,6 @@ export default function Talk() {
   const sendMutation = useMutation({
     mutationFn: async () => {
       const result = await stopRecording();
-
-      // Always clean up PTT signal so other users know we're done
-      if (pttSignalRef.current) {
-        try { await api.entities.PTTSignal.delete(pttSignalRef.current); } catch (e) {}
-        pttSignalRef.current = null;
-      }
 
       if (!result) {
         toast.error("Recording failed — message not sent");
@@ -351,6 +349,14 @@ export default function Talk() {
   const handlePTTStop = useCallback(() => {
     if (!isPTTPressed) return;
     setIsPTTPressed(false);
+
+    const signalId = pttSignalRef.current;
+    pttSignalRef.current = null;
+    if (signalId) {
+      api.entities.PTTSignal.delete(signalId).catch(() => {});
+    }
+    playClearTone();
+
     sendMutation.mutate();
   }, [isPTTPressed, sendMutation]);
 

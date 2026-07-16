@@ -209,7 +209,12 @@ function createEntityApi(collectionName) {
     },
 
     subscribe(callback) {
+      let isInitial = true;
       const emitChanges = (snapshot) => {
+        if (isInitial) {
+          isInitial = false;
+          return;
+        }
         snapshot.docChanges().forEach((change) => {
           callback({
             type: CHANGE_TYPE_MAP[change.type] || change.type,

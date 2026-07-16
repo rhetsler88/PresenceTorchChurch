@@ -89,7 +89,6 @@ export default function useRelayReceiver({ channelId, userId }) {
     }
 
     q.playing = true;
-    const startAt = q.playedDuration || 0;
 
     const advance = () => {
       if (!queuesRef.current[bId]) return;
@@ -105,13 +104,7 @@ export default function useRelayReceiver({ channelId, userId }) {
       playNext(bId);
     };
 
-    playRelayAudioTail(url, startAt, { onEnded: advance, onError: advance })
-      .then(({ totalDuration }) => {
-        if (queuesRef.current[bId] && totalDuration != null) {
-          queuesRef.current[bId].playedDuration = totalDuration;
-        }
-      })
-      .catch(advance);
+    playRelayAudioTail(url, 0, { onEnded: advance, onError: advance }).catch(advance);
   }, [finishQueue, scheduleStallRecovery]);
 
   playNextRef.current = playNext;
@@ -128,6 +121,9 @@ export default function useRelayReceiver({ channelId, userId }) {
       const bId = chunk.broadcast_id;
       if (!bId || !chunk.audio_url) return;
 
+      const createdAt = chunk.created_date ? new Date(chunk.created_date).getTime() : Date.now();
+      if (Date.now() - createdAt > 20000) return;
+
       heardBroadcastsRef.current.add(bId);
 
       if (!queuesRef.current[bId]) {
@@ -137,7 +133,6 @@ export default function useRelayReceiver({ channelId, userId }) {
           finalReceived: false,
           finalSeq: null,
           playing: false,
-          playedDuration: 0,
         };
       }
 

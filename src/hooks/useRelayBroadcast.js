@@ -33,6 +33,7 @@ export default function useRelayBroadcast({ channelId, userId, userName }) {
   const startTimeRef = useRef(0);
   const activeRef = useRef(false);
   const isStoppingRef = useRef(false);
+  const initSegmentRef = useRef(null);
   const pendingUploadsRef = useRef([]);
 
   const uploadChunk = useCallback(async (blob, seq, isFinal) => {
@@ -90,6 +91,7 @@ export default function useRelayBroadcast({ channelId, userId, userName }) {
     broadcastIdRef.current = crypto.randomUUID();
     sequenceRef.current = 0;
     fullChunksRef.current = [];
+    initSegmentRef.current = null;
     pendingUploadsRef.current = [];
     startTimeRef.current = Date.now();
     activeRef.current = true;
@@ -101,8 +103,15 @@ export default function useRelayBroadcast({ channelId, userId, userName }) {
     recorder.ondataavailable = (event) => {
       if (!event.data || event.data.size === 0) return;
       fullChunksRef.current.push(event.data);
-      const cumulative = new Blob(fullChunksRef.current, { type: mimeRef.current });
-      queueChunkUpload(cumulative, isStoppingRef.current);
+
+      let uploadBlob;
+      if (!initSegmentRef.current) {
+        initSegmentRef.current = event.data;
+        uploadBlob = event.data;
+      } else {
+        uploadBlob = new Blob([initSegmentRef.current, event.data], { type: mimeRef.current });
+      }
+      queueChunkUpload(uploadBlob, isStoppingRef.current);
     };
 
     recorderRef.current = recorder;
@@ -126,7 +135,8 @@ export default function useRelayBroadcast({ channelId, userId, userName }) {
       isStoppingRef.current = false;
     }
 
-    await Promise.allSettled(pendingUploadsRef.current);
+    // Don't block channel release on relay chunk uploads finishing
+    void Promise.allSettled(pendingUploadsRef.current);
     pendingUploadsRef.current = [];
 
     if (streamRef.current) {

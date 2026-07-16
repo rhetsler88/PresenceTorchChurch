@@ -146,15 +146,17 @@ function createEntityApi(collectionName) {
 
     async filter(filters, sortField, limitCount) {
       let items = [];
+      let queryFailed = false;
       try {
         const q = buildQuery(collectionName, filters, sortField, limitCount);
         const snap = await getDocs(q);
         items = snap.docs.map(docToObject);
       } catch (err) {
+        queryFailed = true;
         console.warn(`Filtered query failed for ${collectionName}:`, err);
       }
 
-      if (items.length === 0) {
+      if (queryFailed) {
         const snap = await getDocs(collection(db, collectionName));
         items = snap.docs.map(docToObject).filter((item) => {
           for (const [key, value] of Object.entries(filters)) {

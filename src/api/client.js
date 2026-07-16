@@ -28,12 +28,14 @@ import {
 } from "firebase/auth";
 import { Capacitor } from "@capacitor/core";
 import { FirebaseAuthentication } from "@capacitor-firebase/authentication";
-import { auth, db } from "@/lib/firebase";
+import { getFunctions, httpsCallable } from "firebase/functions";
+import { auth, db, app, storage } from "@/lib/firebase";
 import { uploadPublicAudio, uploadPrivateAudio } from "@/api/storage";
 import { getDownloadURL, ref } from "firebase/storage";
-import { storage } from "@/lib/firebase";
 import seedData from "../../scripts/seed-data.json";
 import { isDefaultSetupComplete } from "@/lib/defaultSeed";
+
+const functions = getFunctions(app, "us-east5");
 
 export function formatAuthError(err) {
   switch (err?.code) {
@@ -435,14 +437,12 @@ export const functionsApi = {
     }
 
     if (name === "transcribeAudio") {
-      const { message_id } = params;
-      if (message_id) {
-        await updateDoc(doc(db, "voiceMessages", message_id), {
-          transcript: "[Transcription unavailable]",
-          is_transcribed: true,
-        });
-      }
-      return { transcript: "[Transcription unavailable]" };
+      const callable = httpsCallable(functions, "transcribeAudio");
+      const result = await callable({
+        message_id: params.message_id,
+        audio_url: params.audio_url,
+      });
+      return result.data;
     }
 
     throw new Error(`Unknown function: ${name}`);

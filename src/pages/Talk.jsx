@@ -277,6 +277,7 @@ export default function Talk() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["messages", activeChannelId] });
+      queryClient.invalidateQueries({ queryKey: ["all-messages"] });
     },
   });
 
@@ -297,16 +298,18 @@ export default function Talk() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["messages", activeChannelId] });
+      queryClient.invalidateQueries({ queryKey: ["all-messages"] });
     },
   });
 
   const transcribeMessage = async (msgId, audioUrl) => {
     try {
-      const resp = await api.functions.invoke("transcribeAudio", {
+      await api.functions.invoke("transcribeAudio", {
         audio_url: audioUrl,
         message_id: msgId,
       });
       queryClient.invalidateQueries({ queryKey: ["messages", activeChannelId] });
+      queryClient.invalidateQueries({ queryKey: ["all-messages"] });
     } catch (err) {
       console.error("Transcription failed:", err);
       await api.entities.VoiceMessage.update(msgId, {
@@ -314,6 +317,7 @@ export default function Talk() {
         is_transcribed: true,
       });
       queryClient.invalidateQueries({ queryKey: ["messages", activeChannelId] });
+      queryClient.invalidateQueries({ queryKey: ["all-messages"] });
     }
   };
 

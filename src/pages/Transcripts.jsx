@@ -23,8 +23,20 @@ export default function Transcripts() {
 
   const { data: messages = [], isLoading } = useQuery({
     queryKey: ["all-messages"],
-    queryFn: () => api.entities.VoiceMessage.filter({ is_transcribed: true }, "-created_date", 200),
+    queryFn: async () => {
+      const items = await api.entities.VoiceMessage.list("-created_date", 300);
+      return items.filter((m) => m.audio_url || m.text_content || m.transcript);
+    },
   });
+
+  useEffect(() => {
+    const unsub = api.entities.VoiceMessage.subscribe((event) => {
+      if (event.type === "create" || event.type === "update") {
+        queryClient.invalidateQueries({ queryKey: ["all-messages"] });
+      }
+    });
+    return unsub;
+  }, [queryClient]);
 
   const { data: channels = [] } = useQuery({
     queryKey: ["channels"],
@@ -115,7 +127,7 @@ export default function Transcripts() {
         <div className="flex items-center justify-between mb-5">
           <div>
             <h1 className="text-xl font-bold text-foreground">Transcript Log</h1>
-            <p className="text-xs text-muted-foreground mt-0.5">{messages.length} transcriptions</p>
+            <p className="text-xs text-muted-foreground mt-0.5">{messages.length} recordings & transcripts</p>
           </div>
           {canExport && (
             <Button

@@ -437,6 +437,7 @@ export default function Monitor() {
       }
 
       queryClient.invalidateQueries({ queryKey: ["all-channel-messages"] });
+      queryClient.invalidateQueries({ queryKey: ["all-messages"] });
 
       // Transcribe each message in the background
       created.forEach(msg => {
@@ -445,7 +446,15 @@ export default function Monitor() {
           message_id: msg.id,
         }).then(() => {
           queryClient.invalidateQueries({ queryKey: ["all-channel-messages"] });
-        }).catch(() => {});
+          queryClient.invalidateQueries({ queryKey: ["all-messages"] });
+        }).catch(async () => {
+          await api.entities.VoiceMessage.update(msg.id, {
+            transcript: "[Transcription unavailable]",
+            is_transcribed: true,
+          });
+          queryClient.invalidateQueries({ queryKey: ["all-channel-messages"] });
+          queryClient.invalidateQueries({ queryKey: ["all-messages"] });
+        });
       });
 
       return isBroadcastAll

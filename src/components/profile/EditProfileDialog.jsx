@@ -10,19 +10,44 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
-import { UserCog } from "lucide-react";
+import { Switch } from "@/components/ui/switch";
+import { UserCog, Fingerprint } from "lucide-react";
 import { api } from "@/api/client";
 import { useAuth } from "@/lib/AuthContext";
 import { toast } from "sonner";
 import { useBluetoothPTTContext } from "@/components/ptt/BluetoothPTTContext";
 import BluetoothPTTControl from "@/components/ptt/BluetoothPTTControl";
+import {
+  clearBiometricCredentials,
+  getBiometricLabel,
+  isBiometricHardwareAvailable,
+  isBiometricPlatform,
+  isBiometricSignInEnabled,
+} from "@/lib/biometricAuth";
 
 export default function EditProfileDialog({ open, onOpenChange }) {
   const { user, checkUserAuth } = useAuth();
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
   const [saving, setSaving] = useState(false);
+  const [biometricEnabled, setBiometricEnabled] = useState(false);
+  const [biometricLabel, setBiometricLabel] = useState("Biometric");
+  const [biometricSupported, setBiometricSupported] = useState(false);
   const bluetooth = useBluetoothPTTContext();
+
+  useEffect(() => {
+    if (!open || !isBiometricPlatform()) return;
+    (async () => {
+      const [enabled, supported, label] = await Promise.all([
+        isBiometricSignInEnabled(),
+        isBiometricHardwareAvailable(),
+        getBiometricLabel(),
+      ]);
+      setBiometricEnabled(enabled);
+      setBiometricSupported(supported);
+      setBiometricLabel(label);
+    })();
+  }, [open]);
 
   useEffect(() => {
     if (open && user) {
@@ -51,6 +76,18 @@ export default function EditProfileDialog({ open, onOpenChange }) {
     } finally {
       setSaving(false);
     }
+  };
+
+  const handleBiometricToggle = async (checked) => {
+    if (!checked) {
+      await clearBiometricCredentials();
+      setBiometricEnabled(false);
+      toast.success(`${biometricLabel} sign-in disabled`);
+      return;
+    }
+    toast.message(`Sign out and sign in with email to enable ${biometricLabel}`, {
+      description: 'Check "Use biometrics for faster sign-in" on the sign-in screen.',
+    });
   };
 
   return (
@@ -83,6 +120,24 @@ export default function EditProfileDialog({ open, onOpenChange }) {
               placeholder="D or Doe"
             />
           </div>
+          {biometricSupported && (
+            <div className="border-t border-border pt-4 space-y-2">
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2">
+                  <Fingerprint className="w-4 h-4 text-primary" />
+                  <Label htmlFor="biometric-sign-in">{biometricLabel} sign-in</Label>
+                </div>
+                <Switch
+                  id="biometric-sign-in"
+                  checked={biometricEnabled}
+                  onCheckedChange={handleBiometricToggle}
+                />
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Sign in quickly with {biometricLabel.toLowerCase()} after your first email sign-in.
+              </p>
+            </div>
+          )}
           {bluetooth?.isSupported && (
             <div className="border-t border-border pt-4 space-y-2">
               <Label>Bluetooth Button</Label>

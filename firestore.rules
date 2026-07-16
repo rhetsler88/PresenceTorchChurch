@@ -105,5 +105,15 @@ service cloud.firestore {
       allow create: if isSignedIn();
       allow read, update, delete: if isPlatformAdmin();
     }
+
+    match /system/{docId} {
+      allow read: if isSignedIn();
+      allow write: if false;
+    }
+
+    match /alertLogs/{logId} {
+      allow read: if isPlatformAdmin();
+      allow write: if false;
+    }
   }
 }

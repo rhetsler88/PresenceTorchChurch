@@ -250,7 +250,10 @@ export default function Talk() {
         pttSignalRef.current = null;
       }
 
-      if (!result) return;
+      if (!result) {
+        toast.error("Recording failed — message not sent");
+        return;
+      }
       const { file_url, duration, broadcast_id } = result;
 
       const now = new Date();
@@ -326,7 +329,12 @@ export default function Talk() {
     }
     playClearTone();
     setIsPTTPressed(true);
-    startRecording();
+    const started = await startRecording();
+    if (!started) {
+      setIsPTTPressed(false);
+      toast.error("Microphone access denied");
+      return;
+    }
     // Broadcast signal so other channel members hear the beeps
     try {
       const signal = await api.entities.PTTSignal.create({
@@ -489,7 +497,8 @@ export default function Talk() {
             onStart={handlePTTStart}
             onStop={handlePTTStop}
             isConnected={!!activeChannel}
-            isReceiving={(isReceiving || isLiveReceiving || isChannelBusy) && !isRecording}
+            isReceiving={(isReceiving || isLiveReceiving) && !isRecording}
+            isChannelBusy={isChannelBusy && !isRecording && !isReceiving && !isLiveReceiving}
           />
           <TextInputBar
             onSend={(text) => sendTextMutation.mutate(text)}

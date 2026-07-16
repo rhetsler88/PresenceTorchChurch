@@ -2,7 +2,7 @@ import React, { useState, useRef, useCallback, useEffect } from "react";
 import { Mic } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
-export default function PTTButton({ isPressed, isConnected, isReceiving, onStart, onStop }) {
+export default function PTTButton({ isPressed, isConnected, isReceiving, isChannelBusy, onStart, onStop }) {
   const [duration, setDuration] = useState(0);
   const timerRef = useRef(null);
 
@@ -99,6 +99,8 @@ export default function PTTButton({ isPressed, isConnected, isReceiving, onStart
               ? "bg-primary text-primary-foreground shadow-primary/40"
               : isReceiving
               ? "bg-green-600 text-white shadow-green-600/30"
+              : isChannelBusy
+              ? "bg-amber-600/90 text-white shadow-amber-600/30"
               : isConnected
               ? "bg-card border-2 border-border text-foreground hover:border-primary/50"
               : "bg-muted text-muted-foreground cursor-not-allowed"
@@ -114,6 +116,8 @@ export default function PTTButton({ isPressed, isConnected, isReceiving, onStart
           ? "Release to send"
           : isReceiving
           ? "Receiving..."
+          : isChannelBusy
+          ? "Channel busy"
           : isConnected
           ? "Hold to talk"
           : "Join a channel"}

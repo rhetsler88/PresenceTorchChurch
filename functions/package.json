@@ -1,0 +1,13 @@
+{
+  "name": "presence-torch-functions",
+  "description": "Cloud Functions for Presence Torch Church",
+  "engines": {
+    "node": "20"
+  },
+  "main": "index.js",
+  "dependencies": {
+    "firebase-admin": "^13.4.0",
+    "firebase-functions": "^6.3.2"
+  },
+  "private": true
+}

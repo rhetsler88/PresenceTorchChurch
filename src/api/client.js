@@ -18,6 +18,7 @@ import {
 import {
   signInWithPopup,
   signInWithRedirect,
+  signInWithCredential,
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
   sendPasswordResetEmail,
@@ -25,6 +26,8 @@ import {
   GoogleAuthProvider,
   signOut,
 } from "firebase/auth";
+import { Capacitor } from "@capacitor/core";
+import { FirebaseAuthentication } from "@capacitor-firebase/authentication";
 import { auth, db } from "@/lib/firebase";
 import { uploadPublicAudio, uploadPrivateAudio } from "@/api/storage";
 import { getDownloadURL, ref } from "firebase/storage";
@@ -140,9 +143,32 @@ function createEntityApi(collectionName) {
     },
 
     async filter(filters, sortField, limitCount) {
-      const q = buildQuery(collectionName, filters, sortField, limitCount);
-      const snap = await getDocs(q);
-      return snap.docs.map(docToObject);
+      let items = [];
+      try {
+        const q = buildQuery(collectionName, filters, sortField, limitCount);
+        const snap = await getDocs(q);
+        items = snap.docs.map(docToObject);
+      } catch (err) {
+        console.warn(`Filtered query failed for ${collectionName}:`, err);
+      }
+
+      if (items.length === 0) {
+        const snap = await getDocs(collection(db, collectionName));
+        items = snap.docs.map(docToObject).filter((item) => {
+          for (const [key, value] of Object.entries(filters)) {
+            if (value && typeof value === "object" && "$lt" in value) {
+              if (!(item[key] < value.$lt)) return false;
+            } else if (item[key] !== value) {
+              return false;
+            }
+          }
+          return true;
+        });
+        items = sortItems(items, sortField);
+        if (limitCount) items = items.slice(0, limitCount);
+      }
+
+      return items;
     },
 
     async create(data) {
@@ -249,6 +275,28 @@ export const entities = {
   AccessRequest: createEntityApi("accessRequests"),
 };
 
+export function getAuthErrorMessage(err) {
+  switch (err?.code) {
+    case "auth/email-already-in-use":
+      return "An account with this email already exists. Try signing in instead.";
+    case "auth/invalid-email":
+      return "Please enter a valid email address.";
+    case "auth/weak-password":
+      return "Password must be at least 6 characters.";
+    case "auth/wrong-password":
+    case "auth/invalid-credential":
+      return "Incorrect email or password.";
+    case "auth/user-not-found":
+      return "No account found with this email. Try creating an account.";
+    case "auth/too-many-requests":
+      return "Too many failed attempts. Please try again later.";
+    case "auth/unauthorized-domain":
+      return "This site is not authorized for sign-in yet. Add presencetorchchurch.vercel.app to Firebase Authentication → Settings → Authorized domains.";
+    default:
+      return err?.message || "Sign-in failed. Please try again.";
+  }
+}
+
 export const authApi = {
   async me() {
     return getCurrentUser();
@@ -276,6 +324,20 @@ export const authApi = {
   },
 
   async redirectToLogin() {
+    if (Capacitor.isNativePlatform()) {
+      const result = await FirebaseAuthentication.signInWithGoogle();
+      const idToken = result.credential?.idToken;
+      if (!idToken) {
+        throw Object.assign(new Error("Google sign-in was cancelled."), { code: "auth/popup-closed-by-user" });
+      }
+      const credential = GoogleAuthProvider.credential(
+        idToken,
+        result.credential?.accessToken ?? undefined,
+      );
+      await signInWithCredential(auth, credential);
+      return;
+    }
+
     const provider = new GoogleAuthProvider();
     try {
       await signInWithPopup(auth, provider);
@@ -290,8 +352,11 @@ export const authApi = {
   },
 
   async signInWithEmail(email, password) {
-    const cred = await signInWithEmailAndPassword(auth, email.trim(), password);
-    return cred.user;
+    await signInWithEmailAndPassword(auth, email.trim(), password);
+  },
+
+  async signUpWithEmail(email, password) {
+    await createUserWithEmailAndPassword(auth, email.trim(), password);
   },
 
   async registerWithEmail({ email, password, firstName = "", lastName = "" }) {
@@ -306,7 +371,6 @@ export const authApi = {
       await updateProfile(cred.user, { displayName: fullName });
     }
 
-    // Ensure Firestore profile has names even if onAuthStateChanged raced ahead
     await setDoc(
       doc(db, "users", cred.user.uid),
       {

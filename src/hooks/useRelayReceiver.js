@@ -1,15 +1,14 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { api } from "@/api/client";
+import { playAudioUrl } from "@/lib/audioPlayer";
 
-const IDLE_TIMEOUT_MS = 15000; // Clear receiving after 15s of no new chunks
+const IDLE_TIMEOUT_MS = 8000;
+const STALL_TIMEOUT_MS = 2500;
 
 /**
  * Subscribes to AudioChunk entities for the active channel and plays
  * incoming broadcast chunks in sequence — giving listeners live audio
  * while the sender is still holding PTT.
- *
- * Tracks which broadcast_ids were heard live so Talk.jsx can skip
- * auto-playing the stored VoiceMessage for broadcasts already heard.
  */
 export default function useRelayReceiver({ channelId, userId }) {
   const [isReceiving, setIsReceiving] = useState(false);
@@ -17,11 +16,11 @@ export default function useRelayReceiver({ channelId, userId }) {
   const queuesRef = useRef({});
   const isReceivingRef = useRef(false);
   const idleTimeoutRef = useRef(null);
+  const stallTimeoutRef = useRef({});
 
   const clearReceiving = useCallback(() => {
-    Object.values(queuesRef.current).forEach((q) => {
-      if (q.currentAudio) { q.currentAudio.pause(); q.currentAudio = null; }
-    });
+    Object.values(stallTimeoutRef.current).forEach((timer) => clearTimeout(timer));
+    stallTimeoutRef.current = {};
     queuesRef.current = {};
     isReceivingRef.current = false;
     setIsReceiving(false);
@@ -36,41 +35,78 @@ export default function useRelayReceiver({ channelId, userId }) {
     idleTimeoutRef.current = setTimeout(clearReceiving, IDLE_TIMEOUT_MS);
   }, [clearReceiving]);
 
+  const finishQueue = useCallback((bId) => {
+    if (stallTimeoutRef.current[bId]) {
+      clearTimeout(stallTimeoutRef.current[bId]);
+      delete stallTimeoutRef.current[bId];
+    }
+    delete queuesRef.current[bId];
+    if (Object.keys(queuesRef.current).length === 0) clearReceiving();
+  }, [clearReceiving]);
+
+  const playNextRef = useRef(null);
+
+  const scheduleStallRecovery = useCallback((bId) => {
+    if (stallTimeoutRef.current[bId]) clearTimeout(stallTimeoutRef.current[bId]);
+    stallTimeoutRef.current[bId] = setTimeout(() => {
+      const q = queuesRef.current[bId];
+      if (!q || q.playing) return;
+
+      const available = Object.keys(q.chunks)
+        .map(Number)
+        .filter((seq) => seq >= q.nextSeq)
+        .sort((a, b) => a - b);
+
+      if (available.length > 0 && available[0] > q.nextSeq) {
+        q.nextSeq = available[0];
+      } else if (q.finalReceived && q.nextSeq > q.finalSeq) {
+        finishQueue(bId);
+        return;
+      }
+
+      playNextRef.current?.(bId);
+    }, STALL_TIMEOUT_MS);
+  }, [finishQueue]);
+
   const playNext = useCallback((bId) => {
     const q = queuesRef.current[bId];
-    if (!q || q.currentAudio) return;
+    if (!q || q.playing) return;
 
     const url = q.chunks[q.nextSeq];
     if (!url) {
-      // No more chunks to play right now.
-      // If final was received and all played, clean up.
       if (q.finalReceived && q.nextSeq > q.finalSeq) {
-        delete queuesRef.current[bId];
-        if (Object.keys(queuesRef.current).length === 0) clearReceiving();
+        finishQueue(bId);
+        return;
       }
-      // Otherwise, waiting for more chunks — idle timer will eventually clear
+      scheduleStallRecovery(bId);
       return;
     }
 
-    const audio = new Audio(url);
-    q.currentAudio = audio;
+    if (stallTimeoutRef.current[bId]) {
+      clearTimeout(stallTimeoutRef.current[bId]);
+      delete stallTimeoutRef.current[bId];
+    }
+
+    q.playing = true;
 
     const advance = () => {
-      q.currentAudio = null;
-      delete q.chunks[q.nextSeq];
-      q.nextSeq++;
-      if (q.finalReceived && q.nextSeq > q.finalSeq) {
-        delete queuesRef.current[bId];
-        if (Object.keys(queuesRef.current).length === 0) clearReceiving();
-      } else {
-        playNext(bId);
+      if (!queuesRef.current[bId]) return;
+      const queue = queuesRef.current[bId];
+      queue.playing = false;
+      delete queue.chunks[queue.nextSeq];
+      queue.nextSeq += 1;
+
+      if (queue.finalReceived && queue.nextSeq > queue.finalSeq) {
+        finishQueue(bId);
+        return;
       }
+      playNext(bId);
     };
 
-    audio.onended = advance;
-    audio.onerror = advance;
-    audio.play().catch(advance);
-  }, [clearReceiving]);
+    playAudioUrl(url, { onEnded: advance, onError: advance }).catch(advance);
+  }, [finishQueue, scheduleStallRecovery]);
+
+  playNextRef.current = playNext;
 
   useEffect(() => {
     if (!channelId || !userId) return;
@@ -82,7 +118,7 @@ export default function useRelayReceiver({ channelId, userId }) {
 
       const chunk = event.data;
       const bId = chunk.broadcast_id;
-      if (!bId) return;
+      if (!bId || !chunk.audio_url) return;
 
       heardBroadcastsRef.current.add(bId);
 
@@ -92,7 +128,7 @@ export default function useRelayReceiver({ channelId, userId }) {
           chunks: {},
           finalReceived: false,
           finalSeq: null,
-          currentAudio: null,
+          playing: false,
         };
       }
 
@@ -104,8 +140,6 @@ export default function useRelayReceiver({ channelId, userId }) {
         q.finalSeq = chunk.sequence;
       }
 
-      // Reset idle timer on every chunk — stays alive while broadcast is active,
-      // clears quickly once chunks stop arriving
       if (!isReceivingRef.current) {
         isReceivingRef.current = true;
         setIsReceiving(true);

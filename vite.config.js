@@ -7,6 +7,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
 export default defineConfig({
   logLevel: 'error',
+  base: './',
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),

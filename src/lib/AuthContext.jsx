@@ -3,6 +3,7 @@ import { onAuthStateChanged, getRedirectResult } from "firebase/auth";
 import { doc, getDoc, setDoc } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase";
 import { authApi } from "@/api/client";
+import { initPushNotifications, teardownPushNotifications } from "@/lib/pushNotifications";
 
 const AuthContext = createContext();
 
@@ -140,6 +141,7 @@ export const AuthProvider = ({ children }) => {
 
     const unsub = onAuthStateChanged(auth, async (firebaseUser) => {
       if (!firebaseUser) {
+        await teardownPushNotifications();
         applySignedOut();
         return;
       }
@@ -160,6 +162,9 @@ export const AuthProvider = ({ children }) => {
         }
 
         applyAuthenticatedUser(currentUser);
+        initPushNotifications(firebaseUser.uid).catch((err) => {
+          console.error("Push notification init failed:", err);
+        });
       } catch (error) {
         console.error("Auth state error:", error);
         setAuthError({ type: "unknown", message: error.message });
@@ -203,17 +208,15 @@ export const AuthProvider = ({ children }) => {
   };
 
   const navigateToLogin = () => authApi.redirectToLogin();
-
   const signInWithEmail = (email, password) => authApi.signInWithEmail(email, password);
+  const signUpWithEmail = (email, password) => authApi.signUpWithEmail(email, password);
 
   const registerWithEmail = async ({ email, password, firstName, lastName }) => {
     await authApi.registerWithEmail({ email, password, firstName, lastName });
-    // Refresh profile after registration so names from the form are reflected
     try {
       const currentUser = await authApi.me();
       applyAuthenticatedUser(currentUser);
     } catch (error) {
-      // onAuthStateChanged will still establish the session
       console.error("Post-registration profile refresh failed:", error);
     }
   };
@@ -233,6 +236,7 @@ export const AuthProvider = ({ children }) => {
         logout,
         navigateToLogin,
         signInWithEmail,
+        signUpWithEmail,
         registerWithEmail,
         resetPassword,
         checkUserAuth,

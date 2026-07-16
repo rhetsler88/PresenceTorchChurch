@@ -11,53 +11,17 @@ import Users from "@admin/pages/Users";
 import Channels from "@admin/pages/Channels";
 import AccessRequests from "@admin/pages/AccessRequests";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import BackToAppLink from "@admin/components/BackToAppLink";
 import AppLogo from "@/components/branding/AppLogo";
+import AuthSignInPanel from "@/components/auth/AuthSignInPanel";
 import { getDisplayName } from "@/lib/userUtils";
-import { formatAuthError } from "@/api/client";
 
 function canAccessAdmin(user) {
   return user?.role === "super_admin" || user?.role === "admin";
 }
 
-function AdminGate({
-  user,
-  authError,
-  navigateToLogin,
-  signInWithEmail,
-  logout,
-}) {
+function AdminGate({ user, authError, logout }) {
   const needsSignIn = !user || authError?.type === "auth_required";
-  const [email, setEmail] = React.useState("");
-  const [password, setPassword] = React.useState("");
-  const [busy, setBusy] = React.useState(false);
-  const [error, setError] = React.useState(null);
-
-  const handleGoogle = async () => {
-    setBusy(true);
-    setError(null);
-    try {
-      await navigateToLogin();
-    } catch (err) {
-      setError(formatAuthError(err));
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const handleEmail = async (e) => {
-    e.preventDefault();
-    setBusy(true);
-    setError(null);
-    try {
-      await signInWithEmail(email.trim(), password);
-    } catch (err) {
-      setError(formatAuthError(err));
-    } finally {
-      setBusy(false);
-    }
-  };
 
   if (needsSignIn) {
     return (
@@ -71,46 +35,8 @@ function AdminGate({
               users, and channels.
             </p>
           </div>
-
-          {error && <p className="text-sm text-destructive text-center mb-4">{error}</p>}
-
-          <form onSubmit={handleEmail} className="space-y-3 mb-4">
-            <Input
-              type="email"
-              placeholder="Email"
-              autoComplete="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              disabled={busy}
-              required
-            />
-            <Input
-              type="password"
-              placeholder="Password"
-              autoComplete="current-password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              disabled={busy}
-              required
-            />
-            <Button className="w-full" type="submit" disabled={busy}>
-              {busy ? "Signing in..." : "Sign in"}
-            </Button>
-          </form>
-
-          <div className="relative my-4">
-            <div className="absolute inset-0 flex items-center">
-              <span className="w-full border-t border-border" />
-            </div>
-            <div className="relative flex justify-center text-xs uppercase">
-              <span className="bg-card px-2 text-muted-foreground">or</span>
-            </div>
-          </div>
-
           <div className="flex flex-col gap-3">
-            <Button variant="outline" onClick={handleGoogle} disabled={busy}>
-              Continue with Google
-            </Button>
+            <AuthSignInPanel />
             <BackToAppLink className="w-full" />
           </div>
         </div>
@@ -156,7 +82,7 @@ function AdminGate({
 }
 
 function AdminAppRoutes() {
-  const { user, isLoadingAuth, authError, navigateToLogin, signInWithEmail, logout } = useAuth();
+  const { user, isLoadingAuth, authError, logout } = useAuth();
 
   if (isLoadingAuth) {
     return (
@@ -167,15 +93,7 @@ function AdminAppRoutes() {
   }
 
   if (!canAccessAdmin(user)) {
-    return (
-      <AdminGate
-        user={user}
-        authError={authError}
-        navigateToLogin={navigateToLogin}
-        signInWithEmail={signInWithEmail}
-        logout={logout}
-      />
-    );
+    return <AdminGate user={user} authError={authError} logout={logout} />;
   }
 
   return (

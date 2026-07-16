@@ -1,43 +1,32 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { api } from "@/api/client";
-import { playRedAlert } from "@/lib/pttTones";
+import {
+  triggerRedAlert,
+  registerRedAlertBannerHandler,
+  dismissRedAlertEffects,
+  requestRedAlertNotificationPermission,
+} from "@/lib/redAlertActions";
 
 export default function useRedAlert() {
   const [alertChannel, setAlertChannel] = useState(null);
   const prevLevels = useRef({});
   const alertTimeoutRef = useRef(null);
 
-  const triggerAlert = useCallback((channelName) => {
-    playRedAlert();
+  const showBanner = useCallback((channelName) => {
     setAlertChannel(channelName);
-
-    if ("Notification" in window && Notification.permission === "granted") {
-      try {
-        new Notification("🔴 RED ALERT", {
-          body: "Protection Level Status now Red",
-        });
-      } catch {}
-    }
-
-    // Vibrate: 1s on, 500ms off, repeating for the alert duration
-    if ("vibrate" in navigator) {
-      navigator.vibrate([1000, 500, 1000, 500, 1000, 500, 1000, 500, 1000, 500, 1000, 500, 1000, 500, 1000]);
-    }
-
     if (alertTimeoutRef.current) clearTimeout(alertTimeoutRef.current);
     alertTimeoutRef.current = setTimeout(() => setAlertChannel(null), 10000);
   }, []);
 
   useEffect(() => {
-    if ("Notification" in window && Notification.permission === "default") {
-      Notification.requestPermission();
-    }
-  }, []);
+    registerRedAlertBannerHandler(showBanner);
+    requestRedAlertNotificationPermission();
+  }, [showBanner]);
 
   useEffect(() => {
     api.entities.Channel.list("-created_date", 50)
-      .then(channels => {
-        channels.forEach(c => { prevLevels.current[c.id] = c.protection_level; });
+      .then((channels) => {
+        channels.forEach((c) => { prevLevels.current[c.id] = c.protection_level; });
       })
       .catch(() => {});
 
@@ -48,7 +37,7 @@ export default function useRedAlert() {
       const oldLevel = prevLevels.current[channelId];
 
       if (newLevel === "red" && oldLevel !== "red") {
-        triggerAlert(event.data?.name || "A channel");
+        triggerRedAlert(event.data?.name || "A channel");
       }
       if (channelId) prevLevels.current[channelId] = newLevel;
     });
@@ -56,11 +45,13 @@ export default function useRedAlert() {
     return () => {
       unsub();
       if (alertTimeoutRef.current) clearTimeout(alertTimeoutRef.current);
+      registerRedAlertBannerHandler(null);
     };
-  }, [triggerAlert]);
+  }, []);
 
   const dismiss = useCallback(() => {
     if (alertTimeoutRef.current) clearTimeout(alertTimeoutRef.current);
+    dismissRedAlertEffects();
     setAlertChannel(null);
   }, []);
 

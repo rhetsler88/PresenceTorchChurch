@@ -212,12 +212,11 @@ export default function Monitor() {
       if (event.data?.sender_id === user.id) return;
 
       if (event.type === "create") {
-        playBusyTone();
+        playClearTone();
         setIsChannelBusy(true);
         if (channelBusyTimeoutRef.current) clearTimeout(channelBusyTimeoutRef.current);
         channelBusyTimeoutRef.current = setTimeout(() => {
           setIsChannelBusy(false);
-          playClearTone();
         }, 30000);
       } else if (event.type === "delete") {
         if (channelBusyTimeoutRef.current) {
@@ -225,7 +224,6 @@ export default function Monitor() {
           channelBusyTimeoutRef.current = null;
         }
         setIsChannelBusy(false);
-        playClearTone();
       }
     });
     return unsub;
@@ -496,7 +494,6 @@ export default function Monitor() {
     signalIds.forEach((id) => {
       api.entities.PTTSignal.delete(id).catch(() => {});
     });
-    playClearTone();
 
     sendMutation.mutate();
   }, [isPTTPressed, sendMutation]);

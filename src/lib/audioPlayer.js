@@ -14,6 +14,16 @@ function getContext() {
 
 let currentSource = null;
 let currentOnEnded = null;
+let currentRelayAudio = null;
+
+function stopRelayAudio() {
+  if (currentRelayAudio) {
+    currentRelayAudio.onended = null;
+    currentRelayAudio.onerror = null;
+    currentRelayAudio.pause();
+    currentRelayAudio = null;
+  }
+}
 
 // Unlock AudioContext on first user interaction (required by browser autoplay policies)
 let isUnlocked = false;
@@ -100,6 +110,7 @@ export async function playAudioTailFromUrl(url, startSeconds = 0, { onEnded, onE
 }
 
 export function stopAudio() {
+  stopRelayAudio();
   if (currentSource) {
     try {
       currentSource.onended = null;
@@ -109,3 +120,54 @@ export function stopAudio() {
   }
   currentOnEnded = null;
 }
+
+/**
+ * Plays relay audio via HTML Audio (no fetch/CORS). Each chunk is a growing
+ * recording; only the tail after `startSeconds` is heard.
+ */
+export async function playRelayAudioTail(url, startSeconds = 0, { onEnded, onError } = {}) {
+  const resolved = await resolveAudioUrl(url);
+  if (!resolved) throw new Error("Could not resolve audio URL");
+
+  stopRelayAudio();
+
+  return new Promise((resolve, reject) => {
+    const audio = new Audio(resolved);
+    currentRelayAudio = audio;
+
+    const finish = (totalDuration) => {
+      if (currentRelayAudio === audio) currentRelayAudio = null;
+      resolve({ totalDuration });
+    };
+
+    audio.onloadedmetadata = () => {
+      const totalDuration = audio.duration || 0;
+      if (!Number.isFinite(totalDuration) || startSeconds >= totalDuration) {
+        if (onEnded) onEnded();
+        finish(totalDuration);
+        return;
+      }
+      audio.currentTime = startSeconds;
+      audio.play().catch((err) => {
+        if (currentRelayAudio === audio) currentRelayAudio = null;
+        if (onError) onError(err);
+        reject(err);
+      });
+    };
+
+    audio.onended = () => {
+      const totalDuration = audio.duration || 0;
+      if (onEnded) onEnded();
+      finish(totalDuration);
+    };
+
+    audio.onerror = () => {
+      if (currentRelayAudio === audio) currentRelayAudio = null;
+      const err = new Error("Relay audio playback failed");
+      if (onError) onError(err);
+      reject(err);
+    };
+  });
+}
+
+export { stopRelayAudio };

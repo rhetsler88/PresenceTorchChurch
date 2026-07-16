@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { api } from "@/api/client";
-import { playAudioTailFromUrl } from "@/lib/audioPlayer";
+import { playRelayAudioTail, stopRelayAudio } from "@/lib/audioPlayer";
 
 const IDLE_TIMEOUT_MS = 8000;
 const STALL_TIMEOUT_MS = 2500;
@@ -19,6 +19,7 @@ export default function useRelayReceiver({ channelId, userId }) {
   const stallTimeoutRef = useRef({});
 
   const clearReceiving = useCallback(() => {
+    stopRelayAudio();
     Object.values(stallTimeoutRef.current).forEach((timer) => clearTimeout(timer));
     stallTimeoutRef.current = {};
     queuesRef.current = {};
@@ -104,7 +105,7 @@ export default function useRelayReceiver({ channelId, userId }) {
       playNext(bId);
     };
 
-    playAudioTailFromUrl(url, startAt, { onEnded: advance, onError: advance })
+    playRelayAudioTail(url, startAt, { onEnded: advance, onError: advance })
       .then(({ totalDuration }) => {
         if (queuesRef.current[bId] && totalDuration != null) {
           queuesRef.current[bId].playedDuration = totalDuration;

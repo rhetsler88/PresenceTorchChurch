@@ -1,0 +1,11 @@
+[
+  {
+    "origin": [
+      "https://presencetorchchurch.vercel.app",
+      "http://localhost:5173",
+      "http://localhost:4173"
+    ],
+    "method": ["GET", "HEAD"],
+    "maxAgeSeconds": 3600
+  }
+]

@@ -15,6 +15,7 @@
     "build:admin": "npm run build --prefix admin",
     "setup:domains": "node scripts/add-firebase-domains.mjs",
     "setup:email-auth": "node scripts/enable-email-auth.mjs",
+    "setup:storage-cors": "gcloud storage buckets update gs://presence-torch-church.firebasestorage.app --cors-file=storage.cors.json",
     "cap:sync": "npm run build && npx cap sync",
     "cap:open:android": "npx cap open android",
     "cap:open:ios": "npx cap open ios"

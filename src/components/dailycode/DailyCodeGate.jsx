@@ -6,6 +6,7 @@ import { Lock, Key, X, Copy, Check, LogOut } from "lucide-react";
 import { getDailyCode, getCodeDateKey } from "@/lib/dailyCode";
 import { getDailyVerse } from "@/lib/dailyVerse";
 import { useAuth } from "@/lib/AuthContext";
+import dailyCodeBanner from "@/assets/logo-daily-code.png";
 
 function DailyCodeBanner() {
   const code = getDailyCode();
@@ -89,11 +90,11 @@ function DailyCodeEntry({ onVerified, organization }) {
   return (
     <div className="flex-1 flex flex-col items-center justify-center p-4 min-h-screen">
       <div className="w-full max-w-sm">
-        {/* Social media graphic card */}
-        <div className="rounded-2xl overflow-hidden shadow-lg mb-4 bg-black">
+        {/* Social media banner */}
+        <div className="rounded-2xl overflow-hidden shadow-lg mb-4">
           <img
-            src="/logo-full.png"
-            alt="Presence Torch Church"
+            src={dailyCodeBanner}
+            alt="Presence Torch Church — daily access"
             className="w-full h-auto object-contain"
           />
         </div>

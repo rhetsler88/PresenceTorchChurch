@@ -3,6 +3,7 @@ import AgoraRTC from "agora-rtc-sdk-ng";
 import { api } from "@/api/client";
 import { uploadPrivateAudio } from "@/api/storage";
 import { getAgoraAppId, toAgoraChannelName } from "@/lib/agora";
+import { agoraUidFromFirebaseId } from "@/lib/agoraUid";
 
 AgoraRTC.setLogLevel(3);
 
@@ -14,13 +15,14 @@ function getSupportedMime() {
   return "";
 }
 
-async function fetchAgoraCredentials(channelId) {
+async function fetchAgoraCredentials(channelId, userId) {
   const data = await api.functions.invoke("getAgoraToken", { channel_id: channelId });
+  const uid = typeof data.uid === "number" ? data.uid : agoraUidFromFirebaseId(userId);
   return {
     appId: data.app_id || getAgoraAppId(),
     token: data.token,
     channelName: data.channel_name || toAgoraChannelName(channelId),
-    uid: data.uid,
+    uid,
   };
 }
 
@@ -37,6 +39,7 @@ export default function useAgoraPTT({
 }) {
   const [isRecording, setIsRecording] = useState(false);
   const [isReceiving, setIsReceiving] = useState(false);
+  const [isChannelReady, setIsChannelReady] = useState(false);
 
   const clientRef = useRef(null);
   const localAudioTrackRef = useRef(null);
@@ -62,7 +65,7 @@ export default function useAgoraPTT({
 
     const joinTask = (async () => {
       try {
-        const { appId, token, channelName, uid } = await fetchAgoraCredentials(channelId);
+        const { appId, token, channelName, uid } = await fetchAgoraCredentials(channelId, userId);
         if (!appId || !token) throw new Error("Missing Agora credentials");
         if (joinGen !== joinGenRef.current) return null;
 
@@ -71,7 +74,7 @@ export default function useAgoraPTT({
 
         client.on("user-published", async (remoteUser, mediaType) => {
           if (joinGen !== joinGenRef.current) return;
-          if (remoteUser.uid === uid || String(remoteUser.uid) === String(userId)) return;
+          if (remoteUser.uid === uid || String(remoteUser.uid) === String(uid)) return;
           await client.subscribe(remoteUser, mediaType);
           if (mediaType === "audio") {
             remoteUser.audioTrack?.play();
@@ -91,6 +94,7 @@ export default function useAgoraPTT({
         });
 
         await client.join(appId, channelName, token, uid);
+        if (joinGen === joinGenRef.current) setIsChannelReady(true);
         return client;
       } catch (err) {
         console.error("Agora join failed:", err);
@@ -99,6 +103,7 @@ export default function useAgoraPTT({
           await client.leave().catch(() => {});
         }
         if (joinGen === joinGenRef.current) clientRef.current = null;
+        if (joinGen === joinGenRef.current) setIsChannelReady(false);
         return null;
       }
     })();
@@ -109,6 +114,7 @@ export default function useAgoraPTT({
     return () => {
       joinGenRef.current += 1;
       joinPromiseRef.current = null;
+      setIsChannelReady(false);
       remoteSpeakerCountRef.current = 0;
       setIsReceiving(false);
 
@@ -226,6 +232,7 @@ export default function useAgoraPTT({
   return {
     isRecording,
     isReceiving,
+    isChannelReady,
     startRecording,
     stopRecording,
     heardBroadcastsRef,

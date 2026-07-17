@@ -120,6 +120,15 @@ function toAgoraChannelName(channelId) {
   return name.slice(0, 64);
 }
 
+function agoraUidFromFirebaseId(firebaseUid) {
+  if (!firebaseUid) return 0;
+  let hash = 5381;
+  for (let i = 0; i < firebaseUid.length; i++) {
+    hash = (hash * 33) ^ firebaseUid.charCodeAt(i);
+  }
+  return Math.abs(hash >>> 0) % 2147483647 || 1;
+}
+
 exports.getAgoraToken = onCall(
   { secrets: [agoraAppId, agoraAppCertificate] },
   async (request) => {
@@ -139,13 +148,13 @@ exports.getAgoraToken = onCall(
     }
 
     const channelName = toAgoraChannelName(channelId);
-    const account = request.auth.uid;
+    const uid = agoraUidFromFirebaseId(request.auth.uid);
     const expireTime = Math.floor(Date.now() / 1000) + 3600;
-    const token = RtcTokenBuilder.buildTokenWithAccount(
+    const token = RtcTokenBuilder.buildTokenWithUid(
       appId,
       certificate,
       channelName,
-      account,
+      uid,
       RtcRole.PUBLISHER,
       expireTime
     );
@@ -154,7 +163,7 @@ exports.getAgoraToken = onCall(
       token,
       app_id: appId,
       channel_name: channelName,
-      uid: account,
+      uid,
       expires_at: expireTime,
     };
   }

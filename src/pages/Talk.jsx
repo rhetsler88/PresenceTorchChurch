@@ -33,6 +33,9 @@ export default function Talk() {
   const queryClient = useQueryClient();
   const feedEndRef = useRef(null);
   const pttSignalRef = useRef(null);
+  const pttRecordingActiveRef = useRef(false);
+  const pttStartInFlightRef = useRef(null);
+  const pttStopPendingRef = useRef(false);
   const channelBusyTimeoutRef = useRef(null);
   const receivingTimeoutRef = useRef(null);
   const {
@@ -40,6 +43,7 @@ export default function Talk() {
     startRecording,
     stopRecording,
     isLiveReceiving: agoraLiveReceiving,
+    isChannelReady,
     heardBroadcastsRef,
   } = usePttBroadcast({
     channelId: activeChannelId,
@@ -335,16 +339,35 @@ export default function Talk() {
     }
   };
 
+  const finishPttStop = useCallback(() => {
+    const signalId = pttSignalRef.current;
+    pttSignalRef.current = null;
+    if (signalId) {
+      api.entities.PTTSignal.delete(signalId).catch(() => {});
+    }
+
+    if (pttRecordingActiveRef.current) {
+      pttRecordingActiveRef.current = false;
+      sendMutation.mutate();
+    }
+  }, [sendMutation]);
+
   const handlePTTStart = useCallback(async () => {
     if (!activeChannel || isPTTPressed || !user?.id) return;
     if (isReceiving || isLiveReceiving || isChannelBusy) {
       playBusyTone();
       return;
     }
+    if (isAgoraEnabled() && !isChannelReady) {
+      toast.error("Connecting to voice channel — wait a moment and try again");
+      return;
+    }
+
     playClearTone();
     setIsPTTPressed(true);
+    pttStopPendingRef.current = false;
+    pttRecordingActiveRef.current = false;
 
-    // Signal other members immediately — before mic permission prompt
     let signalId = null;
     try {
       const signal = await api.entities.PTTSignal.create({
@@ -361,29 +384,60 @@ export default function Talk() {
       return;
     }
 
-    const started = await startRecording();
+    const startPromise = startRecording();
+    pttStartInFlightRef.current = startPromise;
+    const started = await startPromise;
+    pttStartInFlightRef.current = null;
+
+    if (pttStopPendingRef.current) {
+      pttStopPendingRef.current = false;
+      setIsPTTPressed(false);
+      if (started) await stopRecording();
+      if (signalId) {
+        api.entities.PTTSignal.delete(signalId).catch(() => {});
+        pttSignalRef.current = null;
+      }
+      return;
+    }
+
     if (!started) {
       setIsPTTPressed(false);
       if (signalId) {
         api.entities.PTTSignal.delete(signalId).catch(() => {});
         pttSignalRef.current = null;
       }
-      toast.error("Microphone access denied");
+      toast.error(
+        isAgoraEnabled()
+          ? "Could not start live voice — check mic permission and console errors"
+          : "Microphone access denied"
+      );
+      return;
     }
-  }, [activeChannel, isPTTPressed, isReceiving, isLiveReceiving, isChannelBusy, startRecording, activeChannelId, user]);
+
+    pttRecordingActiveRef.current = true;
+  }, [
+    activeChannel,
+    isPTTPressed,
+    isReceiving,
+    isLiveReceiving,
+    isChannelBusy,
+    isChannelReady,
+    startRecording,
+    stopRecording,
+    activeChannelId,
+    user,
+  ]);
 
   const handlePTTStop = useCallback(() => {
-    if (!isPTTPressed) return;
-    setIsPTTPressed(false);
-
-    const signalId = pttSignalRef.current;
-    pttSignalRef.current = null;
-    if (signalId) {
-      api.entities.PTTSignal.delete(signalId).catch(() => {});
+    if (pttStartInFlightRef.current) {
+      pttStopPendingRef.current = true;
+      setIsPTTPressed(false);
+      return;
     }
-
-    sendMutation.mutate();
-  }, [isPTTPressed, sendMutation]);
+    if (!isPTTPressed && !pttRecordingActiveRef.current) return;
+    setIsPTTPressed(false);
+    finishPttStop();
+  }, [isPTTPressed, finishPttStop]);
 
   const bluetooth = useBluetoothPTTContext();
 
@@ -527,7 +581,7 @@ export default function Talk() {
             isPressed={isPTTPressed}
             onStart={handlePTTStart}
             onStop={handlePTTStop}
-            isConnected={!!activeChannel}
+            isConnected={!!activeChannel && (!isAgoraEnabled() || isChannelReady)}
             isReceiving={(isReceiving || isLiveReceiving) && !isRecording}
             isChannelBusy={isChannelBusy && !isRecording && !isReceiving && !isLiveReceiving}
           />

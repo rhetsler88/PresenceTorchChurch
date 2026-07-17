@@ -2,16 +2,18 @@ import { useState, useEffect, useRef } from "react";
 import AgoraRTC from "agora-rtc-sdk-ng";
 import { api } from "@/api/client";
 import { getAgoraAppId, toAgoraChannelName } from "@/lib/agora";
+import { agoraUidFromFirebaseId } from "@/lib/agoraUid";
 
 AgoraRTC.setLogLevel(3);
 
-async function fetchAgoraCredentials(channelId) {
+async function fetchAgoraCredentials(channelId, userId) {
   const data = await api.functions.invoke("getAgoraToken", { channel_id: channelId });
+  const uid = typeof data.uid === "number" ? data.uid : agoraUidFromFirebaseId(userId);
   return {
     appId: data.app_id || getAgoraAppId(),
     token: data.token,
     channelName: data.channel_name || toAgoraChannelName(channelId),
-    uid: data.uid,
+    uid,
   };
 }
 
@@ -40,13 +42,13 @@ export default function useAgoraMultiListen({
       for (const channelId of channelIds) {
         if (cancelled) break;
         try {
-          const { appId, token, channelName, uid } = await fetchAgoraCredentials(channelId);
+          const { appId, token, channelName, uid } = await fetchAgoraCredentials(channelId, userId);
           if (!appId || !token || cancelled) continue;
 
           const client = AgoraRTC.createClient({ mode: "rtc", codec: "vp8" });
 
           client.on("user-published", async (remoteUser, mediaType) => {
-            if (remoteUser.uid === uid || String(remoteUser.uid) === String(userId)) return;
+            if (remoteUser.uid === uid || String(remoteUser.uid) === String(uid)) return;
             await client.subscribe(remoteUser, mediaType);
             if (mediaType === "audio") {
               remoteUser.audioTrack?.play();

@@ -5,6 +5,8 @@ import { motion, AnimatePresence } from "framer-motion";
 export default function PTTButton({ isPressed, isConnected, isReceiving, isChannelBusy, onStart, onStop }) {
   const [duration, setDuration] = useState(0);
   const timerRef = useRef(null);
+  const pointerDownRef = useRef(false);
+  const buttonRef = useRef(null);
 
   useEffect(() => {
     if (isPressed) {
@@ -16,16 +18,29 @@ export default function PTTButton({ isPressed, isConnected, isReceiving, isChann
     return () => clearInterval(timerRef.current);
   }, [isPressed]);
 
-  const handleStart = useCallback((e) => {
+  const handlePointerDown = useCallback((e) => {
+    if (e.button !== undefined && e.button !== 0) return;
     e.preventDefault();
+    pointerDownRef.current = true;
+    buttonRef.current?.setPointerCapture?.(e.pointerId);
     onStart?.();
   }, [onStart]);
 
-  const handleEnd = useCallback((e) => {
+  const handlePointerUp = useCallback((e) => {
     e.preventDefault();
-    if (!isPressed) return;
+    if (!pointerDownRef.current) return;
+    pointerDownRef.current = false;
+    if (buttonRef.current?.hasPointerCapture?.(e.pointerId)) {
+      buttonRef.current.releasePointerCapture(e.pointerId);
+    }
     onStop?.();
-  }, [isPressed, onStop]);
+  }, [onStop]);
+
+  const handlePointerCancel = useCallback((e) => {
+    if (!pointerDownRef.current) return;
+    pointerDownRef.current = false;
+    onStop?.();
+  }, [onStop]);
 
   const formatTime = (s) => {
     const mins = Math.floor(s / 60);
@@ -52,7 +67,6 @@ export default function PTTButton({ isPressed, isConnected, isReceiving, isChann
       </AnimatePresence>
 
       <div className="relative">
-        {/* Pulse rings */}
         <AnimatePresence>
           {isPressed && (
             <>
@@ -69,7 +83,6 @@ export default function PTTButton({ isPressed, isConnected, isReceiving, isChann
           )}
         </AnimatePresence>
 
-        {/* Receiving indicator */}
         <AnimatePresence>
           {isReceiving && (
             <>
@@ -87,12 +100,12 @@ export default function PTTButton({ isPressed, isConnected, isReceiving, isChann
         </AnimatePresence>
 
         <motion.button
-          onMouseDown={handleStart}
-          onMouseUp={handleEnd}
-          onMouseLeave={handleEnd}
-          onTouchStart={handleStart}
-          onTouchEnd={handleEnd}
-          onTouchCancel={handleEnd}
+          ref={buttonRef}
+          type="button"
+          onPointerDown={handlePointerDown}
+          onPointerUp={handlePointerUp}
+          onPointerCancel={handlePointerCancel}
+          onLostPointerCapture={handlePointerCancel}
           whileTap={{ scale: 0.95 }}
           className={`relative w-28 h-28 rounded-full flex items-center justify-center transition-all duration-300 select-none touch-none shadow-2xl ${
             isPressed

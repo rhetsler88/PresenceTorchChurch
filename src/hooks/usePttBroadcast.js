@@ -13,6 +13,7 @@ export default function usePttBroadcast(options) {
       startRecording: agora.startRecording,
       stopRecording: agora.stopRecording,
       isLiveReceiving: agora.isReceiving,
+      isChannelReady: agora.isChannelReady,
       heardBroadcastsRef: agora.heardBroadcastsRef,
       transport: "agora",
     };
@@ -22,6 +23,7 @@ export default function usePttBroadcast(options) {
     startRecording: relay.startRecording,
     stopRecording: relay.stopRecording,
     isLiveReceiving: false,
+    isChannelReady: true,
     heardBroadcastsRef: { current: new Set() },
     transport: "storage",
   };

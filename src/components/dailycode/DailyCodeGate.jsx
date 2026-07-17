@@ -3,7 +3,7 @@ import { api } from "@/api/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Lock, Key, X, Copy, Check, LogOut } from "lucide-react";
-import { getDailyCode, getCodeDateKey } from "@/lib/dailyCode";
+import { getDailyCode, getCodeDateKey, isDailyCodeVerified, markDailyCodeSession } from "@/lib/dailyCode";
 import { getDailyVerse } from "@/lib/dailyVerse";
 import { useAuth } from "@/lib/AuthContext";
 import dailyCodeBanner from "@/assets/logo-daily-code.png";
@@ -180,15 +180,13 @@ function DailyCodeEntry({ onVerified, organization }) {
 
 export default function DailyCodeGate({ user, onUserUpdate, children, showBanner = false }) {
   const todayKey = getCodeDateKey();
-  const [verified, setVerified] = useState(
-    user?.daily_code_verified_date === todayKey
-  );
+  const [verified, setVerified] = useState(() => isDailyCodeVerified(user));
 
   useEffect(() => {
-    if (user?.daily_code_verified_date === todayKey) {
+    if (isDailyCodeVerified(user)) {
       setVerified(true);
     }
-  }, [user?.daily_code_verified_date, todayKey]);
+  }, [user?.daily_code_verified_date, user?.id]);
 
   if (!user) {
     return (
@@ -216,6 +214,7 @@ export default function DailyCodeGate({ user, onUserUpdate, children, showBanner
     <DailyCodeEntry
       organization={user?.organization}
       onVerified={() => {
+        markDailyCodeSession();
         setVerified(true);
         onUserUpdate?.({ ...user, daily_code_verified_date: todayKey });
       }}

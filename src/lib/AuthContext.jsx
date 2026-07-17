@@ -4,6 +4,7 @@ import { doc, getDoc, setDoc } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase";
 import { authApi } from "@/api/client";
 import { initPushNotifications, teardownPushNotifications } from "@/lib/pushNotifications";
+import { clearDailyCodeSession } from "@/lib/dailyCode";
 
 const AuthContext = createContext();
 
@@ -18,6 +19,7 @@ function isSessionExpired() {
 
 async function expireSession() {
   localStorage.removeItem(LOGIN_TIME_KEY);
+  clearDailyCodeSession();
   await authApi.logout();
 }
 
@@ -204,6 +206,7 @@ export const AuthProvider = ({ children }) => {
     setUser(null);
     setIsAuthenticated(false);
     localStorage.removeItem(LOGIN_TIME_KEY);
+    clearDailyCodeSession();
     await authApi.logout(shouldRedirect ? window.location.href : undefined);
   };
 

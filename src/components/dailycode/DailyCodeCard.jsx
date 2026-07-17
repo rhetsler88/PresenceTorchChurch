@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Key, Copy, Check } from "lucide-react";
-import { getDailyCode } from "@/lib/dailyCode";
+import { getDailyCode, getCodeRolloverLabel } from "@/lib/dailyCode";
 
 export default function DailyCodeCard() {
   const code = getDailyCode();
@@ -28,7 +28,7 @@ export default function DailyCodeCard() {
               {code}
             </p>
             <p className="text-[10px] text-muted-foreground mt-0.5">
-              Resets at 6:00 AM ET
+              Resets at {getCodeRolloverLabel()}
             </p>
           </div>
         </div>

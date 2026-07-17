@@ -53,7 +53,7 @@ service cloud.firestore {
         || (
           request.auth.uid == userId
           && !request.resource.data.diff(resource.data)
-              .affectedKeys().hasAny(['role', 'is_monitor'])
+              .affectedKeys().hasAny(['role', 'is_monitor', 'receives_staff_alerts'])
         )
       );
 
@@ -74,7 +74,7 @@ service cloud.firestore {
       allow update: if isSignedIn() && (
         isAdminOrDirector()
         || request.resource.data.diff(resource.data)
-            .affectedKeys().hasOnly(['pending_members'])
+            .affectedKeys().hasOnly(['pending_members', 'pending_notification_members'])
       );
 
       allow delete: if isPlatformAdmin();

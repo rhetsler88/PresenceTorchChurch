@@ -3,7 +3,7 @@ import { Radio, Users, ChevronRight, Pencil, Shield } from "lucide-react";
 import ProtectionLevelControl from "@/components/monitor/ProtectionLevelControl";
 import { PROTECTION_LEVELS } from "@/components/ptt/ProtectionLevelBadge";
 
-export default function ChannelCard({ channel, isActive, isPending, onSelect, isAdmin, onRename, canManageProtection, protectionLevel, onProtectionChange }) {
+export default function ChannelCard({ channel, isActive, isPending, isNotifyOnly, onSelect, isAdmin, onRename, canManageProtection, protectionLevel, onProtectionChange }) {
   const memberCount = channel.members?.length || 0;
   const protConfig = PROTECTION_LEVELS[protectionLevel] || PROTECTION_LEVELS.green;
 
@@ -42,6 +42,9 @@ export default function ChannelCard({ channel, isActive, isPending, onSelect, is
               </span>
               {isPending && (
                 <span className="text-[10px] font-semibold text-amber-500 ml-1">Pending</span>
+              )}
+              {isNotifyOnly && (
+                <span className="text-[10px] font-semibold text-red-500 ml-1">Alerts only</span>
               )}
             </div>
           </div>

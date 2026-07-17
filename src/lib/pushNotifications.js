@@ -3,19 +3,25 @@ import { PushNotifications } from "@capacitor/push-notifications";
 import { doc, updateDoc, arrayUnion, arrayRemove } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { triggerRedAlert, ensureRedAlertNotificationChannel } from "@/lib/redAlertActions";
+import { isStaffAlertRecipient } from "@/lib/channelAlerts";
 
 const PUSH_CHANNEL_ID = "red_alerts";
 let initialized = false;
 let currentUid = null;
 let currentToken = null;
+let staffAlertsEnabled = false;
 
-async function saveToken(uid, token) {
+async function saveToken(uid, token, staffAlerts) {
   if (!uid || !token) return;
   const userRef = doc(db, "users", uid);
-  await updateDoc(userRef, { fcm_tokens: arrayUnion(token) });
+  const payload = { fcm_tokens: arrayUnion(token) };
+  if (staffAlerts) {
+    payload.staff_fcm_tokens = arrayUnion(token);
+  }
+  await updateDoc(userRef, payload);
 }
 
-async function removeToken(uid, token) {
+async function removeSessionToken(uid, token) {
   if (!uid || !token) return;
   try {
     const userRef = doc(db, "users", uid);
@@ -30,13 +36,14 @@ function handleRedAlertPayload(data) {
   triggerRedAlert(channelName);
 }
 
-export async function initPushNotifications(uid) {
+export async function initPushNotifications(uid, userProfile = null) {
   if (!uid || !Capacitor.isNativePlatform()) return;
 
   currentUid = uid;
+  staffAlertsEnabled = isStaffAlertRecipient(userProfile);
 
   if (initialized) {
-    if (currentToken) await saveToken(uid, currentToken);
+    if (currentToken) await saveToken(uid, currentToken, staffAlertsEnabled);
     return;
   }
   initialized = true;
@@ -58,7 +65,7 @@ export async function initPushNotifications(uid) {
 
   await PushNotifications.addListener("registration", async (token) => {
     currentToken = token.value;
-    await saveToken(uid, token.value);
+    await saveToken(uid, token.value, staffAlertsEnabled);
   });
 
   await PushNotifications.addListener("registrationError", (err) => {
@@ -88,10 +95,18 @@ export async function initPushNotifications(uid) {
   }
 }
 
+/** Refresh staff token registration when admin toggles staff alerts. */
+export async function refreshStaffPushRegistration(uid, userProfile) {
+  if (!uid || !currentToken || !Capacitor.isNativePlatform()) return;
+  staffAlertsEnabled = isStaffAlertRecipient(userProfile);
+  await saveToken(uid, currentToken, staffAlertsEnabled);
+}
+
 export async function teardownPushNotifications() {
   if (currentUid && currentToken) {
-    await removeToken(currentUid, currentToken);
+    await removeSessionToken(currentUid, currentToken);
   }
   currentUid = null;
   currentToken = null;
+  staffAlertsEnabled = false;
 }

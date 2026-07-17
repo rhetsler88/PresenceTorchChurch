@@ -56,9 +56,18 @@ export default function Admin() {
   });
 
   const approveMutation = useMutation({
-    mutationFn: async ({ channel, memberId }) => {
+    mutationFn: async ({ channel, memberId, requestType = "full" }) => {
+      if (requestType === "notifications") {
+        const pending = (channel.pending_notification_members || []).filter((e) => e !== memberId);
+        const subscribers = channel.notification_members || [];
+        await api.entities.Channel.update(channel.id, {
+          notification_members: [...subscribers, memberId],
+          pending_notification_members: pending,
+        });
+        return;
+      }
       const members = channel.members || [];
-      const pending = (channel.pending_members || []).filter(e => e !== memberId);
+      const pending = (channel.pending_members || []).filter((e) => e !== memberId);
       await api.entities.Channel.update(channel.id, {
         members: [...members, memberId],
         pending_members: pending,
@@ -71,13 +80,31 @@ export default function Admin() {
   });
 
   const rejectMutation = useMutation({
-    mutationFn: async ({ channel, memberId }) => {
-      const pending = (channel.pending_members || []).filter(e => e !== memberId);
+    mutationFn: async ({ channel, memberId, requestType = "full" }) => {
+      if (requestType === "notifications") {
+        const pending = (channel.pending_notification_members || []).filter((e) => e !== memberId);
+        await api.entities.Channel.update(channel.id, { pending_notification_members: pending });
+        return;
+      }
+      const pending = (channel.pending_members || []).filter((e) => e !== memberId);
       await api.entities.Channel.update(channel.id, { pending_members: pending });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["channels"] });
       toast.success("Request rejected");
+    },
+  });
+
+  const toggleStaffAlertsMutation = useMutation({
+    mutationFn: ({ user }) =>
+      api.entities.User.update(user.id, {
+        receives_staff_alerts: !user.receives_staff_alerts,
+      }),
+    onSuccess: (_, { user }) => {
+      queryClient.invalidateQueries({ queryKey: ["users"] });
+      toast.success(
+        `${[user.first_name, user.last_name].filter(Boolean).join(" ") || user.full_name || "User"} staff alerts ${user.receives_staff_alerts ? "disabled" : "enabled"}`
+      );
     },
   });
 
@@ -94,10 +121,13 @@ export default function Admin() {
     ? channels.filter(c => !myOrg || c.organization === myOrg)
     : channels;
 
+  const hasPendingRequests = (c) =>
+    (c.pending_members || []).length > 0 || (c.pending_notification_members || []).length > 0;
+
   const pendingRequests = isAdmin
-    ? orgChannels.filter(c => (c.pending_members || []).length > 0)
+    ? orgChannels.filter(hasPendingRequests)
     : channels.filter(
-        c => directedChannelIds.includes(c.id) && (c.pending_members || []).length > 0
+        (c) => directedChannelIds.includes(c.id) && hasPendingRequests(c)
       );
 
   const directors = orgUsers.filter(u => u.role === "director");
@@ -113,6 +143,7 @@ export default function Admin() {
     onChangeRole: (u, r) => changeRoleMutation.mutate({ user: u, role: r }),
     onToggleChannel: (u, cid) => toggleChannelMutation.mutate({ user: u, channelId: cid }),
     onToggleMonitor: (u) => toggleMonitorMutation.mutate({ user: u }),
+    onToggleStaffAlerts: (u) => toggleStaffAlertsMutation.mutate({ user: u }),
   });
 
   // Director-only view: only their channels' pending requests
@@ -132,8 +163,12 @@ export default function Admin() {
         <PendingRequests
           channels={pendingRequests}
           users={users}
-          onApprove={(ch, memberId) => approveMutation.mutate({ channel: ch, memberId })}
-          onReject={(ch, memberId) => rejectMutation.mutate({ channel: ch, memberId })}
+          onApprove={(ch, memberId, requestType) =>
+            approveMutation.mutate({ channel: ch, memberId, requestType })
+          }
+          onReject={(ch, memberId, requestType) =>
+            rejectMutation.mutate({ channel: ch, memberId, requestType })
+          }
           showEmpty
         />
       </div>
@@ -174,8 +209,12 @@ export default function Admin() {
       <PendingRequests
         channels={pendingRequests}
         users={users}
-        onApprove={(ch, memberId) => approveMutation.mutate({ channel: ch, memberId })}
-        onReject={(ch, memberId) => rejectMutation.mutate({ channel: ch, memberId })}
+        onApprove={(ch, memberId, requestType) =>
+          approveMutation.mutate({ channel: ch, memberId, requestType })
+        }
+        onReject={(ch, memberId, requestType) =>
+          rejectMutation.mutate({ channel: ch, memberId, requestType })
+        }
       />
 
       <div className="px-3 pb-24">

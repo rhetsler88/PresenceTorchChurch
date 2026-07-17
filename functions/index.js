@@ -8,6 +8,10 @@ const { getMessaging } = require("firebase-admin/messaging");
 const { getStorage } = require("firebase-admin/storage");
 const speech = require("@google-cloud/speech");
 const { RtcTokenBuilder, RtcRole } = require("agora-access-token");
+const {
+  buildRedAlertTokenSets,
+  removeStaleTokensFromUserData,
+} = require("./alertRecipients");
 
 initializeApp();
 setGlobalOptions({ region: "us-east5" });
@@ -187,83 +191,82 @@ exports.sendRedAlertPush = onDocumentUpdated("channels/{channelId}", async (even
   await throttleRef.set({ lastSentAt: now, channelId: event.params.channelId }, { merge: true });
 
   const channelName = after.name || "A channel";
+  const channelId = event.params.channelId;
   const usersSnap = await db.collection("users").get();
-  const tokens = new Set();
-
-  usersSnap.forEach((doc) => {
-    const userTokens = doc.data().fcm_tokens;
-    if (Array.isArray(userTokens)) {
-      userTokens.forEach((token) => {
-        if (typeof token === "string" && token.length > 0) tokens.add(token);
-      });
-    }
-  });
-
-  const tokenList = [...tokens];
-  if (tokenList.length === 0) return;
+  const { channelTokens, staffTokens } = buildRedAlertTokenSets(usersSnap, after);
+  const allTokens = [...new Set([...channelTokens, ...staffTokens])];
 
   const messaging = getMessaging();
   const chunkSize = 500;
+  const staleTokens = new Set();
 
-  for (let i = 0; i < tokenList.length; i += chunkSize) {
-    const chunk = tokenList.slice(i, i + chunkSize);
+  const pushPayload = {
+    notification: {
+      title: "RED ALERT",
+      body: `Code Red — ${channelName} — Secure Now`,
+    },
+    data: {
+      type: "red_alert",
+      channelName,
+      channelId,
+    },
+    android: {
+      priority: "high",
+      notification: {
+        channelId: "red_alerts",
+        sound: "default",
+        defaultVibrateTimings: true,
+        priority: "max",
+      },
+    },
+    apns: {
+      payload: {
+        aps: {
+          sound: "default",
+          contentAvailable: true,
+        },
+      },
+    },
+  };
+
+  for (let i = 0; i < allTokens.length; i += chunkSize) {
+    const chunk = allTokens.slice(i, i + chunkSize);
     const response = await messaging.sendEachForMulticast({
       tokens: chunk,
-      notification: {
-        title: "RED ALERT",
-        body: `Code Red — ${channelName} — Secure Now`,
-      },
-      data: {
-        type: "red_alert",
-        channelName,
-      },
-      android: {
-        priority: "high",
-        notification: {
-          channelId: "red_alerts",
-          sound: "default",
-          defaultVibrateTimings: true,
-          priority: "max",
-        },
-      },
-      apns: {
-        payload: {
-          aps: {
-            sound: "default",
-            contentAvailable: true,
-          },
-        },
-      },
+      ...pushPayload,
     });
 
-    const staleTokens = [];
     response.responses.forEach((result, index) => {
       if (result.success) return;
       const code = result.error?.code;
-      if (code === "messaging/registration-token-not-registered" || code === "messaging/invalid-registration-token") {
-        staleTokens.push(chunk[index]);
+      if (
+        code === "messaging/registration-token-not-registered" ||
+        code === "messaging/invalid-registration-token"
+      ) {
+        staleTokens.add(chunk[index]);
       }
     });
+  }
 
-    if (staleTokens.length > 0) {
-      const batch = db.batch();
-      usersSnap.forEach((userDoc) => {
-        const userTokens = userDoc.data().fcm_tokens;
-        if (!Array.isArray(userTokens)) return;
-        const cleaned = userTokens.filter((t) => !staleTokens.includes(t));
-        if (cleaned.length !== userTokens.length) {
-          batch.update(userDoc.ref, { fcm_tokens: cleaned });
-        }
-      });
-      await batch.commit();
-    }
+  if (staleTokens.size > 0) {
+    const batch = db.batch();
+    usersSnap.forEach((userDoc) => {
+      const { data, changed } = removeStaleTokensFromUserData(userDoc.data(), staleTokens);
+      if (!changed) return;
+      const patch = {};
+      if (data.fcm_tokens !== undefined) patch.fcm_tokens = data.fcm_tokens;
+      if (data.staff_fcm_tokens !== undefined) patch.staff_fcm_tokens = data.staff_fcm_tokens;
+      batch.update(userDoc.ref, patch);
+    });
+    await batch.commit();
   }
 
   await db.collection("alertLogs").add({
     type: "red_alert",
-    channelId: event.params.channelId,
+    channelId,
     channelName,
-    tokenCount: tokenList.length,
+    channelTokenCount: channelTokens.length,
+    staffTokenCount: staffTokens.length,
     createdAt: FieldValue.serverTimestamp(),
   });
 });

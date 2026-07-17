@@ -183,7 +183,7 @@ export const AuthProvider = ({ children }) => {
         }
 
         applyAuthenticatedUser(currentUser);
-        initPushNotifications(firebaseUser.uid).catch((err) => {
+        initPushNotifications(firebaseUser.uid, currentUser).catch((err) => {
           console.error("Push notification init failed:", err);
         });
       } catch (error) {

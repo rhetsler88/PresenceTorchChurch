@@ -1,5 +1,5 @@
 import React from "react";
-import { Shield, Eye, User, ChevronDown, Crown } from "lucide-react";
+import { Shield, Eye, User, ChevronDown, Crown, Bell } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -16,7 +16,7 @@ export const ROLE_CONFIG = {
   user: { label: "User", color: "text-muted-foreground", bg: "bg-muted", icon: User },
 };
 
-export default function UserRow({ user, currentUser, onChangeRole, channels, onToggleChannel, onToggleMonitor }) {
+export default function UserRow({ user, currentUser, onChangeRole, channels, onToggleChannel, onToggleMonitor, onToggleStaffAlerts }) {
   const cfg = ROLE_CONFIG[user.role || "user"];
   const Icon = cfg.icon;
   const isCurrentUser = user.id === currentUser?.id;
@@ -53,6 +53,21 @@ export default function UserRow({ user, currentUser, onChangeRole, channels, onT
           title="Toggle monitoring rights"
         >
           <Eye className="w-3.5 h-3.5" />
+        </Button>
+
+        <Button
+          variant={user.receives_staff_alerts ? "default" : "outline"}
+          size="sm"
+          className={`h-8 px-2.5 ${
+            user.receives_staff_alerts
+              ? "bg-red-500 text-white hover:bg-red-600 border-red-500"
+              : "text-muted-foreground"
+          }`}
+          onClick={() => onToggleStaffAlerts?.(user)}
+          disabled={isCurrentUser}
+          title="Staff alerts — any channel Code Red, even when signed out (native push)"
+        >
+          <Bell className="w-3.5 h-3.5" />
         </Button>
 
         {/* Role dropdown */}

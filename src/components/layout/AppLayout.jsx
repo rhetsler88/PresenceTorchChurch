@@ -12,7 +12,7 @@ import useRedAlert from "@/hooks/useRedAlert";
 export default function AppLayout() {
   const location = useLocation();
   const { user, checkUserAuth } = useAuth();
-  const { alertChannel, dismiss: dismissAlert } = useRedAlert();
+  const { alertChannel, dismiss: dismissAlert } = useRedAlert(user);
 
   const isMonitor =
     user?.role === "monitor" ||

@@ -4,7 +4,7 @@ import { api } from "@/api/client";
 import { useAuth } from "@/lib/AuthContext";
 import { isPlatformAdmin } from "@/lib/userUtils";
 import { Button } from "@/components/ui/button";
-import { Radio, Check, ArrowRight, ArrowLeft, LogOut, MailCheck } from "lucide-react";
+import { Radio, Check, ArrowRight, ArrowLeft, LogOut, MailCheck, Bell } from "lucide-react";
 import AppLogo from "@/components/branding/AppLogo";
 import { toast } from "sonner";
 
@@ -15,6 +15,7 @@ export default function Onboarding() {
   const [organizations, setOrganizations] = useState([]);
   const [channels, setChannels] = useState([]);
   const [selectedChannels, setSelectedChannels] = useState(new Set());
+  const [channelAccessTypes, setChannelAccessTypes] = useState({});
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [organization, setOrganization] = useState("");
@@ -54,10 +55,22 @@ export default function Onboarding() {
   const toggleChannel = (id) => {
     setSelectedChannels((prev) => {
       const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
+      if (next.has(id)) {
+        next.delete(id);
+        setChannelAccessTypes((types) => {
+          const { [id]: _, ...rest } = types;
+          return rest;
+        });
+      } else {
+        next.add(id);
+        setChannelAccessTypes((types) => ({ ...types, [id]: types[id] || "full" }));
+      }
       return next;
     });
+  };
+
+  const setChannelAccessType = (id, type) => {
+    setChannelAccessTypes((types) => ({ ...types, [id]: type }));
   };
 
   const handleOrgSubmit = (e) => {
@@ -92,8 +105,38 @@ export default function Onboarding() {
             .map((cid) => {
               const ch = channels.find((c) => c.id === cid);
               if (!ch) return null;
+              const accessType = channelAccessTypes[cid] || "full";
               const pending = (ch.pending_members || []).filter((id) => id !== userId);
+              const pendingNotifications = (ch.pending_notification_members || []).filter(
+                (id) => id !== userId
+              );
               const approved = ch.members || [];
+              const notificationApproved = ch.notification_members || [];
+
+              if (accessType === "notifications") {
+                if (
+                  notificationApproved.includes(userId) ||
+                  notificationApproved.includes(user?.email)
+                ) {
+                  return null;
+                }
+                if (autoApprove) {
+                  return api.entities.Channel.update(cid, {
+                    notification_members: [...notificationApproved, userId],
+                    pending_notification_members: pendingNotifications,
+                  });
+                }
+                if (
+                  !pendingNotifications.includes(userId) &&
+                  !ch.pending_notification_members?.includes(userId)
+                ) {
+                  return api.entities.Channel.update(cid, {
+                    pending_notification_members: [...(ch.pending_notification_members || []), userId],
+                  });
+                }
+                return null;
+              }
+
               if (approved.includes(userId) || approved.includes(user?.email)) {
                 return null;
               }
@@ -242,46 +285,87 @@ export default function Onboarding() {
                 <div className="space-y-2 max-h-72 overflow-y-auto">
                   {orgChannels.map((ch) => {
                     const selected = selectedChannels.has(ch.id);
+                    const accessType = channelAccessTypes[ch.id] || "full";
                     const alreadyMember =
                       ch.members?.includes(user?.id) || ch.members?.includes(user?.email);
+                    const alreadyNotify =
+                      ch.notification_members?.includes(user?.id) ||
+                      ch.notification_members?.includes(user?.email);
                     const alreadyPending = ch.pending_members?.includes(user?.id);
-                    const disabled = alreadyMember || alreadyPending;
+                    const alreadyPendingNotify = ch.pending_notification_members?.includes(user?.id);
+                    const disabled =
+                      alreadyMember || alreadyNotify || alreadyPending || alreadyPendingNotify;
                     return (
-                      <button
-                        key={ch.id}
-                        type="button"
-                        onClick={() => !disabled && toggleChannel(ch.id)}
-                        disabled={disabled}
-                        className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl border transition-all text-left ${
-                          disabled
-                            ? "opacity-50 cursor-not-allowed bg-muted/20 border-border"
-                            : selected
-                              ? "bg-primary/10 border-primary/30"
-                              : "bg-muted/30 border-border hover:bg-muted/60"
-                        }`}
-                      >
-                        <div
-                          className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0"
-                          style={{ backgroundColor: (ch.color || "#f59e0b") + "20" }}
-                        >
-                          <Radio className="w-4 h-4" style={{ color: ch.color || "#f59e0b" }} />
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-semibold text-foreground truncate">{ch.name}</p>
-                          {disabled && (
-                            <p className="text-xs text-muted-foreground">
-                              {alreadyMember ? "Already a member" : "Request pending"}
-                            </p>
-                          )}
-                        </div>
-                        <div
-                          className={`w-5 h-5 rounded-md border flex items-center justify-center flex-shrink-0 ${
-                            selected ? "bg-primary border-primary" : "border-border"
+                      <div key={ch.id} className="space-y-2">
+                        <button
+                          type="button"
+                          onClick={() => !disabled && toggleChannel(ch.id)}
+                          disabled={disabled}
+                          className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl border transition-all text-left ${
+                            disabled
+                              ? "opacity-50 cursor-not-allowed bg-muted/20 border-border"
+                              : selected
+                                ? "bg-primary/10 border-primary/30"
+                                : "bg-muted/30 border-border hover:bg-muted/60"
                           }`}
                         >
-                          {selected && <Check className="w-3.5 h-3.5 text-primary-foreground" />}
-                        </div>
-                      </button>
+                          <div
+                            className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0"
+                            style={{ backgroundColor: (ch.color || "#f59e0b") + "20" }}
+                          >
+                            <Radio className="w-4 h-4" style={{ color: ch.color || "#f59e0b" }} />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-semibold text-foreground truncate">{ch.name}</p>
+                            {disabled && (
+                              <p className="text-xs text-muted-foreground">
+                                {alreadyMember
+                                  ? "Already a member"
+                                  : alreadyNotify
+                                    ? "Already subscribed to alerts"
+                                    : "Request pending"}
+                              </p>
+                            )}
+                          </div>
+                          <div
+                            className={`w-5 h-5 rounded-md border flex items-center justify-center flex-shrink-0 ${
+                              selected ? "bg-primary border-primary" : "border-border"
+                            }`}
+                          >
+                            {selected && <Check className="w-3.5 h-3.5 text-primary-foreground" />}
+                          </div>
+                        </button>
+                        {selected && !disabled && (
+                          <div className="grid grid-cols-2 gap-2 pl-1">
+                            <button
+                              type="button"
+                              onClick={() => setChannelAccessType(ch.id, "full")}
+                              className={`px-3 py-2 rounded-lg border text-left text-xs transition-colors ${
+                                accessType === "full"
+                                  ? "border-primary bg-primary/10 text-foreground"
+                                  : "border-border text-muted-foreground"
+                              }`}
+                            >
+                              <span className="font-semibold block">Full access</span>
+                              Talk & listen
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setChannelAccessType(ch.id, "notifications")}
+                              className={`px-3 py-2 rounded-lg border text-left text-xs transition-colors ${
+                                accessType === "notifications"
+                                  ? "border-primary bg-primary/10 text-foreground"
+                                  : "border-border text-muted-foreground"
+                              }`}
+                            >
+                              <span className="font-semibold flex items-center gap-1">
+                                <Bell className="w-3 h-3" /> Alerts only
+                              </span>
+                              Code Red notifications
+                            </button>
+                          </div>
+                        )}
+                      </div>
                     );
                   })}
                 </div>

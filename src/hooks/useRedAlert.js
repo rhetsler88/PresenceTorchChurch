@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { api } from "@/api/client";
+import { receivesChannelRedAlert, isStaffAlertRecipient } from "@/lib/channelAlerts";
 import {
   triggerRedAlert,
   registerRedAlertBannerHandler,
@@ -7,9 +8,10 @@ import {
   requestRedAlertNotificationPermission,
 } from "@/lib/redAlertActions";
 
-export default function useRedAlert() {
+export default function useRedAlert(user) {
   const [alertChannel, setAlertChannel] = useState(null);
   const prevLevels = useRef({});
+  const channelsRef = useRef([]);
   const alertTimeoutRef = useRef(null);
 
   const showBanner = useCallback((channelName) => {
@@ -17,6 +19,16 @@ export default function useRedAlert() {
     if (alertTimeoutRef.current) clearTimeout(alertTimeoutRef.current);
     alertTimeoutRef.current = setTimeout(() => setAlertChannel(null), 10000);
   }, []);
+
+  const shouldAlertForChannel = useCallback(
+    (channelData) => {
+      if (!user?.id || !channelData) return false;
+      if (receivesChannelRedAlert(user, channelData)) return true;
+      if (isStaffAlertRecipient(user)) return true;
+      return false;
+    },
+    [user]
+  );
 
   useEffect(() => {
     registerRedAlertBannerHandler(showBanner);
@@ -26,7 +38,10 @@ export default function useRedAlert() {
   useEffect(() => {
     api.entities.Channel.list("-created_date", 50)
       .then((channels) => {
-        channels.forEach((c) => { prevLevels.current[c.id] = c.protection_level; });
+        channelsRef.current = channels;
+        channels.forEach((c) => {
+          prevLevels.current[c.id] = c.protection_level;
+        });
       })
       .catch(() => {});
 
@@ -37,9 +52,19 @@ export default function useRedAlert() {
       const oldLevel = prevLevels.current[channelId];
 
       if (newLevel === "red" && oldLevel !== "red") {
-        triggerRedAlert(event.data?.name || "A channel");
+        const channelData =
+          channelsRef.current.find((c) => c.id === channelId) || event.data;
+        if (shouldAlertForChannel(channelData)) {
+          triggerRedAlert(event.data?.name || channelData?.name || "A channel");
+        }
       }
       if (channelId) prevLevels.current[channelId] = newLevel;
+
+      if (event.type === "update" || event.type === "create") {
+        const idx = channelsRef.current.findIndex((c) => c.id === channelId);
+        if (idx >= 0) channelsRef.current[idx] = { ...channelsRef.current[idx], ...event.data };
+        else if (channelId) channelsRef.current.push(event.data);
+      }
     });
 
     return () => {
@@ -47,13 +72,14 @@ export default function useRedAlert() {
       if (alertTimeoutRef.current) clearTimeout(alertTimeoutRef.current);
       registerRedAlertBannerHandler(null);
     };
-  }, []);
+  }, [shouldAlertForChannel]);
 
-  const dismiss = useCallback(() => {
-    if (alertTimeoutRef.current) clearTimeout(alertTimeoutRef.current);
-    dismissRedAlertEffects();
-    setAlertChannel(null);
-  }, []);
-
-  return { alertChannel, dismiss };
+  return {
+    alertChannel,
+    dismiss: useCallback(() => {
+      if (alertTimeoutRef.current) clearTimeout(alertTimeoutRef.current);
+      dismissRedAlertEffects();
+      setAlertChannel(null);
+    }, []),
+  };
 }

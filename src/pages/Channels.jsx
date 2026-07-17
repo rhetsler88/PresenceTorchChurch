@@ -8,12 +8,15 @@ import SetAllProtectionLevel from "@/components/monitor/SetAllProtectionLevel";
 import ChannelCard from "../components/channels/ChannelCard";
 import CreateChannelDialog from "../components/channels/CreateChannelDialog";
 import RenameChannelDialog from "../components/channels/RenameChannelDialog";
+import JoinChannelDialog from "../components/channels/JoinChannelDialog";
+import { isChannelNotificationMember } from "@/lib/channelAlerts";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 
 export default function Channels() {
   const [showCreate, setShowCreate] = useState(false);
   const [renameChannel, setRenameChannel] = useState(null);
+  const [joinChannel, setJoinChannel] = useState(null);
   const [user, setUser] = useState(null);
   const queryClient = useQueryClient();
   const navigate = useNavigate();
@@ -32,9 +35,22 @@ export default function Channels() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["channels"] }),
   });
 
-  const joinChannel = useMutation({
-    mutationFn: async (channel) => {
+  const joinChannelMutation = useMutation({
+    mutationFn: async ({ channel, accessType }) => {
       if (!user?.id) return;
+      if (accessType === "notifications") {
+        const pending = channel.pending_notification_members || [];
+        const approved = channel.notification_members || [];
+        const alreadyPending = pending.includes(user.id);
+        const alreadyApproved =
+          approved.includes(user.id) || approved.includes(user.email);
+        if (!alreadyPending && !alreadyApproved) {
+          await api.entities.Channel.update(channel.id, {
+            pending_notification_members: [...pending, user.id],
+          });
+        }
+        return;
+      }
       const pending = channel.pending_members || [];
       const approved = channel.members || [];
       const alreadyPending = pending.includes(user.id) || pending.includes(user.email);
@@ -47,6 +63,7 @@ export default function Channels() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["channels"] });
+      setJoinChannel(null);
       toast.success("Request sent! Waiting for admin approval.");
     },
   });
@@ -82,11 +99,19 @@ export default function Channels() {
       navigate(`/?channel=${channel.id}`);
       return;
     }
-    if (channel.pending_members?.includes(user?.id) || channel.pending_members?.includes(user?.email)) {
+    if (isChannelNotificationMember(user, channel)) {
+      toast.info("You're subscribed to Code Red alerts for this channel");
+      return;
+    }
+    if (
+      channel.pending_members?.includes(user?.id) ||
+      channel.pending_members?.includes(user?.email) ||
+      channel.pending_notification_members?.includes(user?.id)
+    ) {
       toast.info("Waiting for admin approval");
       return;
     }
-    joinChannel.mutate(channel);
+    setJoinChannel(channel);
   };
 
   return (
@@ -130,7 +155,12 @@ export default function Channels() {
                 key={channel.id}
                 channel={channel}
                 isActive={channel.members?.includes(user?.id) || channel.members?.includes(user?.email)}
-                isPending={channel.pending_members?.includes(user?.id) || channel.pending_members?.includes(user?.email)}
+                isPending={
+                  channel.pending_members?.includes(user?.id) ||
+                  channel.pending_members?.includes(user?.email) ||
+                  channel.pending_notification_members?.includes(user?.id)
+                }
+                isNotifyOnly={isChannelNotificationMember(user, channel)}
                 onSelect={handleSelect}
                 isAdmin={user?.role === "admin" || user?.role === "super_admin"}
                 onRename={(ch) => setRenameChannel(ch)}
@@ -162,6 +192,16 @@ export default function Channels() {
         onOpenChange={(v) => { if (!v) setRenameChannel(null); }}
         channel={renameChannel}
         onRename={(channelId, name, color) => renameMutation.mutateAsync({ channelId, name, color })}
+      />
+
+      <JoinChannelDialog
+        open={!!joinChannel}
+        channel={joinChannel}
+        onOpenChange={(open) => { if (!open) setJoinChannel(null); }}
+        loading={joinChannelMutation.isPending}
+        onRequest={(accessType) =>
+          joinChannel && joinChannelMutation.mutate({ channel: joinChannel, accessType })
+        }
       />
     </div>
   );

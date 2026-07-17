@@ -14,8 +14,9 @@ import { getDisplayName } from "@/lib/userUtils";
 import { playClearTone, playBusyTone } from "@/lib/pttTones";
 import { cleanupStalePTTSignals } from "@/lib/pttSignals";
 import { resolveAudioUrl } from "@/lib/secureAudio";
-import useRelayBroadcast from "../hooks/useRelayBroadcast";
-import useMonitorRelayReceiver from "../hooks/useMonitorRelayReceiver";
+import usePttBroadcast from "../hooks/usePttBroadcast";
+import usePttReceiver from "../hooks/usePttReceiver";
+import { isAgoraEnabled } from "@/lib/agora";
 import MonitorPTTBar from "../components/monitor/MonitorPTTBar";
 import ProtectionLevelControl from "../components/monitor/ProtectionLevelControl";
 import SetAllProtectionLevel from "../components/monitor/SetAllProtectionLevel";
@@ -193,18 +194,36 @@ export default function Monitor() {
     localStorage.setItem("lastChannelId", id);
   }, []);
 
-  // Half-duplex relay broadcast for the target channel
-  const { isRecording, startRecording, stopRecording } = useRelayBroadcast({
+  // Half-duplex PTT for the target channel (Agora WebRTC or Storage relay)
+  const otherChannelIds = useMemo(
+    () => (isAgoraEnabled()
+      ? channels.map((c) => c.id).filter((id) => id && id !== targetChannelId)
+      : []),
+    [channels, targetChannelId]
+  );
+
+  const {
+    isRecording,
+    startRecording,
+    stopRecording,
+    isLiveReceiving: targetLiveReceiving,
+    heardBroadcastsRef: pttHeardRef,
+  } = usePttBroadcast({
     channelId: targetChannelId,
     userId: user?.id,
     userName: user ? getDisplayName(user) : "",
   });
 
-  // Live relay receiver � listens to ALL channels
-  const { isReceiving: isLiveReceiving, heardBroadcastsRef } = useMonitorRelayReceiver({
+  const { isReceiving: multiLiveReceiving, heardBroadcastsRef: multiHeardRef } = usePttReceiver({
+    channelIds: isAgoraEnabled() ? otherChannelIds : channels.map((c) => c.id),
     userId: user?.id,
-    channelIds: channels.map(c => c.id),
   });
+
+  const isLiveReceiving = isAgoraEnabled()
+    ? (targetLiveReceiving || multiLiveReceiving)
+    : multiLiveReceiving;
+
+  const heardBroadcastsRef = isAgoraEnabled() ? pttHeardRef : multiHeardRef;
 
   // Subscribe to PTT signals across all channels � busy tones + channel busy state
   useEffect(() => {

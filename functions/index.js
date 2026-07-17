@@ -1,14 +1,19 @@
 const { onDocumentUpdated, onDocumentCreated } = require("firebase-functions/v2/firestore");
 const { onCall, HttpsError } = require("firebase-functions/v2/https");
+const { defineSecret } = require("firebase-functions/params");
 const { setGlobalOptions } = require("firebase-functions/v2");
 const { initializeApp } = require("firebase-admin/app");
 const { getFirestore, FieldValue } = require("firebase-admin/firestore");
 const { getMessaging } = require("firebase-admin/messaging");
 const { getStorage } = require("firebase-admin/storage");
 const speech = require("@google-cloud/speech");
+const { RtcTokenBuilder, RtcRole } = require("agora-access-token");
 
 initializeApp();
 setGlobalOptions({ region: "us-east5" });
+
+const agoraAppId = defineSecret("AGORA_APP_ID");
+const agoraAppCertificate = defineSecret("AGORA_APP_CERTIFICATE");
 
 const THROTTLE_MS = 15000;
 
@@ -109,6 +114,51 @@ exports.transcribeAudio = onCall(async (request) => {
   }
   return transcribeAndUpdate(message_id, audio_url);
 });
+
+function toAgoraChannelName(channelId) {
+  const name = `ptc_${channelId}`.replace(/[^a-zA-Z0-9_\-!#$%&()+:;<=.>?@[\]^_{|}~, ]/g, "_");
+  return name.slice(0, 64);
+}
+
+exports.getAgoraToken = onCall(
+  { secrets: [agoraAppId, agoraAppCertificate] },
+  async (request) => {
+    if (!request.auth) {
+      throw new HttpsError("unauthenticated", "Sign in required");
+    }
+
+    const channelId = request.data?.channel_id;
+    if (!channelId || typeof channelId !== "string") {
+      throw new HttpsError("invalid-argument", "channel_id is required");
+    }
+
+    const appId = agoraAppId.value();
+    const certificate = agoraAppCertificate.value();
+    if (!appId || !certificate) {
+      throw new HttpsError("failed-precondition", "Agora is not configured on the server");
+    }
+
+    const channelName = toAgoraChannelName(channelId);
+    const account = request.auth.uid;
+    const expireTime = Math.floor(Date.now() / 1000) + 3600;
+    const token = RtcTokenBuilder.buildTokenWithAccount(
+      appId,
+      certificate,
+      channelName,
+      account,
+      RtcRole.PUBLISHER,
+      expireTime
+    );
+
+    return {
+      token,
+      app_id: appId,
+      channel_name: channelName,
+      uid: account,
+      expires_at: expireTime,
+    };
+  }
+);
 
 exports.sendRedAlertPush = onDocumentUpdated("channels/{channelId}", async (event) => {
   const before = event.data.before.data();

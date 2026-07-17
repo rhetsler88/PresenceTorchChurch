@@ -6,8 +6,9 @@ import ChannelHeader from "../components/ptt/ChannelHeader";
 import MessageFeed from "../components/ptt/MessageFeed";
 import ProtectionLevelBadge from "../components/ptt/ProtectionLevelBadge";
 import TextInputBar from "../components/ptt/TextInputBar";
-import useRelayBroadcast from "../hooks/useRelayBroadcast";
-import useRelayReceiver from "../hooks/useRelayReceiver";
+import usePttBroadcast from "../hooks/usePttBroadcast";
+import usePttReceiver from "../hooks/usePttReceiver";
+import { isAgoraEnabled } from "@/lib/agora";
 import useWiredPTT from "../hooks/useWiredPTT";
 import { useBluetoothPTTContext } from "../components/ptt/BluetoothPTTContext";
 import { playClearTone, playBusyTone } from "@/lib/pttTones";
@@ -34,15 +35,24 @@ export default function Talk() {
   const pttSignalRef = useRef(null);
   const channelBusyTimeoutRef = useRef(null);
   const receivingTimeoutRef = useRef(null);
-  const { isRecording, startRecording, stopRecording } = useRelayBroadcast({
+  const {
+    isRecording,
+    startRecording,
+    stopRecording,
+    isLiveReceiving: agoraLiveReceiving,
+    heardBroadcastsRef,
+  } = usePttBroadcast({
     channelId: activeChannelId,
     userId: user?.id,
     userName: user ? getDisplayName(user) : "",
   });
-  const { isReceiving: isLiveReceiving, heardBroadcastsRef } = useRelayReceiver({
+
+  const { isReceiving: storageLiveReceiving } = usePttReceiver({
     channelId: activeChannelId,
     userId: user?.id,
   });
+
+  const isLiveReceiving = isAgoraEnabled() ? agoraLiveReceiving : storageLiveReceiving;
 
   const urlParams = new URLSearchParams(window.location.search);
   const channelParam = urlParams.get("channel");

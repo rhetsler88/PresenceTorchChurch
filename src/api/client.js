@@ -473,6 +473,12 @@ export const functionsApi = {
       return result.data;
     }
 
+    if (name === "getAgoraToken") {
+      const callable = httpsCallable(functions, "getAgoraToken");
+      const result = await callable({ channel_id: params.channel_id });
+      return result.data;
+    }
+
     throw new Error(`Unknown function: ${name}`);
   },
 };

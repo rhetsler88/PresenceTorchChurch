@@ -1,15 +1,19 @@
-import React, { createContext, useState, useContext, useEffect } from "react";
+import React, { createContext, useState, useContext, useEffect, useRef } from "react";
 import { onAuthStateChanged, getRedirectResult } from "firebase/auth";
 import { doc, getDoc, setDoc } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase";
 import { authApi } from "@/api/client";
 import { initPushNotifications, teardownPushNotifications } from "@/lib/pushNotifications";
 import { clearDailyCodeSession } from "@/lib/dailyCode";
+import {
+  LOGIN_TIME_KEY,
+  consumeCloseLogoutFlag,
+  installCloseLogoutHandler,
+} from "@/lib/logoutOnClose";
 
 const AuthContext = createContext();
 
 const AUTO_LOGOUT_MS = 88 * 60 * 60 * 1000;
-const LOGIN_TIME_KEY = "presence_login_time";
 
 function isSessionExpired() {
   const loginTime = localStorage.getItem(LOGIN_TIME_KEY);
@@ -74,6 +78,7 @@ export const AuthProvider = ({ children }) => {
   const [appPublicSettings, setAppPublicSettings] = useState({
     id: "presence-torch-church",
   });
+  const logoutRef = useRef(null);
 
   const applyAuthenticatedUser = (currentUser) => {
     setUser(currentUser);
@@ -137,11 +142,25 @@ export const AuthProvider = ({ children }) => {
 
   useEffect(() => {
     setIsLoadingAuth(true);
+    let pendingCloseLogout = consumeCloseLogoutFlag();
+
     getRedirectResult(auth).catch((error) => {
       console.error("Redirect sign-in failed:", error);
     });
 
     const unsub = onAuthStateChanged(auth, async (firebaseUser) => {
+      if (pendingCloseLogout) {
+        pendingCloseLogout = false;
+        if (firebaseUser) {
+          await expireSession();
+        } else {
+          localStorage.removeItem(LOGIN_TIME_KEY);
+          clearDailyCodeSession();
+        }
+        applySignedOut();
+        return;
+      }
+
       if (!firebaseUser) {
         await teardownPushNotifications();
         applySignedOut();
@@ -202,6 +221,13 @@ export const AuthProvider = ({ children }) => {
     return () => clearTimeout(timer);
   }, [isAuthenticated]);
 
+  useEffect(() => {
+    if (!isAuthenticated) return undefined;
+    return installCloseLogoutHandler((shouldRedirect) =>
+      logoutRef.current?.(shouldRedirect)
+    );
+  }, [isAuthenticated]);
+
   const logout = async (shouldRedirect = true) => {
     setUser(null);
     setIsAuthenticated(false);
@@ -209,6 +235,7 @@ export const AuthProvider = ({ children }) => {
     clearDailyCodeSession();
     await authApi.logout(shouldRedirect ? window.location.href : undefined);
   };
+  logoutRef.current = logout;
 
   const navigateToLogin = () => authApi.redirectToLogin();
   const signInWithEmail = (email, password) => authApi.signInWithEmail(email, password);

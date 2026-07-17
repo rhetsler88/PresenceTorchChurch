@@ -39,13 +39,6 @@
         { "fieldPath": "channel_id", "order": "ASCENDING" },
         { "fieldPath": "created_date", "order": "DESCENDING" }
       ]
-    },
-    {
-      "collectionGroup": "accessRequests",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "created_date", "order": "DESCENDING" }
-      ]
     }
   ],
   "fieldOverrides": []

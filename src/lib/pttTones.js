@@ -1,35 +1,40 @@
 let audioContext = null;
 let isUnlocked = false;
+let lastClearToneAt = 0;
 
-function unlock() {
-  if (isUnlocked) return;
+/** Call on user gesture (PTT press, tap) so tones are allowed in the browser. */
+export function unlockAudioForPTT() {
+  if (typeof window === "undefined") return;
   isUnlocked = true;
   const ctx = getContext();
-  if (ctx.state === "suspended") ctx.resume();
+  if (ctx.state === "suspended") {
+    void ctx.resume().catch(() => {});
+  }
 }
 
 if (typeof window !== "undefined") {
-  const events = ["touchstart", "touchend", "click", "keydown"];
-  const handler = () => {
-    unlock();
-    events.forEach((e) => window.removeEventListener(e, handler));
-  };
-  events.forEach((e) => window.addEventListener(e, handler, { once: true }));
+  const events = ["touchstart", "touchend", "mousedown", "click", "keydown"];
+  const handler = () => unlockAudioForPTT();
+  events.forEach((e) => window.addEventListener(e, handler, { passive: true }));
 }
 
 function getContext() {
   if (!audioContext) {
     audioContext = new (window.AudioContext || window.webkitAudioContext)();
   }
-  if (audioContext.state === "suspended") {
-    audioContext.resume();
-  }
   return audioContext;
 }
 
-function playTone(frequency, duration, delay = 0, volume = 0.3) {
-  unlock();
+async function playTone(frequency, duration, delay = 0, volume = 0.3) {
+  unlockAudioForPTT();
   const ctx = getContext();
+  if (ctx.state === "suspended") {
+    try {
+      await ctx.resume();
+    } catch {
+      return;
+    }
+  }
   const now = ctx.currentTime + delay;
   const oscillator = ctx.createOscillator();
   const gainNode = ctx.createGain();
@@ -44,27 +49,30 @@ function playTone(frequency, duration, delay = 0, volume = 0.3) {
   oscillator.stop(now + duration);
 }
 
-// Two short beeps — you have the clear to talk
+// Two short beeps — you have the clear to talk / someone is keying up
 export function playClearTone() {
-  playTone(800, 0.12, 0);
-  playTone(800, 0.12, 0.18);
+  const now = Date.now();
+  if (now - lastClearToneAt < 400) return;
+  lastClearToneAt = now;
+  void playTone(800, 0.12, 0);
+  void playTone(800, 0.12, 0.18);
 }
 
 // One long low tone — someone is already talking
 export function playBusyTone() {
-  playTone(300, 0.6, 0);
+  void playTone(300, 0.6, 0);
 }
 
 // 8 urgent alert beeps — protection level changed to RED
 export function playRedAlert() {
-  playTone(880, 0.3, 0, 0.85);
-  playTone(880, 0.3, 0.4, 0.85);
-  playTone(880, 0.3, 0.8, 0.85);
-  playTone(880, 0.3, 1.2, 0.85);
-  playTone(880, 0.3, 1.6, 0.85);
-  playTone(880, 0.3, 2.0, 0.85);
-  playTone(880, 0.3, 2.4, 0.85);
-  playTone(880, 0.3, 2.8, 0.85);
+  void playTone(880, 0.3, 0, 0.85);
+  void playTone(880, 0.3, 0.4, 0.85);
+  void playTone(880, 0.3, 0.8, 0.85);
+  void playTone(880, 0.3, 1.2, 0.85);
+  void playTone(880, 0.3, 1.6, 0.85);
+  void playTone(880, 0.3, 2.0, 0.85);
+  void playTone(880, 0.3, 2.4, 0.85);
+  void playTone(880, 0.3, 2.8, 0.85);
 }
 
 export function stopRedAlertVibration() {

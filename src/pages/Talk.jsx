@@ -11,7 +11,7 @@ import usePttReceiver from "../hooks/usePttReceiver";
 import { isAgoraEnabled } from "@/lib/agora";
 import useWiredPTT from "../hooks/useWiredPTT";
 import { useBluetoothPTTContext } from "../components/ptt/BluetoothPTTContext";
-import { playClearTone, playBusyTone } from "@/lib/pttTones";
+import { playClearTone, playBusyTone, unlockAudioForPTT } from "@/lib/pttTones";
 import { cleanupStalePTTSignals } from "@/lib/pttSignals";
 import { playAudioUrl, stopAudio } from "@/lib/audioPlayer";
 import { deviceDayKey } from "@/lib/deviceDate";
@@ -358,12 +358,15 @@ export default function Talk() {
       playBusyTone();
       return;
     }
+
+    unlockAudioForPTT();
+    playClearTone();
+
     if (isAgoraEnabled() && !isChannelReady) {
       toast.error("Connecting to voice channel — wait a moment and try again");
       return;
     }
 
-    playClearTone();
     setIsPTTPressed(true);
     pttStopPendingRef.current = false;
     pttRecordingActiveRef.current = false;

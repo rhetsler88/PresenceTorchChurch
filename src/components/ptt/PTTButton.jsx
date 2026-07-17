@@ -1,6 +1,7 @@
 import React, { useState, useRef, useCallback, useEffect } from "react";
 import { Mic } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
+import { unlockAudioForPTT } from "@/lib/pttTones";
 
 export default function PTTButton({ isPressed, isConnected, isReceiving, isChannelBusy, onStart, onStop }) {
   const [duration, setDuration] = useState(0);
@@ -21,6 +22,7 @@ export default function PTTButton({ isPressed, isConnected, isReceiving, isChann
   const handlePointerDown = useCallback((e) => {
     if (e.button !== undefined && e.button !== 0) return;
     e.preventDefault();
+    unlockAudioForPTT();
     pointerDownRef.current = true;
     buttonRef.current?.setPointerCapture?.(e.pointerId);
     onStart?.();

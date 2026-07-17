@@ -4,8 +4,10 @@ import { api } from "@/api/client";
 import { uploadPrivateAudio } from "@/api/storage";
 import { getAgoraAppId, toAgoraChannelName } from "@/lib/agora";
 import { agoraUidFromFirebaseId } from "@/lib/agoraUid";
+import { configureAgoraSdk } from "@/lib/agoraInit";
+import { playClearTone } from "@/lib/pttTones";
 
-AgoraRTC.setLogLevel(3);
+configureAgoraSdk();
 
 function getSupportedMime() {
   const types = ["audio/webm;codecs=opus", "audio/webm", "audio/ogg;codecs=opus", "audio/mp4"];
@@ -80,6 +82,7 @@ export default function useAgoraPTT({
             remoteUser.audioTrack?.play();
             remoteSpeakerCountRef.current += 1;
             setIsReceiving(true);
+            playClearTone();
             paramsRef.current.onRemoteTalkStart?.(remoteUser.uid);
           }
         });

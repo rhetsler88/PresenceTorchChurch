@@ -3,8 +3,10 @@ import AgoraRTC from "agora-rtc-sdk-ng";
 import { api } from "@/api/client";
 import { getAgoraAppId, toAgoraChannelName } from "@/lib/agora";
 import { agoraUidFromFirebaseId } from "@/lib/agoraUid";
+import { configureAgoraSdk } from "@/lib/agoraInit";
+import { playClearTone } from "@/lib/pttTones";
 
-AgoraRTC.setLogLevel(3);
+configureAgoraSdk();
 
 async function fetchAgoraCredentials(channelId, userId) {
   const data = await api.functions.invoke("getAgoraToken", { channel_id: channelId });
@@ -54,6 +56,7 @@ export default function useAgoraMultiListen({
               remoteUser.audioTrack?.play();
               remoteCountRef.current += 1;
               setIsReceiving(true);
+              playClearTone();
               paramsRef.current.onRemoteTalkStart?.(channelId, remoteUser.uid);
             }
           });

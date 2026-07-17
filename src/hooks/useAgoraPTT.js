@@ -45,6 +45,7 @@ export default function useAgoraPTT({
 
   const clientRef = useRef(null);
   const localAudioTrackRef = useRef(null);
+  const streamRef = useRef(null);
   const recorderRef = useRef(null);
   const fullChunksRef = useRef([]);
   const mimeRef = useRef("audio/webm");
@@ -127,6 +128,10 @@ export default function useAgoraPTT({
           localAudioTrackRef.current.close();
           localAudioTrackRef.current = null;
         }
+        if (streamRef.current) {
+          streamRef.current.getTracks().forEach((track) => track.stop());
+          streamRef.current = null;
+        }
         if (client) {
           client.removeAllListeners();
           await client.leave().catch(() => {});
@@ -152,18 +157,24 @@ export default function useAgoraPTT({
       fullChunksRef.current = [];
       startTimeRef.current = Date.now();
 
-      const localTrack = await AgoraRTC.createMicrophoneAudioTrack({
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+        },
+      });
+      streamRef.current = stream;
+
+      const localTrack = await AgoraRTC.createCustomAudioTrack({
+        mediaStreamTrack: stream.getAudioTracks()[0],
         encoderConfig: "speech_standard",
-        ANS: true,
-        AEC: true,
-        AGC: true,
       });
       localAudioTrackRef.current = localTrack;
       await client.publish([localTrack]);
 
       const mimeType = getSupportedMime();
       mimeRef.current = mimeType || "audio/webm";
-      const stream = new MediaStream([localTrack.getMediaStreamTrack()]);
       const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : {});
       recorder.ondataavailable = (event) => {
         if (event.data?.size > 0) fullChunksRef.current.push(event.data);
@@ -181,6 +192,10 @@ export default function useAgoraPTT({
         localAudioTrackRef.current.stop();
         localAudioTrackRef.current.close();
         localAudioTrackRef.current = null;
+      }
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach((track) => track.stop());
+        streamRef.current = null;
       }
       return false;
     }
@@ -208,6 +223,10 @@ export default function useAgoraPTT({
       localTrack.stop();
       localTrack.close();
       localAudioTrackRef.current = null;
+    }
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((track) => track.stop());
+      streamRef.current = null;
     }
 
     const duration = (Date.now() - startTimeRef.current) / 1000;

@@ -16,6 +16,7 @@ export default function Transcripts() {
   const [search, setSearch] = useState("");
   const [canExport, setCanExport] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
+  const queryClient = useQueryClient();
 
   useEffect(() => {
     api.auth.me().then(u => setCanExport(u?.role === "admin" || u?.role === "director")).catch(() => {});
@@ -48,8 +49,6 @@ export default function Transcripts() {
     queryFn: () => api.entities.User.list(),
   });
 
-  const queryClient = useQueryClient();
-
   // Auto-delete messages older than 30 days
   useEffect(() => {
     const cutoff = new Date();
@@ -71,9 +70,14 @@ export default function Transcripts() {
   };
 
   const filtered = messages.filter(m => {
+    if (!search.trim()) return true;
+    const q = search.toLowerCase();
     const name = resolveName(m);
-    return m.transcript?.toLowerCase().includes(search.toLowerCase()) ||
-      name.toLowerCase().includes(search.toLowerCase());
+    return (
+      m.transcript?.toLowerCase().includes(q) ||
+      m.text_content?.toLowerCase().includes(q) ||
+      name.toLowerCase().includes(q)
+    );
   });
 
   // Group by day — prefer sender's device date, fall back to ETZ of server timestamp

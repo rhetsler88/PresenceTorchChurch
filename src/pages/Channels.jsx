@@ -2,7 +2,7 @@ import React, { useState, useEffect } from "react";
 import { api } from "@/api/client";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
-import { Plus, Radio, Bell } from "lucide-react";
+import { Plus, Radio } from "lucide-react";
 import ProtectionLevelControl from "@/components/monitor/ProtectionLevelControl";
 import SetAllProtectionLevel from "@/components/monitor/SetAllProtectionLevel";
 import ChannelCard from "../components/channels/ChannelCard";
@@ -54,15 +54,6 @@ export default function Channels() {
     },
   });
 
-  const staffAlertMutation = useMutation({
-    mutationFn: () => api.auth.updateMe({ pending_staff_alerts: true }),
-    onSuccess: (updated) => {
-      setUser(updated);
-      toast.success("Staff alert request sent! An admin will review it.");
-    },
-    onError: () => toast.error("Couldn't send staff alert request"),
-  });
-
   const renameMutation = useMutation({
     mutationFn: ({ channelId, name, color }) => api.entities.Channel.update(channelId, { name, color }),
     onSuccess: () => {
@@ -104,12 +95,6 @@ export default function Channels() {
     setJoinChannel(channel);
   };
 
-  const showStaffAlertRequest =
-    user &&
-    !user.receives_staff_alerts &&
-    !user.pending_staff_alerts &&
-    !canManageProtection;
-
   return (
     <div className="min-h-screen safe-top">
       <div className="px-4 pt-4 pb-3 sm:px-5 sm:pt-6">
@@ -140,38 +125,6 @@ export default function Channels() {
       </div>
 
       <div className="px-3 pb-24">
-        {showStaffAlertRequest && (
-          <div className="mb-4 p-4 rounded-xl border border-red-500/20 bg-red-500/5">
-            <div className="flex items-start gap-3">
-              <Bell className="w-5 h-5 text-red-500 shrink-0 mt-0.5" />
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-semibold text-foreground">Staff Code Red alerts</p>
-                <p className="text-xs text-muted-foreground mt-1">
-                  For church staff who need alerts on any channel without PTT access.
-                </p>
-                <Button
-                  size="sm"
-                  className="mt-3"
-                  disabled={staffAlertMutation.isPending}
-                  onClick={() => staffAlertMutation.mutate()}
-                >
-                  Request staff alerts
-                </Button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {user?.pending_staff_alerts && !user?.receives_staff_alerts && (
-          <p className="text-xs text-amber-500 mb-3 px-1">Staff alert request pending admin approval</p>
-        )}
-
-        {user?.receives_staff_alerts && (
-          <p className="text-xs text-red-500 mb-3 px-1 flex items-center gap-1">
-            <Bell className="w-3 h-3" /> Staff alerts enabled — all channels
-          </p>
-        )}
-
         {isLoading ? (
           <div className="flex justify-center py-16">
             <div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin" />

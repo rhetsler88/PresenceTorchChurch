@@ -16,7 +16,17 @@ export const ROLE_CONFIG = {
   user: { label: "User", color: "text-muted-foreground", bg: "bg-muted", icon: User },
 };
 
-export default function UserRow({ user, currentUser, onChangeRole, channels, onToggleChannel, onToggleMonitor, onToggleStaffAlerts }) {
+export default function UserRow({
+  user,
+  currentUser,
+  onChangeRole,
+  channels,
+  onToggleChannel,
+  onToggleMonitor,
+  onToggleStaffAlerts,
+  canManageStaffAlerts = false,
+  adminControls = true,
+}) {
   const cfg = ROLE_CONFIG[user.role || "user"];
   const Icon = cfg.icon;
   const isCurrentUser = user.id === currentUser?.id;
@@ -39,39 +49,42 @@ export default function UserRow({ user, currentUser, onChangeRole, channels, onT
           <p className="text-xs text-muted-foreground truncate capitalize">{user.role || "user"}</p>
         </div>
 
-        {/* Monitor toggle (separate from role) */}
-        <Button
-          variant={user.is_monitor ? "default" : "outline"}
-          size="sm"
-          className={`h-8 px-2.5 ${
-            user.is_monitor
-              ? "bg-amber-500 text-white hover:bg-amber-600 border-amber-500"
-              : "text-muted-foreground"
-          }`}
-          onClick={() => onToggleMonitor(user)}
-          disabled={isCurrentUser}
-          title="Toggle monitoring rights"
-        >
-          <Eye className="w-3.5 h-3.5" />
-        </Button>
+        {adminControls && (
+          <Button
+            variant={user.is_monitor ? "default" : "outline"}
+            size="sm"
+            className={`h-8 px-2.5 ${
+              user.is_monitor
+                ? "bg-amber-500 text-white hover:bg-amber-600 border-amber-500"
+                : "text-muted-foreground"
+            }`}
+            onClick={() => onToggleMonitor(user)}
+            disabled={isCurrentUser}
+            title="Toggle monitoring rights"
+          >
+            <Eye className="w-3.5 h-3.5" />
+          </Button>
+        )}
 
-        <Button
-          variant={user.receives_staff_alerts ? "default" : "outline"}
-          size="sm"
-          className={`h-8 px-2.5 ${
-            user.receives_staff_alerts
-              ? "bg-red-500 text-white hover:bg-red-600 border-red-500"
-              : "text-muted-foreground"
-          }`}
-          onClick={() => onToggleStaffAlerts?.(user)}
-          disabled={isCurrentUser}
-          title="Staff alerts — any channel Code Red, even when signed out (native push)"
-        >
-          <Bell className="w-3.5 h-3.5" />
-        </Button>
+        {canManageStaffAlerts && (
+          <Button
+            variant={user.receives_staff_alerts ? "default" : "outline"}
+            size="sm"
+            className={`h-8 px-2.5 ${
+              user.receives_staff_alerts
+                ? "bg-red-500 text-white hover:bg-red-600 border-red-500"
+                : "text-muted-foreground"
+            }`}
+            onClick={() => onToggleStaffAlerts?.(user)}
+            disabled={isCurrentUser}
+            title="Staff alerts — any channel Code Red, even when signed out (native push)"
+          >
+            <Bell className="w-3.5 h-3.5" />
+          </Button>
+        )}
 
-        {/* Role dropdown */}
-        <DropdownMenu>
+        {adminControls && (
+          <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button
               variant="outline"
@@ -100,10 +113,11 @@ export default function UserRow({ user, currentUser, onChangeRole, channels, onT
             ))}
           </DropdownMenuContent>
         </DropdownMenu>
+        )}
       </div>
 
       {/* Director channel assignment */}
-      {isDirector && (
+      {adminControls && isDirector && (
         <DirectorControls
           user={user}
           channels={channels}

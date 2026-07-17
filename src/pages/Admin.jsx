@@ -122,10 +122,10 @@ export default function Admin() {
   const myOrg = currentUser?.organization;
 
   // Admins are scoped to their own organization
-  const orgUsers = isAdmin
+  const orgUsers = isAdmin || isDirector
     ? users.filter(u => !myOrg || u.organization === myOrg)
     : users;
-  const orgChannels = isAdmin
+  const orgChannels = isAdmin || isDirector
     ? channels.filter(c => !myOrg || c.organization === myOrg)
     : channels;
 
@@ -141,6 +141,8 @@ export default function Admin() {
     ? orgUsers.filter((u) => u.pending_staff_alerts === true)
     : [];
 
+  const canManageStaffAlerts = isAdmin;
+
   const directors = orgUsers.filter(u => u.role === "director");
   const monitors = orgUsers.filter(u => u.role === "monitor");
   const admins = orgUsers.filter(u => u.role === "admin");
@@ -155,6 +157,7 @@ export default function Admin() {
     onToggleChannel: (u, cid) => toggleChannelMutation.mutate({ user: u, channelId: cid }),
     onToggleMonitor: (u) => toggleMonitorMutation.mutate({ user: u }),
     onToggleStaffAlerts: (u) => toggleStaffAlertsMutation.mutate({ user: u }),
+    canManageStaffAlerts,
   });
 
   // Director-only view: only their channels' pending requests

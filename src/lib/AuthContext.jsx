@@ -44,6 +44,7 @@ async function loadOrCreateUser(firebaseUser) {
       onboarded: false,
       directed_channels: [],
       is_monitor: false,
+      pending_staff_alerts: false,
     };
     await setDoc(userRef, profile);
     return { id: firebaseUser.uid, ...profile };

@@ -16,9 +16,9 @@ export function isChannelNotificationMember(user, channel) {
   return isListedOnChannel(user.id, user.email, channel.notification_members);
 }
 
-/** Full PTT member or notifications-only subscriber — receives Code Red for this channel. */
+/** Full PTT member — receives Code Red for this channel when in app / push. */
 export function receivesChannelRedAlert(user, channel) {
-  return isChannelTalkMember(user, channel) || isChannelNotificationMember(user, channel);
+  return isChannelTalkMember(user, channel);
 }
 
 export function isStaffAlertRecipient(user) {

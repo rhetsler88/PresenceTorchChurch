@@ -427,6 +427,7 @@ export const authApi = {
         onboarded: false,
         directed_channels: [],
         is_monitor: false,
+        pending_staff_alerts: false,
       },
       { merge: true }
     );

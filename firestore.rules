@@ -74,7 +74,7 @@ service cloud.firestore {
       allow update: if isSignedIn() && (
         isAdminOrDirector()
         || request.resource.data.diff(resource.data)
-            .affectedKeys().hasOnly(['pending_members', 'pending_notification_members'])
+            .affectedKeys().hasOnly(['pending_members'])
       );
 
       allow delete: if isPlatformAdmin();

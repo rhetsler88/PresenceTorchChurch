@@ -4,6 +4,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Shield, Crown, User } from "lucide-react";
 import UserRow, { ROLE_CONFIG } from "@/components/admin/UserRow";
 import PendingRequests from "@/components/admin/PendingRequests";
+import StaffAlertRequests from "@/components/admin/StaffAlertRequests";
 import DailyCodeCard from "@/components/dailycode/DailyCodeCard";
 import { toast } from "sonner";
 
@@ -56,16 +57,7 @@ export default function Admin() {
   });
 
   const approveMutation = useMutation({
-    mutationFn: async ({ channel, memberId, requestType = "full" }) => {
-      if (requestType === "notifications") {
-        const pending = (channel.pending_notification_members || []).filter((e) => e !== memberId);
-        const subscribers = channel.notification_members || [];
-        await api.entities.Channel.update(channel.id, {
-          notification_members: [...subscribers, memberId],
-          pending_notification_members: pending,
-        });
-        return;
-      }
+    mutationFn: async ({ channel, memberId }) => {
       const members = channel.members || [];
       const pending = (channel.pending_members || []).filter((e) => e !== memberId);
       await api.entities.Channel.update(channel.id, {
@@ -80,18 +72,34 @@ export default function Admin() {
   });
 
   const rejectMutation = useMutation({
-    mutationFn: async ({ channel, memberId, requestType = "full" }) => {
-      if (requestType === "notifications") {
-        const pending = (channel.pending_notification_members || []).filter((e) => e !== memberId);
-        await api.entities.Channel.update(channel.id, { pending_notification_members: pending });
-        return;
-      }
+    mutationFn: async ({ channel, memberId }) => {
       const pending = (channel.pending_members || []).filter((e) => e !== memberId);
       await api.entities.Channel.update(channel.id, { pending_members: pending });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["channels"] });
       toast.success("Request rejected");
+    },
+  });
+
+  const approveStaffAlertMutation = useMutation({
+    mutationFn: ({ user }) =>
+      api.entities.User.update(user.id, {
+        receives_staff_alerts: true,
+        pending_staff_alerts: false,
+      }),
+    onSuccess: (_, { user }) => {
+      queryClient.invalidateQueries({ queryKey: ["users"] });
+      toast.success(`${[user.first_name, user.last_name].filter(Boolean).join(" ") || user.full_name || "User"} staff alerts enabled`);
+    },
+  });
+
+  const rejectStaffAlertMutation = useMutation({
+    mutationFn: ({ user }) =>
+      api.entities.User.update(user.id, { pending_staff_alerts: false }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["users"] });
+      toast.success("Staff alert request rejected");
     },
   });
 
@@ -121,14 +129,17 @@ export default function Admin() {
     ? channels.filter(c => !myOrg || c.organization === myOrg)
     : channels;
 
-  const hasPendingRequests = (c) =>
-    (c.pending_members || []).length > 0 || (c.pending_notification_members || []).length > 0;
+  const hasPendingChannelRequests = (c) => (c.pending_members || []).length > 0;
 
   const pendingRequests = isAdmin
-    ? orgChannels.filter(hasPendingRequests)
+    ? orgChannels.filter(hasPendingChannelRequests)
     : channels.filter(
-        (c) => directedChannelIds.includes(c.id) && hasPendingRequests(c)
+        (c) => directedChannelIds.includes(c.id) && hasPendingChannelRequests(c)
       );
+
+  const staffAlertCandidates = isAdmin
+    ? orgUsers.filter((u) => u.pending_staff_alerts === true)
+    : [];
 
   const directors = orgUsers.filter(u => u.role === "director");
   const monitors = orgUsers.filter(u => u.role === "monitor");
@@ -163,12 +174,8 @@ export default function Admin() {
         <PendingRequests
           channels={pendingRequests}
           users={users}
-          onApprove={(ch, memberId, requestType) =>
-            approveMutation.mutate({ channel: ch, memberId, requestType })
-          }
-          onReject={(ch, memberId, requestType) =>
-            rejectMutation.mutate({ channel: ch, memberId, requestType })
-          }
+          onApprove={(ch, memberId) => approveMutation.mutate({ channel: ch, memberId })}
+          onReject={(ch, memberId) => rejectMutation.mutate({ channel: ch, memberId })}
           showEmpty
         />
       </div>
@@ -206,15 +213,17 @@ export default function Admin() {
 
       <DailyCodeCard />
 
+      <StaffAlertRequests
+        users={staffAlertCandidates}
+        onApprove={(u) => approveStaffAlertMutation.mutate({ user: u })}
+        onReject={(u) => rejectStaffAlertMutation.mutate({ user: u })}
+      />
+
       <PendingRequests
         channels={pendingRequests}
         users={users}
-        onApprove={(ch, memberId, requestType) =>
-          approveMutation.mutate({ channel: ch, memberId, requestType })
-        }
-        onReject={(ch, memberId, requestType) =>
-          rejectMutation.mutate({ channel: ch, memberId, requestType })
-        }
+        onApprove={(ch, memberId) => approveMutation.mutate({ channel: ch, memberId })}
+        onReject={(ch, memberId) => rejectMutation.mutate({ channel: ch, memberId })}
       />
 
       <div className="px-3 pb-24">

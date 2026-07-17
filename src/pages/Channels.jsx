@@ -2,14 +2,13 @@ import React, { useState, useEffect } from "react";
 import { api } from "@/api/client";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
-import { Plus, Radio } from "lucide-react";
+import { Plus, Radio, Bell } from "lucide-react";
 import ProtectionLevelControl from "@/components/monitor/ProtectionLevelControl";
 import SetAllProtectionLevel from "@/components/monitor/SetAllProtectionLevel";
 import ChannelCard from "../components/channels/ChannelCard";
 import CreateChannelDialog from "../components/channels/CreateChannelDialog";
 import RenameChannelDialog from "../components/channels/RenameChannelDialog";
 import JoinChannelDialog from "../components/channels/JoinChannelDialog";
-import { isChannelNotificationMember } from "@/lib/channelAlerts";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 
@@ -36,21 +35,8 @@ export default function Channels() {
   });
 
   const joinChannelMutation = useMutation({
-    mutationFn: async ({ channel, accessType }) => {
+    mutationFn: async ({ channel }) => {
       if (!user?.id) return;
-      if (accessType === "notifications") {
-        const pending = channel.pending_notification_members || [];
-        const approved = channel.notification_members || [];
-        const alreadyPending = pending.includes(user.id);
-        const alreadyApproved =
-          approved.includes(user.id) || approved.includes(user.email);
-        if (!alreadyPending && !alreadyApproved) {
-          await api.entities.Channel.update(channel.id, {
-            pending_notification_members: [...pending, user.id],
-          });
-        }
-        return;
-      }
       const pending = channel.pending_members || [];
       const approved = channel.members || [];
       const alreadyPending = pending.includes(user.id) || pending.includes(user.email);
@@ -66,6 +52,15 @@ export default function Channels() {
       setJoinChannel(null);
       toast.success("Request sent! Waiting for admin approval.");
     },
+  });
+
+  const staffAlertMutation = useMutation({
+    mutationFn: () => api.auth.updateMe({ pending_staff_alerts: true }),
+    onSuccess: (updated) => {
+      setUser(updated);
+      toast.success("Staff alert request sent! An admin will review it.");
+    },
+    onError: () => toast.error("Couldn't send staff alert request"),
   });
 
   const renameMutation = useMutation({
@@ -99,20 +94,21 @@ export default function Channels() {
       navigate(`/?channel=${channel.id}`);
       return;
     }
-    if (isChannelNotificationMember(user, channel)) {
-      toast.info("You're subscribed to Code Red alerts for this channel");
-      return;
-    }
     if (
       channel.pending_members?.includes(user?.id) ||
-      channel.pending_members?.includes(user?.email) ||
-      channel.pending_notification_members?.includes(user?.id)
+      channel.pending_members?.includes(user?.email)
     ) {
       toast.info("Waiting for admin approval");
       return;
     }
     setJoinChannel(channel);
   };
+
+  const showStaffAlertRequest =
+    user &&
+    !user.receives_staff_alerts &&
+    !user.pending_staff_alerts &&
+    !canManageProtection;
 
   return (
     <div className="min-h-screen safe-top">
@@ -134,7 +130,7 @@ export default function Channels() {
         {!canManageProtection && channels.length > 0 && (
           <>
             <p className="text-xs text-muted-foreground mb-4">
-              Tap a channel to request access. Use "Set All Channels" to update the force protection level for every channel at once.
+              Tap a channel to request full PTT access.
             </p>
             <div className="flex justify-center mb-5">
               <SetAllProtectionLevel onApply={(level) => setAllProtectionMutation.mutateAsync(level)} />
@@ -144,23 +140,53 @@ export default function Channels() {
       </div>
 
       <div className="px-3 pb-24">
+        {showStaffAlertRequest && (
+          <div className="mb-4 p-4 rounded-xl border border-red-500/20 bg-red-500/5">
+            <div className="flex items-start gap-3">
+              <Bell className="w-5 h-5 text-red-500 shrink-0 mt-0.5" />
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-semibold text-foreground">Staff Code Red alerts</p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  For church staff who need alerts on any channel without PTT access.
+                </p>
+                <Button
+                  size="sm"
+                  className="mt-3"
+                  disabled={staffAlertMutation.isPending}
+                  onClick={() => staffAlertMutation.mutate()}
+                >
+                  Request staff alerts
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {user?.pending_staff_alerts && !user?.receives_staff_alerts && (
+          <p className="text-xs text-amber-500 mb-3 px-1">Staff alert request pending admin approval</p>
+        )}
+
+        {user?.receives_staff_alerts && (
+          <p className="text-xs text-red-500 mb-3 px-1 flex items-center gap-1">
+            <Bell className="w-3 h-3" /> Staff alerts enabled — all channels
+          </p>
+        )}
+
         {isLoading ? (
           <div className="flex justify-center py-16">
             <div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin" />
           </div>
         ) : channels.length > 0 ? (
           <div className="space-y-2">
-            {channels.map(channel => (
+            {channels.map((channel) => (
               <ChannelCard
                 key={channel.id}
                 channel={channel}
                 isActive={channel.members?.includes(user?.id) || channel.members?.includes(user?.email)}
                 isPending={
                   channel.pending_members?.includes(user?.id) ||
-                  channel.pending_members?.includes(user?.email) ||
-                  channel.pending_notification_members?.includes(user?.id)
+                  channel.pending_members?.includes(user?.email)
                 }
-                isNotifyOnly={isChannelNotificationMember(user, channel)}
                 onSelect={handleSelect}
                 isAdmin={user?.role === "admin" || user?.role === "super_admin"}
                 onRename={(ch) => setRenameChannel(ch)}
@@ -199,9 +225,7 @@ export default function Channels() {
         channel={joinChannel}
         onOpenChange={(open) => { if (!open) setJoinChannel(null); }}
         loading={joinChannelMutation.isPending}
-        onRequest={(accessType) =>
-          joinChannel && joinChannelMutation.mutate({ channel: joinChannel, accessType })
-        }
+        onRequest={() => joinChannel && joinChannelMutation.mutate({ channel: joinChannel })}
       />
     </div>
   );

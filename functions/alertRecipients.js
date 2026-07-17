@@ -6,10 +6,7 @@ function isListed(id, email, list = []) {
 }
 
 function receivesChannelRedAlert(userData, channelData) {
-  return (
-    isListed(userData.id, userData.email, channelData.members) ||
-    isListed(userData.id, userData.email, channelData.notification_members)
-  );
+  return isListed(userData.id, userData.email, channelData.members);
 }
 
 function isStaffAlertRecipient(userData) {
@@ -24,7 +21,7 @@ function collectTokens(list, tokenSet) {
 }
 
 /**
- * Channel-scoped FCM tokens (members + notification-only subscribers).
+ * Channel-scoped FCM tokens (full channel members only).
  * Staff global tokens (any channel red), excluding duplicates already in channel set.
  */
 function buildRedAlertTokenSets(usersSnap, channelData) {

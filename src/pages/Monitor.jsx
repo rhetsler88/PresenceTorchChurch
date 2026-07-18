@@ -18,6 +18,7 @@ import usePttBroadcast from "../hooks/usePttBroadcast";
 import usePttReceiver from "../hooks/usePttReceiver";
 import { isAgoraEnabled } from "@/lib/agora";
 import MonitorPTTBar from "../components/monitor/MonitorPTTBar";
+import useExternalPTT from "../hooks/useExternalPTT";
 import ProtectionLevelControl from "../components/monitor/ProtectionLevelControl";
 import SetAllProtectionLevel from "../components/monitor/SetAllProtectionLevel";
 import { toast } from "sonner";
@@ -554,6 +555,11 @@ export default function Monitor() {
 
     sendMutation.mutate();
   }, [isPTTPressed, sendMutation]);
+
+  useExternalPTT({
+    onPress: handlePTTStart,
+    onRelease: handlePTTStop,
+  });
 
   const totalMessages = allMessages.length;
   const activeChannelCount = Object.values(messagesByChannel).filter(msgs => msgs.length > 0).length;

@@ -1,4 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from "react";
+import { ensureBluetoothPermissions } from "@/lib/bluetoothPermissions";
 
 // Common service UUIDs for Bluetooth PTT / HID buttons
 const OPTIONAL_SERVICES = [
@@ -53,6 +54,7 @@ export default function useBluetoothPTT({ onPress, onRelease }) {
     setIsConnecting(true);
     setError(null);
     try {
+      await ensureBluetoothPermissions();
       const device = await navigator.bluetooth.requestDevice({
         acceptAllDevices: true,
         optionalServices: OPTIONAL_SERVICES,

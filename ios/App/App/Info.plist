@@ -47,5 +47,9 @@
 	</array>
 	<key>UIViewControllerBasedStatusBarAppearance</key>
 	<true/>
+	<key>NSBluetoothAlwaysUsageDescription</key>
+	<string>Presence Torch uses Bluetooth to connect external push-to-talk buttons.</string>
+	<key>NSBluetoothPeripheralUsageDescription</key>
+	<string>Presence Torch uses Bluetooth to connect external push-to-talk buttons.</string>
 </dict>
 </plist>

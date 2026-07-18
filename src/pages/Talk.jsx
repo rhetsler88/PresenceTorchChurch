@@ -9,8 +9,7 @@ import TextInputBar from "../components/ptt/TextInputBar";
 import usePttBroadcast from "../hooks/usePttBroadcast";
 import usePttReceiver from "../hooks/usePttReceiver";
 import { isAgoraEnabled } from "@/lib/agora";
-import useWiredPTT from "../hooks/useWiredPTT";
-import { useBluetoothPTTContext } from "../components/ptt/BluetoothPTTContext";
+import useExternalPTT from "../hooks/useExternalPTT";
 import { playClearTone, playBusyTone, unlockAudioForPTT } from "@/lib/pttTones";
 import { cleanupStalePTTSignals } from "@/lib/pttSignals";
 import { playAudioUrl, stopAudio } from "@/lib/audioPlayer";
@@ -442,14 +441,7 @@ export default function Talk() {
     finishPttStop();
   }, [isPTTPressed, finishPttStop]);
 
-  const bluetooth = useBluetoothPTTContext();
-
-  useEffect(() => {
-    bluetooth?.registerHandlers(handlePTTStart, handlePTTStop);
-    return () => bluetooth?.registerHandlers(null, null);
-  }, [handlePTTStart, handlePTTStop, bluetooth]);
-
-  const wired = useWiredPTT({
+  useExternalPTT({
     onPress: handlePTTStart,
     onRelease: handlePTTStop,
   });

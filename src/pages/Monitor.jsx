@@ -95,23 +95,29 @@ function ChannelMonitorCard({ channel, messages, isAutoPlay, onPlayMessage, play
                   );
                 })()}
               </div>
-              {msg.transcript ? (
+              {msg.text_content ? (
+                <p className="text-xs text-muted-foreground truncate">{msg.text_content}</p>
+              ) : msg.transcript ? (
                 <p className="text-xs text-muted-foreground truncate">{msg.transcript}</p>
+              ) : msg.audio_url ? (
+                <p className="text-xs text-muted-foreground/50 italic">Transcribing…</p>
               ) : (
-                <p className="text-xs text-muted-foreground/50 italic">Voice message</p>
+                <p className="text-xs text-muted-foreground/50 italic">—</p>
               )}
             </div>
-            <Button
-              size="icon"
-              variant="ghost"
-              className="w-6 h-6 flex-shrink-0"
-              onClick={() => onPlayMessage(msg)}
-            >
-              {playingId === msg.id
-                ? <Pause className="w-3 h-3 text-green-500" />
-                : <Play className="w-3 h-3" />
-              }
-            </Button>
+            {msg.audio_url && !msg.text_content && (
+              <Button
+                size="icon"
+                variant="ghost"
+                className="w-6 h-6 flex-shrink-0"
+                onClick={() => onPlayMessage(msg)}
+              >
+                {playingId === msg.id
+                  ? <Pause className="w-3 h-3 text-green-500" />
+                  : <Play className="w-3 h-3" />
+                }
+              </Button>
+            )}
           </div>
         ))}
         {messages.length === 0 && (
@@ -327,14 +333,27 @@ export default function Monitor() {
   });
 
   // Auto-play queue processor
-  const processQueue = () => {
+  const processQueue = useCallback(async () => {
     if (isPlayingRef.current || autoPlayQueueRef.current.length === 0) return;
     const next = autoPlayQueueRef.current.shift();
+    if (!next?.audio_url) {
+      setTimeout(processQueue, 0);
+      return;
+    }
     isPlayingRef.current = true;
     setPlayingId(next.id);
     setPlayingChannel(next.channel_id);
 
-    const audio = new Audio(next.audio_url);
+    const url = await resolveAudioUrl(next.audio_url);
+    if (!url) {
+      setPlayingId(null);
+      setPlayingChannel(null);
+      isPlayingRef.current = false;
+      setTimeout(processQueue, 300);
+      return;
+    }
+
+    const audio = new Audio(url);
     audioRef.current = audio;
     audio.play().catch(() => {});
     audio.onended = () => {
@@ -349,11 +368,15 @@ export default function Monitor() {
       isPlayingRef.current = false;
       setTimeout(processQueue, 300);
     };
-  };
+  }, []);
 
   // Real-time subscription across ALL channels
   useEffect(() => {
     const unsub = api.entities.VoiceMessage.subscribe((event) => {
+      if (event.type === "update") {
+        queryClient.invalidateQueries({ queryKey: ["all-channel-messages"] });
+        return;
+      }
       if (event.type !== "create") return;
 
       // Skip auto-play if already heard via live relay
@@ -362,7 +385,7 @@ export default function Monitor() {
         return;
       }
 
-      if (event.data?.audio_url && event.data.created_by_id !== user?.id) {
+      if (event.data?.audio_url && !event.data?.text_content && event.data.created_by_id !== user?.id) {
         const channel = channels.find(c => c.id === event.data.channel_id);
         // Log activity
         setActivityLog(prev => [{
@@ -381,9 +404,10 @@ export default function Monitor() {
       queryClient.invalidateQueries({ queryKey: ["all-channel-messages"] });
     });
     return unsub;
-  }, [channels, autoPlay, user, queryClient]);
+  }, [channels, autoPlay, user, queryClient, processQueue]);
 
   const handlePlayMessage = async (msg) => {
+    if (!msg.audio_url || msg.text_content) return;
     if (playingId === msg.id) {
       audioRef.current?.pause();
       setPlayingId(null);

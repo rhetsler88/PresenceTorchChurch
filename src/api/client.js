@@ -127,20 +127,12 @@ function createEntityApi(collectionName) {
     async list(sortField, limitCount) {
       let items = [];
       try {
-        const q = buildQuery(collectionName, {}, sortField, limitCount);
-        const snap = await getDocs(q);
-        items = snap.docs.map(docToObject);
-      } catch (err) {
-        console.warn(`Sorted query failed for ${collectionName}:`, err);
-      }
-
-      // Documents missing the orderBy field are excluded from sorted queries.
-      if (items.length === 0) {
         const snap = await getDocs(collection(db, collectionName));
         items = sortItems(snap.docs.map(docToObject), sortField);
         if (limitCount) items = items.slice(0, limitCount);
+      } catch (err) {
+        console.warn(`List query failed for ${collectionName}:`, err);
       }
-
       return items;
     },
 
@@ -250,27 +242,25 @@ function createEntityApi(collectionName) {
         });
       };
 
-      const attach = (q) => {
-        activeUnsub();
-        activeUnsub = onSnapshot(
-          q,
-          emitChanges,
-          (err) => {
-            console.warn(`Subscribe failed for ${collectionName}:`, err);
-            attach(collection(db, collectionName));
-          }
-        );
-      };
-
-      try {
-        const q = filters
-          ? buildQuery(collectionName, filters, "-created_date")
-          : query(collection(db, collectionName), orderBy("created_date", "desc"));
-        attach(q);
-      } catch (err) {
-        console.warn(`Subscribe query failed for ${collectionName}:`, err);
-        attach(collection(db, collectionName));
+      const equalityConstraints = [];
+      if (filters) {
+        for (const [key, value] of Object.entries(filters)) {
+          if (value && typeof value === "object" && "$lt" in value) continue;
+          equalityConstraints.push(where(key, "==", value));
+        }
       }
+
+      const q = equalityConstraints.length
+        ? query(collection(db, collectionName), ...equalityConstraints)
+        : query(collection(db, collectionName), orderBy("created_date", "desc"));
+
+      activeUnsub = onSnapshot(
+        q,
+        emitChanges,
+        (err) => {
+          console.error(`Subscribe failed for ${collectionName}:`, err);
+        }
+      );
 
       return () => activeUnsub();
     },

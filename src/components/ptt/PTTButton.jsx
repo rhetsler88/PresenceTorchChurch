@@ -40,6 +40,12 @@ export default function PTTButton({ isPressed, isRecording, isConnected, isRecei
     onStop?.();
   }, [isHeld, onStop]);
 
+  const handlePointerCancel = useCallback((e) => {
+    // Ignore cancel while pointer capture is held (browser quirk during async mic start)
+    if (buttonRef.current?.hasPointerCapture?.(e.pointerId)) return;
+    handlePointerUp(e);
+  }, [handlePointerUp]);
+
   const formatTime = (s) => {
     const mins = Math.floor(s / 60);
     const secs = Math.floor(s % 60);
@@ -102,7 +108,7 @@ export default function PTTButton({ isPressed, isRecording, isConnected, isRecei
           type="button"
           onPointerDown={handlePointerDown}
           onPointerUp={handlePointerUp}
-          onPointerCancel={handlePointerUp}
+          onPointerCancel={handlePointerCancel}
           whileTap={{ scale: 0.95 }}
           className={`relative w-28 h-28 rounded-full flex items-center justify-center transition-all duration-300 select-none touch-none shadow-2xl ${
             showPressed

@@ -42,7 +42,6 @@ export default function Talk() {
     startRecording,
     stopRecording,
     isLiveReceiving: agoraLiveReceiving,
-    isChannelReady,
     heardBroadcastsRef,
   } = usePttBroadcast({
     channelId: activeChannelId,
@@ -169,7 +168,6 @@ export default function Talk() {
 
       if (event.type === "create" || event.type === "update") {
         mergeChannelMessage(event.data);
-        queryClient.invalidateQueries({ queryKey: ["messages", activeChannelId] });
         queryClient.invalidateQueries({ queryKey: ["all-messages"] });
         queryClient.invalidateQueries({ queryKey: ["all-channel-messages"] });
       }
@@ -322,9 +320,14 @@ export default function Talk() {
     onSuccess: (msg) => {
       if (!msg) return;
       mergeChannelMessage(msg);
-      queryClient.invalidateQueries({ queryKey: ["messages", activeChannelId] });
       queryClient.invalidateQueries({ queryKey: ["all-messages"] });
       queryClient.invalidateQueries({ queryKey: ["all-channel-messages"] });
+    },
+    onError: (err) => {
+      console.error("Voice message send failed:", err);
+      toast.error(err?.message?.includes("permission")
+        ? "Permission denied — confirm you are a channel member"
+        : "Could not send voice message");
     },
   });
 
@@ -346,9 +349,14 @@ export default function Talk() {
     onSuccess: (msg) => {
       if (!msg) return;
       mergeChannelMessage(msg);
-      queryClient.invalidateQueries({ queryKey: ["messages", activeChannelId] });
       queryClient.invalidateQueries({ queryKey: ["all-messages"] });
       queryClient.invalidateQueries({ queryKey: ["all-channel-messages"] });
+    },
+    onError: (err) => {
+      console.error("Text message send failed:", err);
+      toast.error(err?.message?.includes("permission")
+        ? "Permission denied — confirm you are a channel member"
+        : "Could not send text message");
     },
   });
 
@@ -434,7 +442,6 @@ export default function Talk() {
 
     if (pttStopPendingRef.current) {
       pttStopPendingRef.current = false;
-      setIsPTTPressed(false);
       if (started) await stopRecording();
       if (signalId) {
         api.entities.PTTSignal.delete(signalId).catch(() => {});
@@ -444,16 +451,11 @@ export default function Talk() {
     }
 
     if (!started) {
-      setIsPTTPressed(false);
       if (signalId) {
         api.entities.PTTSignal.delete(signalId).catch(() => {});
         pttSignalRef.current = null;
       }
-      toast.error(
-        isAgoraEnabled()
-          ? "Could not start live voice — wait for connect or check mic permission"
-          : "Microphone access denied"
-      );
+      toast.error("Microphone access denied — check browser permissions");
       return;
     }
 
@@ -617,7 +619,7 @@ export default function Talk() {
             isRecording={isRecording}
             onStart={handlePTTStart}
             onStop={handlePTTStop}
-            isConnected={!!activeChannel && (!isAgoraEnabled() || isChannelReady || isPTTPressed || isRecording)}
+            isConnected={!!activeChannel}
             isReceiving={(isReceiving || isLiveReceiving) && !isRecording}
             isChannelBusy={isChannelBusy && !isRecording && !isReceiving && !isLiveReceiving}
           />

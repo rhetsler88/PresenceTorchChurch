@@ -157,19 +157,35 @@ function createEntityApi(collectionName) {
       }
 
       if (queryFailed) {
-        const snap = await getDocs(collection(db, collectionName));
-        items = snap.docs.map(docToObject).filter((item) => {
+        try {
+          const constraints = [];
           for (const [key, value] of Object.entries(filters)) {
             if (value && typeof value === "object" && "$lt" in value) {
-              if (!(item[key] < value.$lt)) return false;
-            } else if (item[key] !== value) {
-              return false;
+              constraints.push(where(key, "<", value.$lt));
+            } else {
+              constraints.push(where(key, "==", value));
             }
           }
-          return true;
-        });
-        items = sortItems(items, sortField);
-        if (limitCount) items = items.slice(0, limitCount);
+          const snap = await getDocs(
+            constraints.length
+              ? query(collection(db, collectionName), ...constraints)
+              : collection(db, collectionName)
+          );
+          items = snap.docs.map(docToObject).filter((item) => {
+            for (const [key, value] of Object.entries(filters)) {
+              if (value && typeof value === "object" && "$lt" in value) {
+                if (!(item[key] < value.$lt)) return false;
+              } else if (item[key] !== value) {
+                return false;
+              }
+            }
+            return true;
+          });
+          items = sortItems(items, sortField);
+          if (limitCount) items = items.slice(0, limitCount);
+        } catch (err) {
+          console.warn(`Filter fallback failed for ${collectionName}:`, err);
+        }
       }
 
       return items;
@@ -183,7 +199,12 @@ function createEntityApi(collectionName) {
         created_date: serverTimestamp(),
       };
       const ref = await addDoc(collection(db, collectionName), payload);
-      return { id: ref.id, ...data, created_by_id: payload.created_by_id };
+      return {
+        id: ref.id,
+        ...data,
+        created_by_id: payload.created_by_id,
+        created_date: new Date().toISOString(),
+      };
     },
 
     async update(id, data) {

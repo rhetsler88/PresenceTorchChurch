@@ -96,17 +96,23 @@ function MessageItem({ message, currentUser, onPlay, isPlaying, canDelete, selec
             onClick={handleBubbleClick}
           >
             <div className="flex items-center gap-3">
-              <Button
-                size="icon"
-                variant="ghost"
-                className={`w-8 h-8 rounded-full ${
-                  isMine ? "hover:bg-white/20 text-primary-foreground" : "hover:bg-muted"
-                }`}
-                onClick={() => !selectionMode && onPlay?.(message)}
-                disabled={selectionMode}
-              >
-                {isPlaying ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5" />}
-              </Button>
+              {message.audio_url ? (
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  className={`w-8 h-8 rounded-full ${
+                    isMine ? "hover:bg-white/20 text-primary-foreground" : "hover:bg-muted"
+                  }`}
+                  onClick={() => !selectionMode && onPlay?.(message)}
+                  disabled={selectionMode}
+                >
+                  {isPlaying ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5" />}
+                </Button>
+              ) : (
+                <div className="w-8 h-8 rounded-full flex items-center justify-center opacity-40">
+                  <Play className="w-3.5 h-3.5" />
+                </div>
+              )}
               <div className="flex flex-col">
                 <div className="flex items-center gap-2">
                   <div className="flex gap-0.5 items-center" style={{ height: "20px" }}>
@@ -133,6 +139,16 @@ function MessageItem({ message, currentUser, onPlay, isPlaying, canDelete, selec
                 </span>
               </div>
             </div>
+            {message.audio_url && !message.transcript && (
+              <div className={`mt-2 pt-2 border-t ${
+                isMine ? "border-white/20" : "border-border"
+              }`}>
+                <div className="flex items-center gap-1">
+                  <FileText className="w-3 h-3 opacity-50" />
+                  <span className={`text-[10px] font-medium opacity-50 italic`}>Transcribing…</span>
+                </div>
+              </div>
+            )}
             {message.transcript && (
               <div className={`mt-2 pt-2 border-t ${
                 isMine ? "border-white/20" : "border-border"

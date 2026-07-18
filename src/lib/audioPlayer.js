@@ -104,8 +104,30 @@ export async function playAudioTailFromUrl(url, startSeconds = 0, { onEnded, onE
     source.start(0);
     return { totalDuration };
   } catch (e) {
-    if (onError) onError(e);
-    throw e;
+    // Fallback for browsers that can't decode via Web Audio (e.g. some Safari/webm cases)
+    try {
+      const resolved = await resolveAudioUrl(url);
+      if (!resolved) throw e;
+      stopRelayAudio();
+      await new Promise((resolve, reject) => {
+        const audio = new Audio(resolved);
+        currentRelayAudio = audio;
+        audio.onended = () => {
+          if (currentRelayAudio === audio) currentRelayAudio = null;
+          if (onEnded) onEnded();
+          resolve();
+        };
+        audio.onerror = () => {
+          if (currentRelayAudio === audio) currentRelayAudio = null;
+          reject(new Error("HTML audio playback failed"));
+        };
+        audio.play().catch(reject);
+      });
+      return { totalDuration: null };
+    } catch (fallbackErr) {
+      if (onError) onError(fallbackErr);
+      throw fallbackErr;
+    }
   }
 }
 

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { api } from "@/api/client";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient, keepPreviousData } from "@tanstack/react-query";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Search, FileText, Clock, User, Radio, FileUp } from "lucide-react";
@@ -36,6 +36,8 @@ export default function Transcripts() {
   const { data: messages = [], isLoading } = useQuery({
     queryKey: ["all-messages", user?.id, canViewAllLogs],
     enabled: !!user?.id,
+    placeholderData: keepPreviousData,
+    refetchInterval: 15000,
     queryFn: async () => {
       let items = [];
       if (canViewAllLogs) {

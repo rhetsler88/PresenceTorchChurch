@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { api } from "@/api/client";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient, keepPreviousData } from "@tanstack/react-query";
 import { motion, AnimatePresence } from "framer-motion";
 import { DragDropContext, Droppable, Draggable } from "@hello-pangea/dnd";
 import { Radio, Volume2, VolumeX, Activity, Eye, Play, Pause, Wifi, WifiOff } from "lucide-react";
@@ -13,7 +13,7 @@ import { deviceDayKey, deviceDayLabel } from "@/lib/deviceDate";
 import { getDisplayName } from "@/lib/userUtils";
 import { playClearTone, playBusyTone } from "@/lib/pttTones";
 import { cleanupStalePTTSignals } from "@/lib/pttSignals";
-import { resolveAudioUrl } from "@/lib/secureAudio";
+import { playAudioUrl, stopAudio } from "@/lib/audioPlayer";
 import usePttBroadcast from "../hooks/usePttBroadcast";
 import usePttReceiver from "../hooks/usePttReceiver";
 import { isAgoraEnabled } from "@/lib/agora";
@@ -95,23 +95,29 @@ function ChannelMonitorCard({ channel, messages, isAutoPlay, onPlayMessage, play
                   );
                 })()}
               </div>
-              {msg.transcript ? (
+              {msg.text_content ? (
+                <p className="text-xs text-muted-foreground truncate">{msg.text_content}</p>
+              ) : msg.transcript ? (
                 <p className="text-xs text-muted-foreground truncate">{msg.transcript}</p>
+              ) : msg.audio_url ? (
+                <p className="text-xs text-muted-foreground/50 italic">Transcribing…</p>
               ) : (
                 <p className="text-xs text-muted-foreground/50 italic">Voice message</p>
               )}
             </div>
-            <Button
-              size="icon"
-              variant="ghost"
-              className="w-6 h-6 flex-shrink-0"
-              onClick={() => onPlayMessage(msg)}
-            >
-              {playingId === msg.id
-                ? <Pause className="w-3 h-3 text-green-500" />
-                : <Play className="w-3 h-3" />
-              }
-            </Button>
+            {msg.audio_url && !msg.text_content && (
+              <Button
+                size="icon"
+                variant="ghost"
+                className="w-6 h-6 flex-shrink-0"
+                onClick={() => onPlayMessage(msg)}
+              >
+                {playingId === msg.id
+                  ? <Pause className="w-3 h-3 text-green-500" />
+                  : <Play className="w-3 h-3" />
+                }
+              </Button>
+            )}
           </div>
         ))}
         {messages.length === 0 && (
@@ -139,7 +145,6 @@ export default function Monitor() {
   const [isChannelBusy, setIsChannelBusy] = useState(false);
   const [busyChannelIds, setBusyChannelIds] = useState(() => new Set());
 
-  const audioRef = useRef(null);
   const autoPlayQueueRef = useRef([]);
   const isPlayingRef = useRef(false);
   const pttSignalRefs = useRef([]);
@@ -170,7 +175,8 @@ export default function Monitor() {
   const { data: allMessages = [] } = useQuery({
     queryKey: ["all-channel-messages"],
     queryFn: () => api.entities.VoiceMessage.list("-created_date", 200),
-    refetchInterval: 5000,
+    placeholderData: keepPreviousData,
+    refetchInterval: 15000,
   });
 
   const { data: users = [] } = useQuery({
@@ -326,39 +332,48 @@ export default function Monitor() {
     }
   });
 
-  // Auto-play queue processor
-  const processQueue = () => {
+  // Auto-play queue processor (resolves private gs:// URLs like Talk page)
+  const processQueue = useCallback(() => {
     if (isPlayingRef.current || autoPlayQueueRef.current.length === 0) return;
     const next = autoPlayQueueRef.current.shift();
+    if (!next?.audio_url) {
+      processQueue();
+      return;
+    }
     isPlayingRef.current = true;
     setPlayingId(next.id);
     setPlayingChannel(next.channel_id);
 
-    const audio = new Audio(next.audio_url);
-    audioRef.current = audio;
-    audio.play().catch(() => {});
-    audio.onended = () => {
+    playAudioUrl(next.audio_url, {
+      onEnded: () => {
+        setPlayingId(null);
+        setPlayingChannel(null);
+        isPlayingRef.current = false;
+        setTimeout(processQueue, 300);
+      },
+      onError: () => {
+        setPlayingId(null);
+        setPlayingChannel(null);
+        isPlayingRef.current = false;
+        setTimeout(processQueue, 300);
+      },
+    }).catch(() => {
       setPlayingId(null);
       setPlayingChannel(null);
       isPlayingRef.current = false;
       setTimeout(processQueue, 300);
-    };
-    audio.onerror = () => {
-      setPlayingId(null);
-      setPlayingChannel(null);
-      isPlayingRef.current = false;
-      setTimeout(processQueue, 300);
-    };
-  };
+    });
+  }, []);
 
   // Real-time subscription across ALL channels
   useEffect(() => {
     const unsub = api.entities.VoiceMessage.subscribe((event) => {
+      queryClient.invalidateQueries({ queryKey: ["all-channel-messages"] });
+
       if (event.type !== "create") return;
 
       // Skip auto-play if already heard via live relay
       if (event.data?.broadcast_id && heardBroadcastsRef.current.has(event.data.broadcast_id)) {
-        queryClient.invalidateQueries({ queryKey: ["all-channel-messages"] });
         return;
       }
 
@@ -378,41 +393,42 @@ export default function Monitor() {
           processQueue();
         }
       }
-      queryClient.invalidateQueries({ queryKey: ["all-channel-messages"] });
     });
     return unsub;
-  }, [channels, autoPlay, user, queryClient]);
+  }, [channels, autoPlay, user, queryClient, processQueue]);
 
-  const handlePlayMessage = async (msg) => {
+  const handlePlayMessage = (msg) => {
+    if (!msg.audio_url) return;
     if (playingId === msg.id) {
-      audioRef.current?.pause();
+      stopAudio();
       setPlayingId(null);
       setPlayingChannel(null);
       isPlayingRef.current = false;
       return;
     }
-    if (audioRef.current) {
-      audioRef.current.pause();
-      isPlayingRef.current = false;
-    }
+    stopAudio();
+    autoPlayQueueRef.current = [];
     isPlayingRef.current = true;
     setPlayingId(msg.id);
     setPlayingChannel(msg.channel_id);
-    const url = await resolveAudioUrl(msg.audio_url);
-    if (!url) {
+    playAudioUrl(msg.audio_url, {
+      onEnded: () => {
+        setPlayingId(null);
+        setPlayingChannel(null);
+        isPlayingRef.current = false;
+      },
+      onError: () => {
+        setPlayingId(null);
+        setPlayingChannel(null);
+        isPlayingRef.current = false;
+        toast.error("Could not play audio");
+      },
+    }).catch(() => {
       setPlayingId(null);
       setPlayingChannel(null);
       isPlayingRef.current = false;
-      return;
-    }
-    const audio = new Audio(url);
-    audioRef.current = audio;
-    audio.play().catch(() => {});
-    audio.onended = () => {
-      setPlayingId(null);
-      setPlayingChannel(null);
-      isPlayingRef.current = false;
-    };
+      toast.error("Could not play audio");
+    });
   };
 
   // Set protection level (synced to Talk page in real-time)
@@ -587,7 +603,7 @@ export default function Monitor() {
                 onCheckedChange={(v) => {
                   setAutoPlay(v);
                   if (!v) {
-                    audioRef.current?.pause();
+                    stopAudio();
                     setPlayingId(null);
                     setPlayingChannel(null);
                     isPlayingRef.current = false;

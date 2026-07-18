@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { api } from "@/api/client";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient, keepPreviousData } from "@tanstack/react-query";
 import PTTButton from "../components/ptt/PTTButton";
 import ChannelHeader from "../components/ptt/ChannelHeader";
 import MessageFeed from "../components/ptt/MessageFeed";
@@ -103,6 +103,8 @@ export default function Talk() {
         ? api.entities.VoiceMessage.filter({ channel_id: activeChannelId }, "-created_date", 50)
         : [],
     enabled: !!activeChannelId,
+    placeholderData: keepPreviousData,
+    refetchInterval: 15000,
   });
 
   const sortedMessages = [...messages].reverse();
@@ -144,12 +146,30 @@ export default function Talk() {
     },
   });
 
-  // Subscribe to new messages — auto-play incoming voice messages from other users
+  const mergeChannelMessage = useCallback((message) => {
+    if (!message?.id || !activeChannelId) return;
+    if (message.channel_id && message.channel_id !== activeChannelId) return;
+    queryClient.setQueryData(["messages", activeChannelId], (old = []) => {
+      const list = Array.isArray(old) ? old : [];
+      const idx = list.findIndex((m) => m.id === message.id);
+      if (idx === -1) return [message, ...list];
+      const next = [...list];
+      next[idx] = { ...next[idx], ...message };
+      return next;
+    });
+  }, [activeChannelId, queryClient]);
+
+  // Subscribe to channel messages — merge creates/updates locally; avoid refetching Talk feed (prevents wipe races)
   useEffect(() => {
     if (!activeChannelId || !user) return;
     const unsub = api.entities.VoiceMessage.subscribe((event) => {
       if (event.data?.channel_id !== activeChannelId) return;
-      queryClient.invalidateQueries({ queryKey: ["messages", activeChannelId] });
+
+      if (event.type === "create" || event.type === "update") {
+        mergeChannelMessage(event.data);
+        queryClient.invalidateQueries({ queryKey: ["all-messages"] });
+        queryClient.invalidateQueries({ queryKey: ["all-channel-messages"] });
+      }
 
       // Auto-play incoming voice messages from other users
       if (event.type === "create" && event.data?.audio_url && event.data?.created_by_id !== user.id) {
@@ -179,9 +199,9 @@ export default function Talk() {
           setIsReceiving(false);
         });
       }
-    });
+    }, { channel_id: activeChannelId });
     return unsub;
-  }, [activeChannelId, queryClient, user]);
+  }, [activeChannelId, queryClient, user, heardBroadcastsRef, mergeChannelMessage]);
 
   // Subscribe to PTT signals — broadcast beeps to all channel members
   useEffect(() => {
@@ -265,7 +285,7 @@ export default function Talk() {
 
       if (!result) {
         toast.error("Recording failed — message not sent");
-        return;
+        return null;
       }
       const { file_url, duration, broadcast_id } = result;
 
@@ -290,18 +310,21 @@ export default function Talk() {
       }
 
       // Transcribe in background
-      transcribeMessage(msg.id, file_url);
+      transcribeMessage(msg.id, file_url, activeChannelId);
+      return msg;
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["messages", activeChannelId] });
+    onSuccess: (msg) => {
+      if (!msg) return;
+      mergeChannelMessage(msg);
       queryClient.invalidateQueries({ queryKey: ["all-messages"] });
+      queryClient.invalidateQueries({ queryKey: ["all-channel-messages"] });
     },
   });
 
   const sendTextMutation = useMutation({
     mutationFn: async (text) => {
       const now = new Date();
-      await api.entities.VoiceMessage.create({
+      return api.entities.VoiceMessage.create({
         channel_id: activeChannelId,
         sender_name: getDisplayName(user),
         sender_email: user?.email || "",
@@ -313,28 +336,43 @@ export default function Talk() {
         device_date: deviceDayKey(now),
       });
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["messages", activeChannelId] });
+    onSuccess: (msg) => {
+      if (!msg) return;
+      mergeChannelMessage(msg);
       queryClient.invalidateQueries({ queryKey: ["all-messages"] });
+      queryClient.invalidateQueries({ queryKey: ["all-channel-messages"] });
     },
   });
 
-  const transcribeMessage = async (msgId, audioUrl) => {
+  const transcribeMessage = async (msgId, audioUrl, channelId) => {
+    const messageChannelId = channelId || activeChannelId;
     try {
-      await api.functions.invoke("transcribeAudio", {
+      const result = await api.functions.invoke("transcribeAudio", {
         audio_url: audioUrl,
         message_id: msgId,
       });
-      queryClient.invalidateQueries({ queryKey: ["messages", activeChannelId] });
+      if (messageChannelId && result?.transcript) {
+        mergeChannelMessage({
+          id: msgId,
+          channel_id: messageChannelId,
+          transcript: result.transcript,
+          is_transcribed: true,
+        });
+      }
       queryClient.invalidateQueries({ queryKey: ["all-messages"] });
+      queryClient.invalidateQueries({ queryKey: ["all-channel-messages"] });
     } catch (err) {
       console.error("Transcription failed:", err);
-      await api.entities.VoiceMessage.update(msgId, {
+      const fallback = {
         transcript: "[Transcription unavailable]",
         is_transcribed: true,
-      });
-      queryClient.invalidateQueries({ queryKey: ["messages", activeChannelId] });
+      };
+      await api.entities.VoiceMessage.update(msgId, fallback);
+      if (messageChannelId) {
+        mergeChannelMessage({ id: msgId, channel_id: messageChannelId, ...fallback });
+      }
       queryClient.invalidateQueries({ queryKey: ["all-messages"] });
+      queryClient.invalidateQueries({ queryKey: ["all-channel-messages"] });
     }
   };
 

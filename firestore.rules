@@ -112,6 +112,12 @@ service cloud.firestore {
         || isSelfJoinRequest('pending_notification_members');
     }
 
+    function isProtectionLevelUpdate() {
+      return request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['protection_level'])
+        && request.resource.data.protection_level in ['blue', 'green', 'yellow', 'red'];
+    }
+
     // ── Users ──────────────────────────────────────────────────────────
     match /users/{userId} {
       allow read: if isSignedIn();
@@ -148,6 +154,7 @@ service cloud.firestore {
       allow update: if isSignedIn() && (
         isAdminOrDirector()
         || isSelfChannelRequest()
+        || (isMonitor() && isProtectionLevelUpdate())
       );
 
       allow delete: if isPlatformAdmin();

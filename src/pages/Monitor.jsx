@@ -433,18 +433,36 @@ export default function Monitor() {
 
   // Set protection level (synced to Talk page in real-time)
   const handleSetProtectionLevel = async (channelId, level) => {
-    await api.entities.Channel.update(channelId, { protection_level: level });
-    queryClient.invalidateQueries({ queryKey: ["channels"] });
-    toast.success(`Protection level set to ${level}`);
+    try {
+      await api.entities.Channel.update(channelId, { protection_level: level });
+      await queryClient.invalidateQueries({ queryKey: ["channels"] });
+      toast.success(`Protection level set to ${level}`);
+    } catch (error) {
+      console.error("Protection level update failed:", error);
+      toast.error(
+        error?.code === "permission-denied"
+          ? "Your account is not allowed to change protection levels."
+          : "Couldn't update the protection level. Please try again."
+      );
+    }
   };
 
   // Set protection level across all channels at once
   const handleSetAllProtectionLevel = async (level) => {
-    await Promise.all(channels.map(c =>
-      api.entities.Channel.update(c.id, { protection_level: level })
-    ));
-    queryClient.invalidateQueries({ queryKey: ["channels"] });
-    toast.success(`All channels set to ${level}`);
+    try {
+      await Promise.all(channels.map(c =>
+        api.entities.Channel.update(c.id, { protection_level: level })
+      ));
+      await queryClient.invalidateQueries({ queryKey: ["channels"] });
+      toast.success(`All channels set to ${level}`);
+    } catch (error) {
+      console.error("Bulk protection level update failed:", error);
+      toast.error(
+        error?.code === "permission-denied"
+          ? "Your account is not allowed to change protection levels."
+          : "Couldn't update all protection levels. Please try again."
+      );
+    }
   };
 
   // PTT send � uses relay broadcast result (already uploaded)

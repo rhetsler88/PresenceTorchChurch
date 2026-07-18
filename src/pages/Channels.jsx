@@ -65,6 +65,14 @@ export default function Channels() {
   const protectionMutation = useMutation({
     mutationFn: ({ channelId, level }) => api.entities.Channel.update(channelId, { protection_level: level }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["channels"] }),
+    onError: (error) => {
+      console.error("Protection level update failed:", error);
+      toast.error(
+        error?.code === "permission-denied"
+          ? "Your account is not allowed to change protection levels."
+          : "Couldn't update the protection level. Please try again."
+      );
+    },
   });
 
   const setAllProtectionMutation = useMutation({
@@ -73,12 +81,24 @@ export default function Channels() {
       queryClient.invalidateQueries({ queryKey: ["channels"] });
       toast.success("All channels updated");
     },
+    onError: (error) => {
+      console.error("Bulk protection level update failed:", error);
+      toast.error(
+        error?.code === "permission-denied"
+          ? "Your account is not allowed to change protection levels."
+          : "Couldn't update all protection levels. Please try again."
+      );
+    },
   });
 
-  const canManageProtection =
+  const canManageChannels =
     user?.role === "admin" ||
     user?.role === "super_admin" ||
     user?.role === "director";
+  const canManageProtection =
+    canManageChannels ||
+    user?.role === "monitor" ||
+    user?.is_monitor === true;
 
   const handleSelect = (channel) => {
     if (channel.members?.includes(user?.id) || channel.members?.includes(user?.email)) {
@@ -98,13 +118,13 @@ export default function Channels() {
   return (
     <div className="min-h-screen safe-top">
       <div className="px-4 pt-4 pb-3 sm:px-5 sm:pt-6">
-        <div className={`flex items-center justify-between mb-3 ${canManageProtection ? "pr-12" : ""}`}>
+        <div className={`flex items-center justify-between mb-3 ${canManageChannels ? "pr-12" : ""}`}>
           <div>
             <h1 className="text-xl font-bold text-foreground">Channels</h1>
             <p className="text-xs text-muted-foreground mt-0.5">{channels.length} channels</p>
           </div>
           <div className="flex items-center gap-2">
-            {canManageProtection && (
+            {canManageChannels && (
               <Button size="sm" onClick={() => setShowCreate(true)} className="gap-1.5">
                 <Plus className="w-4 h-4" />
                 New
@@ -112,15 +132,19 @@ export default function Channels() {
             )}
           </div>
         </div>
-        {!canManageProtection && channels.length > 0 && (
-          <>
-            <p className="text-xs text-muted-foreground mb-4">
-              Tap a channel to request full PTT access.
-            </p>
-            <div className="flex justify-center mb-5">
-              <SetAllProtectionLevel onApply={(level) => setAllProtectionMutation.mutateAsync(level)} />
-            </div>
-          </>
+        {channels.length > 0 && (
+          <div className="mb-5">
+            {!canManageProtection && (
+              <p className="text-xs text-muted-foreground mb-4">
+                Tap a channel to request full PTT access.
+              </p>
+            )}
+            {canManageProtection && (
+              <div className="flex justify-center">
+                <SetAllProtectionLevel onApply={(level) => setAllProtectionMutation.mutate(level)} />
+              </div>
+            )}
+          </div>
         )}
       </div>
 
@@ -145,7 +169,7 @@ export default function Channels() {
                 onRename={(ch) => setRenameChannel(ch)}
                 canManageProtection={canManageProtection}
                 protectionLevel={channel.protection_level || "green"}
-                onProtectionChange={(level) => protectionMutation.mutateAsync({ channelId: channel.id, level })}
+                onProtectionChange={(level) => protectionMutation.mutate({ channelId: channel.id, level })}
               />
             ))}
           </div>

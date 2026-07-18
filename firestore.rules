@@ -38,10 +38,78 @@ service cloud.firestore {
       return isSuperAdmin() || isAdmin();
     }
 
+    function isMonitor() {
+      return userExists() && (
+        userDoc().data.get('is_monitor', false) == true || role() == 'monitor'
+      );
+    }
+
+    function canViewAllVoiceMessages() {
+      return isPlatformAdmin() || isDirector() || isMonitor();
+    }
+
+    function channelDoc(channelId) {
+      return get(/databases/$(database)/documents/channels/$(channelId));
+    }
+
+    function channelExistsPath(channelId) {
+      return channelDoc(channelId).exists;
+    }
+
+    function isListedOnChannel(list) {
+      return list.hasAny([request.auth.uid, request.auth.token.email]);
+    }
+
+    function channelMembers(channelId) {
+      return channelDoc(channelId).data.get('members', []);
+    }
+
+    function channelNotificationMembers(channelId) {
+      return channelDoc(channelId).data.get('notification_members', []);
+    }
+
+    function isChannelTalkMember(channelId) {
+      return isSuperAdmin()
+        || (channelExistsPath(channelId) && isListedOnChannel(channelMembers(channelId)));
+    }
+
+    function isChannelAlertRecipient(channelId) {
+      return isChannelTalkMember(channelId)
+        || (channelExistsPath(channelId) && isListedOnChannel(channelNotificationMembers(channelId)));
+    }
+
+    function isOrgAdminForChannel(channelId) {
+      return isAdmin()
+        && channelExistsPath(channelId)
+        && (
+          !userDoc().data.keys().hasAny(['organization'])
+          || channelDoc(channelId).data.get('organization', '') == userDoc().data.get('organization', '')
+        );
+    }
+
+    function canAccessChannelAlerts(channelId) {
+      return isChannelAlertRecipient(channelId)
+        || isOrgAdminForChannel(channelId)
+        || isDirector()
+        || isMonitor();
+    }
+
     function userSelfUpdateForbiddenKeys() {
       return resource.data.get('onboarded', false) == true
         ? ['role', 'is_monitor', 'receives_staff_alerts', 'pending_staff_alerts']
         : ['role', 'is_monitor', 'receives_staff_alerts'];
+    }
+
+    function isSelfJoinRequest(field) {
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly([field])
+        && request.resource.data.get(field, []).hasAll(resource.data.get(field, []))
+        && request.resource.data.get(field, []).hasAny([request.auth.uid])
+        && !resource.data.get(field, []).hasAny([request.auth.uid]);
+    }
+
+    function isSelfChannelRequest() {
+      return isSelfJoinRequest('pending_members')
+        || isSelfJoinRequest('pending_notification_members');
     }
 
     // ── Users ──────────────────────────────────────────────────────────
@@ -79,8 +147,7 @@ service cloud.firestore {
 
       allow update: if isSignedIn() && (
         isAdminOrDirector()
-        || request.resource.data.diff(resource.data)
-            .affectedKeys().hasOnly(['pending_members'])
+        || isSelfChannelRequest()
       );
 
       allow delete: if isPlatformAdmin();
@@ -88,18 +155,56 @@ service cloud.firestore {
 
     // ── Voice messages ─────────────────────────────────────────────────
     match /voiceMessages/{messageId} {
-      allow read, create: if isSignedIn();
-      allow update: if isSignedIn();
+      allow read: if isSignedIn() && (
+        canViewAllVoiceMessages()
+        || canAccessChannelAlerts(resource.data.channel_id)
+      );
+
+      allow create: if isSignedIn()
+        && request.resource.data.channel_id is string
+        && isChannelTalkMember(request.resource.data.channel_id)
+        && request.resource.data.get('created_by_id', request.auth.uid) == request.auth.uid;
+
+      allow update: if isSignedIn() && (
+        canViewAllVoiceMessages()
+        || canAccessChannelAlerts(resource.data.channel_id)
+      );
+
       allow delete: if isSignedIn() && isAdminOrDirector();
     }
 
     match /pttSignals/{signalId} {
-      allow read, create, delete: if isSignedIn();
+      allow read: if isSignedIn()
+        && resource.data.channel_id is string
+        && canAccessChannelAlerts(resource.data.channel_id);
+
+      allow create: if isSignedIn()
+        && request.resource.data.channel_id is string
+        && isChannelTalkMember(request.resource.data.channel_id)
+        && request.resource.data.sender_id == request.auth.uid;
+
+      allow delete: if isSignedIn()
+        && resource.data.channel_id is string
+        && (
+          resource.data.sender_id == request.auth.uid
+          || isAdminOrDirector()
+        );
+
       allow update: if false;
     }
 
     match /audioChunks/{chunkId} {
-      allow read, create, delete: if isSignedIn();
+      allow read: if isSignedIn()
+        && resource.data.channel_id is string
+        && canAccessChannelAlerts(resource.data.channel_id);
+
+      allow create: if isSignedIn()
+        && request.resource.data.channel_id is string
+        && isChannelTalkMember(request.resource.data.channel_id)
+        && request.resource.data.sender_id == request.auth.uid;
+
+      allow delete: if isSignedIn() && isAdminOrDirector();
+
       allow update: if false;
     }
 

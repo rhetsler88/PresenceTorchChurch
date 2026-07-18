@@ -8,7 +8,8 @@ import { Button } from "@/components/ui/button";
 import { etzDayKey, etzFullTimestamp, etzMediumTimestamp } from "@/lib/etz";
 
 const ETZ = 'America/New_York';
-import { getDisplayName } from "@/lib/userUtils";
+import { getDisplayName, isPlatformAdmin } from "@/lib/userUtils";
+import { receivesChannelRedAlert } from "@/lib/channelAlerts";
 import { toast } from "sonner";
 import DayGroup from "@/components/transcripts/DayGroup";
 
@@ -22,10 +23,37 @@ export default function Transcripts() {
     api.auth.me().then(u => setCanExport(u?.role === "admin" || u?.role === "director")).catch(() => {});
   }, []);
 
+  const { data: user } = useQuery({
+    queryKey: ["me"],
+    queryFn: () => api.auth.me(),
+  });
+
+  const canViewAllLogs =
+    isPlatformAdmin(user) ||
+    user?.role === "director" ||
+    user?.is_monitor === true;
+
   const { data: messages = [], isLoading } = useQuery({
-    queryKey: ["all-messages"],
+    queryKey: ["all-messages", user?.id, canViewAllLogs],
+    enabled: !!user?.id,
     queryFn: async () => {
-      const items = await api.entities.VoiceMessage.list("-created_date", 300);
+      let items = [];
+      if (canViewAllLogs) {
+        items = await api.entities.VoiceMessage.list("-created_date", 300);
+      } else {
+        const channelList = await api.entities.Channel.list("-created_date", 100);
+        const alertChannelIds = channelList
+          .filter((c) => receivesChannelRedAlert(user, c))
+          .map((c) => c.id);
+        const batches = await Promise.all(
+          alertChannelIds.map((id) =>
+            api.entities.VoiceMessage.filter({ channel_id: id }, "-created_date", 100)
+          )
+        );
+        items = batches.flat();
+        items.sort((a, b) => String(b.created_date || "").localeCompare(String(a.created_date || "")));
+        items = items.slice(0, 300);
+      }
       return items.filter((m) => m.audio_url || m.text_content || m.transcript);
     },
   });

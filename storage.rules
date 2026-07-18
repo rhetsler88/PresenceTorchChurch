@@ -10,18 +10,56 @@ service firebase.storage {
       return request.resource.contentType.matches('audio/.*');
     }
 
-    // Live relay chunks (1-second segments during PTT)
-    match /audio/public/{allPaths=**} {
+    function channelDoc(channelId) {
+      return firestore.get(/databases/(default)/documents/channels/$(channelId));
+    }
+
+    function channelExists(channelId) {
+      return channelDoc(channelId) != null;
+    }
+
+    function isListedOnChannel(list) {
+      return list.hasAny([request.auth.uid, request.auth.token.email]);
+    }
+
+    function isChannelTalkMember(channelId) {
+      return channelExists(channelId)
+        && isListedOnChannel(channelDoc(channelId).data.get('members', []));
+    }
+
+    function isChannelAlertRecipient(channelId) {
+      return isChannelTalkMember(channelId)
+        || (
+          channelExists(channelId)
+          && isListedOnChannel(channelDoc(channelId).data.get('notification_members', []))
+        );
+    }
+
+    // Legacy relay + message paths (pre channel-scoped layout)
+    match /audio/public/chunks/{allPaths=**} {
       allow read: if isSignedIn();
+      allow write: if false;
+    }
+
+    match /audio/private/messages/{fileName} {
+      allow read: if isSignedIn();
+      allow write: if false;
+    }
+
+    // Live relay chunks scoped by channel
+    match /audio/public/{channelId}/{allPaths=**} {
+      allow read: if isSignedIn() && isChannelAlertRecipient(channelId);
       allow write: if isSignedIn()
+        && isChannelTalkMember(channelId)
         && isAudio()
         && request.resource.size < 5 * 1024 * 1024;
     }
 
-    // Final voice messages (stored after PTT release)
-    match /audio/private/{allPaths=**} {
-      allow read: if isSignedIn();
+    // Recorded voice messages scoped by channel
+    match /audio/private/{channelId}/{allPaths=**} {
+      allow read: if isSignedIn() && isChannelAlertRecipient(channelId);
       allow write: if isSignedIn()
+        && isChannelTalkMember(channelId)
         && isAudio()
         && request.resource.size < 25 * 1024 * 1024;
     }

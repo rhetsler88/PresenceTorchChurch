@@ -43,7 +43,7 @@ export default function useRelayBroadcast({ channelId, userId, userName }) {
     const file = new File([blob], "chunk.webm", { type: blob.type || mimeRef.current });
     const { file_url } = await uploadPublicAudio(
       file,
-      `chunks/${broadcastIdRef.current}/${seq}.webm`
+      `${channelId}/chunks/${broadcastIdRef.current}/${seq}.webm`
     );
     await api.entities.AudioChunk.create({
       broadcast_id: broadcastIdRef.current,
@@ -160,7 +160,10 @@ export default function useRelayBroadcast({ channelId, userId, userName }) {
 
     try {
       const file = new File([fullBlob], "message.webm", { type: mimeRef.current });
-      const { file_uri } = await uploadPrivateAudio(file, `messages/${broadcastId}.webm`);
+      const { file_uri } = await uploadPrivateAudio(
+        file,
+        `${paramsRef.current.channelId}/messages/${broadcastId}.webm`
+      );
       return { file_url: file_uri, duration, broadcast_id: broadcastId };
     } catch (err) {
       console.error("Private audio upload failed:", err);

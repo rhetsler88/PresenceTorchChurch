@@ -243,7 +243,10 @@ export default function useAgoraPTT({
 
     try {
       const file = new File([fullBlob], "message.webm", { type: mimeRef.current });
-      const { file_uri } = await uploadPrivateAudio(file, `messages/${broadcastId}.webm`);
+      const { file_uri } = await uploadPrivateAudio(
+        file,
+        `${paramsRef.current.channelId}/messages/${broadcastId}.webm`
+      );
       return { file_url: file_uri, duration, broadcast_id: broadcastId };
     } catch (err) {
       console.error("Private audio upload failed:", err);

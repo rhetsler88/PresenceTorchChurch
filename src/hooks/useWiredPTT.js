@@ -1,39 +1,90 @@
 import { useState, useEffect, useCallback, useRef } from "react";
+import { Capacitor } from "@capacitor/core";
+import { isNativeHeadsetPTTAvailable, startNativeHeadsetPTT } from "@/lib/headsetPTT";
 
 export default function useWiredPTT({ onPress, onRelease }) {
-  const [isSupported] = useState(
-    () => typeof navigator !== "undefined" && "mediaSession" in navigator
-  );
+  const [isSupported] = useState(() => {
+    if (typeof navigator === "undefined") return false;
+    if (isNativeHeadsetPTTAvailable()) return true;
+    return "mediaSession" in navigator;
+  });
+
   const pressedRef = useRef(false);
   const releaseTimerRef = useRef(null);
+  const callbacksRef = useRef({ onPress, onRelease });
+
+  useEffect(() => {
+    callbacksRef.current = { onPress, onRelease };
+  }, [onPress, onRelease]);
 
   const handlePress = useCallback(() => {
     if (pressedRef.current) return;
     pressedRef.current = true;
     if (releaseTimerRef.current) clearTimeout(releaseTimerRef.current);
-    onPress?.();
-  }, [onPress]);
+    callbacksRef.current.onPress?.();
+  }, []);
 
   const handleRelease = useCallback(() => {
     if (!pressedRef.current) return;
-    // Small debounce so rapid double-clicks don't re-trigger
     releaseTimerRef.current = setTimeout(() => {
       pressedRef.current = false;
-      onRelease?.();
+      callbacksRef.current.onRelease?.();
     }, 150);
-  }, [onRelease]);
+  }, []);
 
   useEffect(() => {
-    if (!isSupported) return;
+    if (!isNativeHeadsetPTTAvailable()) return undefined;
+
+    let cleanup = () => {};
+    let cancelled = false;
+
+    startNativeHeadsetPTT({
+      onDown: handlePress,
+      onUp: handleRelease,
+    }).then((stop) => {
+      if (cancelled) {
+        stop();
+        return;
+      }
+      cleanup = stop;
+    });
+
+    return () => {
+      cancelled = true;
+      cleanup();
+    };
+  }, [handlePress, handleRelease]);
+
+  useEffect(() => {
+    if (Capacitor.isNativePlatform()) return undefined;
+    if (typeof navigator === "undefined" || !("mediaSession" in navigator)) return undefined;
+
+    navigator.mediaSession.metadata ??= new MediaMetadata({
+      title: "Presence Torch PTT",
+      artist: "Push-to-talk",
+    });
+    navigator.mediaSession.playbackState = "paused";
 
     const actionHandlers = {
       play: () => handlePress(),
       pause: () => handleRelease(),
-      previoustrack: () => { handlePress(); handleRelease(); },
-      nexttrack: () => { handlePress(); handleRelease(); },
-      seekbackward: () => { handlePress(); handleRelease(); },
-      seekforward: () => { handlePress(); handleRelease(); },
       stop: () => handleRelease(),
+      previoustrack: () => {
+        handlePress();
+        handleRelease();
+      },
+      nexttrack: () => {
+        handlePress();
+        handleRelease();
+      },
+      seekbackward: () => {
+        handlePress();
+        handleRelease();
+      },
+      seekforward: () => {
+        handlePress();
+        handleRelease();
+      },
     };
 
     try {
@@ -41,7 +92,7 @@ export default function useWiredPTT({ onPress, onRelease }) {
         navigator.mediaSession.setActionHandler(action, handler);
       }
     } catch {
-      // Some actions may not be supported on all browsers
+      // Some actions may not be supported on all browsers.
     }
 
     return () => {
@@ -54,7 +105,7 @@ export default function useWiredPTT({ onPress, onRelease }) {
       }
       if (releaseTimerRef.current) clearTimeout(releaseTimerRef.current);
     };
-  }, [handlePress, handleRelease, isSupported]);
+  }, [handlePress, handleRelease]);
 
   return { isSupported };
 }

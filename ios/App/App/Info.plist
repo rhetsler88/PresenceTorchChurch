@@ -51,5 +51,7 @@
 	<string>Presence Torch uses Bluetooth to connect external push-to-talk buttons.</string>
 	<key>NSBluetoothPeripheralUsageDescription</key>
 	<string>Presence Torch uses Bluetooth to connect external push-to-talk buttons.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Presence Torch uses the microphone for push-to-talk and wired headset buttons.</string>
 </dict>
 </plist>

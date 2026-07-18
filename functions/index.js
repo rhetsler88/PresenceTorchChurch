@@ -1,5 +1,6 @@
 const { onDocumentUpdated, onDocumentCreated } = require("firebase-functions/v2/firestore");
 const { onCall, HttpsError } = require("firebase-functions/v2/https");
+const { onSchedule } = require("firebase-functions/v2/scheduler");
 const { defineSecret } = require("firebase-functions/params");
 const { setGlobalOptions } = require("firebase-functions/v2");
 const { initializeApp } = require("firebase-admin/app");
@@ -20,6 +21,8 @@ const agoraAppId = defineSecret("AGORA_APP_ID");
 const agoraAppCertificate = defineSecret("AGORA_APP_CERTIFICATE");
 
 const THROTTLE_MS = 15000;
+const VOICE_MESSAGE_RETENTION_DAYS = 20;
+const CLEANUP_BATCH_SIZE = 500;
 
 const SPEECH_CONFIG = {
   encoding: "WEBM_OPUS",
@@ -41,6 +44,62 @@ function toGcsUri(audioUrl) {
   }
 
   return null;
+}
+
+function storagePathFromAudioUrl(audioUrl) {
+  const gcsUri = toGcsUri(audioUrl);
+  if (!gcsUri) return null;
+  return gcsUri.replace(/^gs:\/\/[^/]+\//, "");
+}
+
+async function cleanupOldVoiceMessages() {
+  const db = getFirestore();
+  const bucket = getStorage().bucket();
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - VOICE_MESSAGE_RETENTION_DAYS);
+
+  let deletedDocs = 0;
+  let deletedFiles = 0;
+
+  while (true) {
+    const snap = await db
+      .collection("voiceMessages")
+      .where("created_date", "<", cutoff)
+      .limit(CLEANUP_BATCH_SIZE)
+      .get();
+
+    if (snap.empty) break;
+
+    const batch = db.batch();
+    const fileDeletes = [];
+
+    snap.docs.forEach((docSnap) => {
+      batch.delete(docSnap.ref);
+      const storagePath = storagePathFromAudioUrl(docSnap.data().audio_url);
+      if (storagePath) {
+        fileDeletes.push(
+          bucket
+            .file(storagePath)
+            .delete()
+            .then(() => {
+              deletedFiles += 1;
+            })
+            .catch(() => {})
+        );
+      }
+    });
+
+    await batch.commit();
+    await Promise.all(fileDeletes);
+    deletedDocs += snap.size;
+
+    if (snap.size < CLEANUP_BATCH_SIZE) break;
+  }
+
+  console.log(
+    `Voice message cleanup: removed ${deletedDocs} docs, ${deletedFiles} storage files (older than ${VOICE_MESSAGE_RETENTION_DAYS} days)`
+  );
+  return { deletedDocs, deletedFiles };
 }
 
 async function runSpeechToText(gcsUri) {
@@ -270,3 +329,13 @@ exports.sendRedAlertPush = onDocumentUpdated("channels/{channelId}", async (even
     createdAt: FieldValue.serverTimestamp(),
   });
 });
+
+exports.cleanupOldVoiceMessages = onSchedule(
+  {
+    schedule: "0 3 * * *",
+    timeZone: "America/New_York",
+  },
+  async () => {
+    await cleanupOldVoiceMessages();
+  }
+);

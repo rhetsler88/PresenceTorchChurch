@@ -49,15 +49,6 @@ export default function Transcripts() {
     queryFn: () => api.entities.User.list(),
   });
 
-  // Auto-delete messages older than 30 days
-  useEffect(() => {
-    const cutoff = new Date();
-    cutoff.setDate(cutoff.getDate() - 30);
-    api.entities.VoiceMessage.deleteMany({ created_date: { $lt: cutoff.toISOString() } })
-      .then(() => queryClient.invalidateQueries({ queryKey: ["all-messages"] }))
-      .catch(() => {});
-  }, [queryClient]);
-
   const channelMap = {};
   channels.forEach(c => { channelMap[c.id] = c; });
 

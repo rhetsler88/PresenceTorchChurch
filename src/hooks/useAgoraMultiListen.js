@@ -8,6 +8,18 @@ import { playClearTone } from "@/lib/pttTones";
 
 configureAgoraSdk();
 
+function isExpectedJoinCancel(err) {
+  const code = String(err?.code || "");
+  const message = String(err?.message || err || "");
+  return (
+    code.includes("WS_ABORT")
+    || code.includes("LEAVE")
+    || code.includes("OPERATION_ABORTED")
+    || message.includes("WS_ABORT")
+    || message.includes("LEAVE")
+  );
+}
+
 async function fetchAgoraCredentials(channelId, userId) {
   const data = await api.functions.invoke("getAgoraToken", { channel_id: channelId });
   const uid = typeof data.uid === "number" ? data.uid : agoraUidFromFirebaseId(userId);
@@ -17,6 +29,12 @@ async function fetchAgoraCredentials(channelId, userId) {
     channelName: data.channel_name || toAgoraChannelName(channelId),
     uid,
   };
+}
+
+async function leaveClient(client) {
+  if (!client) return;
+  client.removeAllListeners();
+  await client.leave().catch(() => {});
 }
 
 /**
@@ -33,6 +51,8 @@ export default function useAgoraMultiListen({
   const clientsRef = useRef(new Map());
   const paramsRef = useRef({ userId, onRemoteTalkStart });
   paramsRef.current = { userId, onRemoteTalkStart };
+
+  const channelKey = channelIds.filter(Boolean).sort().join("|");
 
   useEffect(() => {
     if (!userId || channelIds.length === 0) return undefined;
@@ -69,13 +89,14 @@ export default function useAgoraMultiListen({
 
           await client.join(appId, channelName, token, uid);
           if (cancelled) {
-            client.removeAllListeners();
-            await client.leave().catch(() => {});
+            await leaveClient(client);
             continue;
           }
           activeClients.set(channelId, client);
         } catch (err) {
-          console.error(`Agora listen failed for channel ${channelId}:`, err);
+          if (!cancelled && !isExpectedJoinCancel(err)) {
+            console.error(`Agora listen failed for channel ${channelId}:`, err);
+          }
         }
       }
       if (!cancelled) clientsRef.current = activeClients;
@@ -86,13 +107,12 @@ export default function useAgoraMultiListen({
       remoteCountRef.current = 0;
       setIsReceiving(false);
       for (const client of activeClients.values()) {
-        client.removeAllListeners();
-        void client.leave().catch(() => {});
+        void leaveClient(client);
       }
       activeClients.clear();
       clientsRef.current = new Map();
     };
-  }, [userId, channelIds.join("|")]);
+  }, [userId, channelKey]);
 
   return { isReceiving, heardBroadcastsRef };
 }

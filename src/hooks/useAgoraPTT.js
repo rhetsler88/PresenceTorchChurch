@@ -17,6 +17,18 @@ function getSupportedMime() {
   return "";
 }
 
+function isExpectedJoinCancel(err) {
+  const code = String(err?.code || "");
+  const message = String(err?.message || err || "");
+  return (
+    code.includes("WS_ABORT")
+    || code.includes("LEAVE")
+    || code.includes("OPERATION_ABORTED")
+    || message.includes("WS_ABORT")
+    || message.includes("LEAVE")
+  );
+}
+
 async function fetchAgoraCredentials(channelId, userId) {
   const data = await api.functions.invoke("getAgoraToken", { channel_id: channelId });
   const uid = typeof data.uid === "number" ? data.uid : agoraUidFromFirebaseId(userId);
@@ -28,6 +40,32 @@ async function fetchAgoraCredentials(channelId, userId) {
   };
 }
 
+async function leaveClient(client) {
+  if (!client) return;
+  client.removeAllListeners();
+  await client.leave().catch(() => {});
+}
+
+function attachRemoteHandlers(client, joinGen, joinGenRef, uid, remoteSpeakerCountRef, setIsReceiving) {
+  client.on("user-published", async (remoteUser, mediaType) => {
+    if (joinGen !== joinGenRef.current) return;
+    if (remoteUser.uid === uid || String(remoteUser.uid) === String(uid)) return;
+    await client.subscribe(remoteUser, mediaType);
+    if (mediaType === "audio") {
+      remoteUser.audioTrack?.play();
+      remoteSpeakerCountRef.current += 1;
+      setIsReceiving(true);
+      playClearTone();
+    }
+  });
+
+  client.on("user-unpublished", (_remoteUser, mediaType) => {
+    if (mediaType !== "audio") return;
+    remoteSpeakerCountRef.current = Math.max(0, remoteSpeakerCountRef.current - 1);
+    if (remoteSpeakerCountRef.current === 0) setIsReceiving(false);
+  });
+}
+
 /**
  * Real-time PTT over Agora WebRTC.
  * Joins the channel as a listener; publishes mic only while PTT is held.
@@ -36,8 +74,6 @@ async function fetchAgoraCredentials(channelId, userId) {
 export default function useAgoraPTT({
   channelId,
   userId,
-  onRemoteTalkStart,
-  onRemoteTalkStop,
 }) {
   const [isRecording, setIsRecording] = useState(false);
   const [isReceiving, setIsReceiving] = useState(false);
@@ -57,95 +93,103 @@ export default function useAgoraPTT({
   const joinGenRef = useRef(0);
   const joinPromiseRef = useRef(null);
 
-  const paramsRef = useRef({ channelId, userId, onRemoteTalkStart, onRemoteTalkStop });
-  paramsRef.current = { channelId, userId, onRemoteTalkStart, onRemoteTalkStop };
+  const paramsRef = useRef({ channelId, userId });
+  paramsRef.current = { channelId, userId };
 
   useEffect(() => {
-    if (!channelId || !userId) return undefined;
+    if (!channelId || !userId) {
+      setIsChannelReady(false);
+      return undefined;
+    }
 
     const joinGen = ++joinGenRef.current;
-    let client = null;
+    let cancelled = false;
 
-    const joinTask = (async () => {
+    const attemptJoin = async (retry = false) => {
+      let pendingClient = null;
       try {
         const { appId, token, channelName, uid } = await fetchAgoraCredentials(channelId, userId);
+        if (cancelled || joinGen !== joinGenRef.current) return null;
         if (!appId || !token) throw new Error("Missing Agora credentials");
-        if (joinGen !== joinGenRef.current) return null;
 
-        client = AgoraRTC.createClient({ mode: "rtc", codec: "vp8" });
-        clientRef.current = client;
+        pendingClient = AgoraRTC.createClient({ mode: "rtc", codec: "vp8" });
+        attachRemoteHandlers(pendingClient, joinGen, joinGenRef, uid, remoteSpeakerCountRef, setIsReceiving);
 
-        client.on("user-published", async (remoteUser, mediaType) => {
-          if (joinGen !== joinGenRef.current) return;
-          if (remoteUser.uid === uid || String(remoteUser.uid) === String(uid)) return;
-          await client.subscribe(remoteUser, mediaType);
-          if (mediaType === "audio") {
-            remoteUser.audioTrack?.play();
-            remoteSpeakerCountRef.current += 1;
-            setIsReceiving(true);
-            playClearTone();
-            paramsRef.current.onRemoteTalkStart?.(remoteUser.uid);
-          }
-        });
-
-        client.on("user-unpublished", (remoteUser, mediaType) => {
-          if (mediaType !== "audio") return;
-          remoteSpeakerCountRef.current = Math.max(0, remoteSpeakerCountRef.current - 1);
-          if (remoteSpeakerCountRef.current === 0) {
-            setIsReceiving(false);
-            paramsRef.current.onRemoteTalkStop?.(remoteUser.uid);
-          }
-        });
-
-        await client.join(appId, channelName, token, uid);
-        if (joinGen === joinGenRef.current) setIsChannelReady(true);
-        return client;
-      } catch (err) {
-        console.error("Agora join failed:", err);
-        if (client) {
-          client.removeAllListeners();
-          await client.leave().catch(() => {});
+        await pendingClient.join(appId, channelName, token, uid);
+        if (cancelled || joinGen !== joinGenRef.current) {
+          await leaveClient(pendingClient);
+          return null;
         }
-        if (joinGen === joinGenRef.current) clientRef.current = null;
+
+        clientRef.current = pendingClient;
+        setIsChannelReady(true);
+        return pendingClient;
+      } catch (err) {
+        if (pendingClient) await leaveClient(pendingClient);
+        if (cancelled || joinGen !== joinGenRef.current || isExpectedJoinCancel(err)) {
+          return null;
+        }
+        if (!retry) {
+          await new Promise((r) => setTimeout(r, 800));
+          if (cancelled || joinGen !== joinGenRef.current) return null;
+          return attemptJoin(true);
+        }
+        console.error("Agora join failed:", err);
         if (joinGen === joinGenRef.current) setIsChannelReady(false);
         return null;
       }
-    })();
+    };
 
+    const joinTask = attemptJoin(false);
     joinPromiseRef.current = joinTask;
     void joinTask;
 
     return () => {
+      cancelled = true;
       joinGenRef.current += 1;
       joinPromiseRef.current = null;
-      setIsChannelReady(false);
-      remoteSpeakerCountRef.current = 0;
-      setIsReceiving(false);
 
-      const cleanup = async () => {
-        if (localAudioTrackRef.current) {
-          localAudioTrackRef.current.stop();
-          localAudioTrackRef.current.close();
-          localAudioTrackRef.current = null;
-        }
-        if (streamRef.current) {
-          streamRef.current.getTracks().forEach((track) => track.stop());
-          streamRef.current = null;
-        }
-        if (client) {
-          client.removeAllListeners();
-          await client.leave().catch(() => {});
-        }
-        if (clientRef.current === client) clientRef.current = null;
-      };
-      void cleanup();
+      if (activeRef.current) {
+        // Unpublish happens in stopRecording — don't leave mid-transmit (causes WS_ABORT)
+        return;
+      }
+
+      setIsChannelReady(false);
+      setIsReceiving(false);
+      remoteSpeakerCountRef.current = 0;
+
+      if (localAudioTrackRef.current) {
+        localAudioTrackRef.current.stop();
+        localAudioTrackRef.current.close();
+        localAudioTrackRef.current = null;
+      }
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach((track) => track.stop());
+        streamRef.current = null;
+      }
+
+      const client = clientRef.current;
+      clientRef.current = null;
+      void leaveClient(client);
     };
   }, [channelId, userId]);
 
   const startRecording = useCallback(async () => {
     const { channelId: cid, userId: uid } = paramsRef.current;
     if (!cid || !uid || activeRef.current) return Boolean(activeRef.current);
-    const client = clientRef.current || await joinPromiseRef.current;
+
+    let client = clientRef.current;
+    if (!client && joinPromiseRef.current) {
+      client = await joinPromiseRef.current;
+    }
+    if (!client) {
+      // One more attempt after brief wait (Agora may still be connecting)
+      await new Promise((r) => setTimeout(r, 500));
+      client = clientRef.current;
+      if (!client && joinPromiseRef.current) {
+        client = await joinPromiseRef.current;
+      }
+    }
     if (!client) {
       console.error("Agora client not ready — join failed or still connecting");
       return false;

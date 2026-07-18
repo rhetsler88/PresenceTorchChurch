@@ -35,6 +35,7 @@ export default function useRelayBroadcast({ channelId, userId, userName }) {
   const isStoppingRef = useRef(false);
   const initSegmentRef = useRef(null);
   const pendingUploadsRef = useRef([]);
+  const heardBroadcastsRef = useRef(new Set());
 
   const uploadChunk = useCallback(async (blob, seq, isFinal) => {
     const { channelId, userId, userName } = paramsRef.current;
@@ -89,6 +90,7 @@ export default function useRelayBroadcast({ channelId, userId, userName }) {
     }
 
     broadcastIdRef.current = crypto.randomUUID();
+    heardBroadcastsRef.current.add(broadcastIdRef.current);
     sequenceRef.current = 0;
     fullChunksRef.current = [];
     initSegmentRef.current = null;
@@ -171,5 +173,5 @@ export default function useRelayBroadcast({ channelId, userId, userName }) {
     }
   }, []);
 
-  return { isRecording, startRecording, stopRecording };
+  return { isRecording, startRecording, stopRecording, heardBroadcastsRef };
 }

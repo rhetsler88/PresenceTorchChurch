@@ -3,46 +3,42 @@ import { Mic } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { unlockAudioForPTT } from "@/lib/pttTones";
 
-export default function PTTButton({ isPressed, isConnected, isReceiving, isChannelBusy, onStart, onStop }) {
+export default function PTTButton({ isPressed, isRecording, isConnected, isReceiving, isChannelBusy, onStart, onStop }) {
   const [duration, setDuration] = useState(0);
+  const [isHeld, setIsHeld] = useState(false);
   const timerRef = useRef(null);
-  const pointerDownRef = useRef(false);
   const buttonRef = useRef(null);
 
+  const showPressed = isHeld || isPressed || isRecording;
+
   useEffect(() => {
-    if (isPressed) {
+    if (showPressed) {
       setDuration(0);
       timerRef.current = setInterval(() => setDuration(d => d + 0.1), 100);
     } else {
       clearInterval(timerRef.current);
     }
     return () => clearInterval(timerRef.current);
-  }, [isPressed]);
+  }, [showPressed]);
 
   const handlePointerDown = useCallback((e) => {
     if (e.button !== undefined && e.button !== 0) return;
     e.preventDefault();
     unlockAudioForPTT();
-    pointerDownRef.current = true;
+    setIsHeld(true);
     buttonRef.current?.setPointerCapture?.(e.pointerId);
     onStart?.();
   }, [onStart]);
 
   const handlePointerUp = useCallback((e) => {
     e.preventDefault();
-    if (!pointerDownRef.current) return;
-    pointerDownRef.current = false;
+    if (!isHeld) return;
+    setIsHeld(false);
     if (buttonRef.current?.hasPointerCapture?.(e.pointerId)) {
       buttonRef.current.releasePointerCapture(e.pointerId);
     }
     onStop?.();
-  }, [onStop]);
-
-  const handlePointerCancel = useCallback((e) => {
-    if (!pointerDownRef.current) return;
-    pointerDownRef.current = false;
-    onStop?.();
-  }, [onStop]);
+  }, [isHeld, onStop]);
 
   const formatTime = (s) => {
     const mins = Math.floor(s / 60);
@@ -53,7 +49,7 @@ export default function PTTButton({ isPressed, isConnected, isReceiving, isChann
   return (
     <div className="flex flex-col items-center gap-4">
       <AnimatePresence>
-        {isPressed && (
+        {showPressed && (
           <motion.div
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
@@ -70,7 +66,7 @@ export default function PTTButton({ isPressed, isConnected, isReceiving, isChann
 
       <div className="relative">
         <AnimatePresence>
-          {isPressed && (
+          {showPressed && (
             <>
               {[0, 1, 2].map(i => (
                 <motion.div
@@ -106,11 +102,10 @@ export default function PTTButton({ isPressed, isConnected, isReceiving, isChann
           type="button"
           onPointerDown={handlePointerDown}
           onPointerUp={handlePointerUp}
-          onPointerCancel={handlePointerCancel}
-          onLostPointerCapture={handlePointerCancel}
+          onPointerCancel={handlePointerUp}
           whileTap={{ scale: 0.95 }}
           className={`relative w-28 h-28 rounded-full flex items-center justify-center transition-all duration-300 select-none touch-none shadow-2xl ${
-            isPressed
+            showPressed
               ? "bg-primary text-primary-foreground shadow-primary/40"
               : isReceiving
               ? "bg-green-600 text-white shadow-green-600/30"
@@ -120,14 +115,14 @@ export default function PTTButton({ isPressed, isConnected, isReceiving, isChann
               ? "bg-card border-2 border-border text-foreground hover:border-primary/50"
               : "bg-muted text-muted-foreground cursor-not-allowed"
           }`}
-          disabled={!isConnected}
+          disabled={!isConnected && !showPressed}
         >
-          <Mic className={`w-9 h-9 ${isPressed ? "animate-pulse" : ""}`} />
+          <Mic className={`w-9 h-9 ${showPressed ? "animate-pulse" : ""}`} />
         </motion.button>
       </div>
 
       <p className="text-xs text-muted-foreground font-medium uppercase tracking-widest">
-        {isPressed
+        {showPressed
           ? "Release to send"
           : isReceiving
           ? "Receiving..."

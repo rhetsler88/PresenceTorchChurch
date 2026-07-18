@@ -146,48 +146,34 @@ function createEntityApi(collectionName) {
 
     async filter(filters, sortField, limitCount) {
       let items = [];
-      let queryFailed = false;
       try {
-        const q = buildQuery(collectionName, filters, sortField, limitCount);
-        const snap = await getDocs(q);
-        items = snap.docs.map(docToObject);
-      } catch (err) {
-        queryFailed = true;
-        console.warn(`Filtered query failed for ${collectionName}:`, err);
-      }
+        const equalityConstraints = [];
+        const rangeFilters = [];
 
-      if (queryFailed) {
-        try {
-          const constraints = [];
-          for (const [key, value] of Object.entries(filters)) {
-            if (value && typeof value === "object" && "$lt" in value) {
-              constraints.push(where(key, "<", value.$lt));
-            } else {
-              constraints.push(where(key, "==", value));
-            }
+        for (const [key, value] of Object.entries(filters)) {
+          if (value && typeof value === "object" && "$lt" in value) {
+            rangeFilters.push([key, value]);
+          } else {
+            equalityConstraints.push(where(key, "==", value));
           }
-          const snap = await getDocs(
-            constraints.length
-              ? query(collection(db, collectionName), ...constraints)
-              : collection(db, collectionName)
-          );
-          items = snap.docs.map(docToObject).filter((item) => {
-            for (const [key, value] of Object.entries(filters)) {
-              if (value && typeof value === "object" && "$lt" in value) {
-                if (!(item[key] < value.$lt)) return false;
-              } else if (item[key] !== value) {
-                return false;
-              }
-            }
-            return true;
-          });
-          items = sortItems(items, sortField);
-          if (limitCount) items = items.slice(0, limitCount);
-        } catch (err) {
-          console.warn(`Filter fallback failed for ${collectionName}:`, err);
         }
+
+        const snap = await getDocs(
+          equalityConstraints.length
+            ? query(collection(db, collectionName), ...equalityConstraints)
+            : collection(db, collectionName)
+        );
+        items = snap.docs.map(docToObject);
+
+        for (const [key, value] of rangeFilters) {
+          items = items.filter((item) => item[key] < value.$lt);
+        }
+      } catch (err) {
+        console.warn(`Filter query failed for ${collectionName}:`, err);
       }
 
+      items = sortItems(items, sortField);
+      if (limitCount) items = items.slice(0, limitCount);
       return items;
     },
 

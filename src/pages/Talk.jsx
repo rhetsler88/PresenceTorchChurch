@@ -50,12 +50,14 @@ export default function Talk() {
     userName: user ? getDisplayName(user) : "",
   });
 
-  const { isReceiving: storageLiveReceiving } = usePttReceiver({
+  const { isReceiving: storageLiveReceiving, heardBroadcastsRef: relayHeardRef } = usePttReceiver({
     channelId: activeChannelId,
     userId: user?.id,
   });
 
-  const isLiveReceiving = isAgoraEnabled() ? agoraLiveReceiving : storageLiveReceiving;
+  const isLiveReceiving = isAgoraEnabled()
+    ? (agoraLiveReceiving || storageLiveReceiving)
+    : storageLiveReceiving;
 
   const urlParams = new URLSearchParams(window.location.search);
   const channelParam = urlParams.get("channel");
@@ -167,6 +169,7 @@ export default function Talk() {
 
       if (event.type === "create" || event.type === "update") {
         mergeChannelMessage(event.data);
+        queryClient.invalidateQueries({ queryKey: ["messages", activeChannelId] });
         queryClient.invalidateQueries({ queryKey: ["all-messages"] });
         queryClient.invalidateQueries({ queryKey: ["all-channel-messages"] });
       }
@@ -174,7 +177,10 @@ export default function Talk() {
       // Auto-play incoming voice messages from other users
       if (event.type === "create" && event.data?.audio_url && event.data?.created_by_id !== user.id) {
         // Skip auto-play if already heard via live relay
-        if (event.data?.broadcast_id && heardBroadcastsRef.current.has(event.data.broadcast_id)) return;
+        if (event.data?.broadcast_id && (
+          heardBroadcastsRef.current.has(event.data.broadcast_id)
+          || relayHeardRef.current.has(event.data.broadcast_id)
+        )) return;
         setPlayingId(event.data.id);
         setIsReceiving(true);
         if (receivingTimeoutRef.current) clearTimeout(receivingTimeoutRef.current);
@@ -201,7 +207,7 @@ export default function Talk() {
       }
     }, { channel_id: activeChannelId });
     return unsub;
-  }, [activeChannelId, queryClient, user, heardBroadcastsRef, mergeChannelMessage]);
+  }, [activeChannelId, queryClient, user, heardBroadcastsRef, relayHeardRef, mergeChannelMessage]);
 
   // Subscribe to PTT signals — broadcast beeps to all channel members
   useEffect(() => {
@@ -316,6 +322,7 @@ export default function Talk() {
     onSuccess: (msg) => {
       if (!msg) return;
       mergeChannelMessage(msg);
+      queryClient.invalidateQueries({ queryKey: ["messages", activeChannelId] });
       queryClient.invalidateQueries({ queryKey: ["all-messages"] });
       queryClient.invalidateQueries({ queryKey: ["all-channel-messages"] });
     },
@@ -339,6 +346,7 @@ export default function Talk() {
     onSuccess: (msg) => {
       if (!msg) return;
       mergeChannelMessage(msg);
+      queryClient.invalidateQueries({ queryKey: ["messages", activeChannelId] });
       queryClient.invalidateQueries({ queryKey: ["all-messages"] });
       queryClient.invalidateQueries({ queryKey: ["all-channel-messages"] });
     },
@@ -399,11 +407,6 @@ export default function Talk() {
     unlockAudioForPTT();
     playClearTone();
 
-    if (isAgoraEnabled() && !isChannelReady) {
-      toast.error("Connecting to voice channel — wait a moment and try again");
-      return;
-    }
-
     setIsPTTPressed(true);
     pttStopPendingRef.current = false;
     pttRecordingActiveRef.current = false;
@@ -448,20 +451,20 @@ export default function Talk() {
       }
       toast.error(
         isAgoraEnabled()
-          ? "Could not start live voice — check mic permission and console errors"
+          ? "Could not start live voice — wait for connect or check mic permission"
           : "Microphone access denied"
       );
       return;
     }
 
     pttRecordingActiveRef.current = true;
+    playClearTone();
   }, [
     activeChannel,
     isPTTPressed,
     isReceiving,
     isLiveReceiving,
     isChannelBusy,
-    isChannelReady,
     startRecording,
     stopRecording,
     activeChannelId,
@@ -471,7 +474,6 @@ export default function Talk() {
   const handlePTTStop = useCallback(() => {
     if (pttStartInFlightRef.current) {
       pttStopPendingRef.current = true;
-      setIsPTTPressed(false);
       return;
     }
     if (!isPTTPressed && !pttRecordingActiveRef.current) return;
@@ -612,9 +614,10 @@ export default function Talk() {
         <div className="pb-safe pt-3 flex flex-col items-center gap-3 bg-gradient-to-t from-background via-background to-transparent">
           <PTTButton
             isPressed={isPTTPressed}
+            isRecording={isRecording}
             onStart={handlePTTStart}
             onStop={handlePTTStop}
-            isConnected={!!activeChannel && (!isAgoraEnabled() || isChannelReady)}
+            isConnected={!!activeChannel && (!isAgoraEnabled() || isChannelReady || isPTTPressed || isRecording)}
             isReceiving={(isReceiving || isLiveReceiving) && !isRecording}
             isChannelBusy={isChannelBusy && !isRecording && !isReceiving && !isLiveReceiving}
           />

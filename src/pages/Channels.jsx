@@ -24,6 +24,16 @@ export default function Channels() {
     api.auth.me().then(setUser);
   }, []);
 
+  // Sync force protection badges when levels change elsewhere (e.g. Monitor)
+  useEffect(() => {
+    const unsub = api.entities.Channel.subscribe((event) => {
+      if (event.type === "update") {
+        queryClient.invalidateQueries({ queryKey: ["channels"] });
+      }
+    });
+    return unsub;
+  }, [queryClient]);
+
   const { data: channels = [], isLoading } = useQuery({
     queryKey: ["channels"],
     queryFn: () => api.entities.Channel.list("-created_date", 100),
@@ -69,10 +79,14 @@ export default function Channels() {
 
   const setAllProtectionMutation = useMutation({
     mutationFn: (level) => api.entities.Channel.updateMany({}, { $set: { protection_level: level } }),
-    onSuccess: () => {
+    onSuccess: (_data, level) => {
+      queryClient.setQueryData(["channels"], (old) =>
+        (old ?? []).map((c) => ({ ...c, protection_level: level }))
+      );
       queryClient.invalidateQueries({ queryKey: ["channels"] });
       toast.success("All channels updated");
     },
+    onError: () => toast.error("Could not update protection levels"),
   });
 
   const canManageProtection =

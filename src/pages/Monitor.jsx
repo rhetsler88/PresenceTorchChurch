@@ -440,11 +440,17 @@ export default function Monitor() {
 
   // Set protection level across all channels at once
   const handleSetAllProtectionLevel = async (level) => {
-    await Promise.all(channels.map(c =>
-      api.entities.Channel.update(c.id, { protection_level: level })
-    ));
-    queryClient.invalidateQueries({ queryKey: ["channels"] });
-    toast.success(`All channels set to ${level}`);
+    try {
+      await api.entities.Channel.updateMany({}, { $set: { protection_level: level } });
+      queryClient.setQueryData(["channels"], (old) =>
+        (old ?? []).map((c) => ({ ...c, protection_level: level }))
+      );
+      queryClient.invalidateQueries({ queryKey: ["channels"] });
+      toast.success(`All channels set to ${level}`);
+    } catch (err) {
+      console.error("Set all protection level failed:", err);
+      toast.error("Could not update protection levels");
+    }
   };
 
   // PTT send � uses relay broadcast result (already uploaded)

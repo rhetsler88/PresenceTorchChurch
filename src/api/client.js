@@ -122,6 +122,15 @@ function sortItems(items, sortField) {
   });
 }
 
+/** Re-throw permission errors so UI can show a real failure instead of silent empty data. */
+function handleFirestoreQueryError(collectionName, err) {
+  if (err?.code === "permission-denied") {
+    console.error(`Filter query failed for ${collectionName}:`, err);
+    throw err;
+  }
+  console.warn(`Filter query failed for ${collectionName}:`, err);
+}
+
 function createEntityApi(collectionName) {
   return {
     async list(sortField, limitCount) {
@@ -131,6 +140,10 @@ function createEntityApi(collectionName) {
         items = sortItems(snap.docs.map(docToObject), sortField);
         if (limitCount) items = items.slice(0, limitCount);
       } catch (err) {
+        if (err?.code === "permission-denied") {
+          console.error(`List query failed for ${collectionName}:`, err);
+          throw err;
+        }
         console.warn(`List query failed for ${collectionName}:`, err);
       }
       return items;
@@ -161,7 +174,7 @@ function createEntityApi(collectionName) {
           items = items.filter((item) => item[key] < value.$lt);
         }
       } catch (err) {
-        console.warn(`Filter query failed for ${collectionName}:`, err);
+        handleFirestoreQueryError(collectionName, err);
       }
 
       items = sortItems(items, sortField);
@@ -252,7 +265,7 @@ function createEntityApi(collectionName) {
 
       const q = equalityConstraints.length
         ? query(collection(db, collectionName), ...equalityConstraints)
-        : query(collection(db, collectionName), orderBy("created_date", "desc"));
+        : collection(db, collectionName);
 
       activeUnsub = onSnapshot(
         q,
@@ -301,8 +314,22 @@ export const organizationsApi = {
   },
 };
 
+const channelsApi = createEntityApi("channels");
+
+function omitInactiveChannels(items) {
+  return items.filter((item) => item.is_active !== false);
+}
+
 export const entities = {
-  Channel: createEntityApi("channels"),
+  Channel: {
+    ...channelsApi,
+    async list(sortField, limitCount) {
+      return omitInactiveChannels(await channelsApi.list(sortField, limitCount));
+    },
+    async filter(filters, sortField, limitCount) {
+      return omitInactiveChannels(await channelsApi.filter(filters, sortField, limitCount));
+    },
+  },
   User: {
     ...createEntityApi("users"),
     async list() {

@@ -273,6 +273,11 @@ function createEntityApi(collectionName) {
         q,
         emitChanges,
         (err) => {
+          if (err?.code === "permission-denied") {
+            console.warn(`Subscribe skipped for ${collectionName} (permission-denied)`, filters || {});
+            activeUnsub();
+            return;
+          }
           console.error(`Subscribe failed for ${collectionName}:`, err);
         }
       );

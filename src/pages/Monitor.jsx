@@ -9,13 +9,12 @@ import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { etzTime } from "@/lib/etz";
 import { deviceDayKey, deviceDayLabel } from "@/lib/deviceDate";
-import { getDisplayName, getMonitorChannels, canReadVoiceMessageForChannel } from "@/lib/userUtils";
+import { getDisplayName, getMonitorChannels, getReadableVoiceChannels } from "@/lib/userUtils";
 import { playClearTone, playBusyTone } from "@/lib/pttTones";
 import { cleanupStalePTTSignals } from "@/lib/pttSignals";
 import { playAudioUrl, stopAudio } from "@/lib/audioPlayer";
 import usePttBroadcast from "../hooks/usePttBroadcast";
 import usePttReceiver from "../hooks/usePttReceiver";
-import { isAgoraEnabled } from "@/lib/agora";
 import MonitorPTTBar from "../components/monitor/MonitorPTTBar";
 import useExternalPTT from "../hooks/useExternalPTT";
 import ProtectionLevelControl from "../components/monitor/ProtectionLevelControl";
@@ -176,7 +175,7 @@ export default function Monitor() {
     [user, channels]
   );
   const readableMonitorChannels = useMemo(
-    () => monitorChannels.filter((c) => canReadVoiceMessageForChannel(user, c)),
+    () => getReadableVoiceChannels(user, monitorChannels),
     [monitorChannels, user]
   );
   const monitorChannelIds = useMemo(
@@ -187,7 +186,7 @@ export default function Monitor() {
 
   const { data: allMessages = [] } = useQuery({
     queryKey: ["all-channel-messages", user?.id, monitorChannelIdKey],
-    enabled: !!user?.id && monitorChannelIds.length > 0,
+    enabled: !!user?.id && !!user?.role && monitorChannelIds.length > 0,
     queryFn: async () => {
       const batches = await Promise.all(
         monitorChannelIds.map(async (id) => {
@@ -241,13 +240,13 @@ export default function Monitor() {
     localStorage.setItem("lastChannelId", id);
   }, []);
 
-  // Half-duplex PTT for the target channel (Agora WebRTC or Storage relay)
-  const otherChannelIds = useMemo(
-    () => (isAgoraEnabled()
-      ? monitorChannels.map((c) => c.id).filter((id) => id && id !== targetChannelId)
-      : []),
-    [monitorChannels, targetChannelId]
+  const monitorRelayChannelIds = useMemo(
+    () => monitorChannels.map((c) => c.id).filter(Boolean),
+    [monitorChannels]
   );
+
+  const targetChannelBusy = Boolean(targetChannelId && busyChannelIds.has(targetChannelId));
+  const agoraListenActive = isPTTPressed || targetChannelBusy;
 
   const {
     isRecording,
@@ -259,18 +258,16 @@ export default function Monitor() {
     channelId: targetChannelId,
     userId: user?.id,
     userName: user ? getDisplayName(user) : "",
+    listenActive: agoraListenActive,
   });
 
   const { isReceiving: multiLiveReceiving, heardBroadcastsRef: multiHeardRef } = usePttReceiver({
-    channelIds: isAgoraEnabled() ? otherChannelIds : monitorChannels.map((c) => c.id),
+    channelIds: monitorRelayChannelIds,
     userId: user?.id,
   });
 
-  const isLiveReceiving = isAgoraEnabled()
-    ? (targetLiveReceiving || multiLiveReceiving)
-    : multiLiveReceiving;
-
-  const heardBroadcastsRef = isAgoraEnabled() ? pttHeardRef : multiHeardRef;
+  const isLiveReceiving = targetLiveReceiving || multiLiveReceiving;
+  const heardBroadcastsRef = pttHeardRef;
 
   // Per-channel PTT subscriptions — collection-wide queries fail Firestore rules for partial access
   useEffect(() => {
@@ -408,7 +405,7 @@ export default function Monitor() {
 
   // Real-time subscription scoped to monitor channels
   useEffect(() => {
-    if (!user?.id || monitorChannelIds.length === 0) return;
+    if (!user?.id || !user?.role || monitorChannelIds.length === 0) return;
 
     const onEvent = (event) => {
       if (!monitorChannelIds.includes(event.data?.channel_id)) return;

@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { etzDayKey, etzFullTimestamp, etzMediumTimestamp } from "@/lib/etz";
 
 const ETZ = 'America/New_York';
-import { getDisplayName, canReadVoiceMessageForChannel } from "@/lib/userUtils";
+import { getDisplayName, getReadableVoiceChannels } from "@/lib/userUtils";
 import { toast } from "sonner";
 import DayGroup from "@/components/transcripts/DayGroup";
 
@@ -32,9 +32,8 @@ export default function Transcripts() {
   });
 
   const readableChannelIds = useMemo(() => {
-    if (!user?.id || !channels.length) return [];
-    return channels
-      .filter((c) => canReadVoiceMessageForChannel(user, c))
+    if (!user?.id || !user?.role || !channels.length) return [];
+    return getReadableVoiceChannels(user, channels)
       .map((c) => c.id)
       .filter(Boolean);
   }, [user, channels]);
@@ -43,7 +42,7 @@ export default function Transcripts() {
 
   const { data: messages = [], isLoading } = useQuery({
     queryKey: ["all-messages", user?.id, readableChannelIdKey],
-    enabled: !!user?.id && readableChannelIds.length > 0,
+    enabled: !!user?.id && !!user?.role && readableChannelIds.length > 0,
     placeholderData: keepPreviousData,
     refetchInterval: 15000,
     queryFn: async () => {
@@ -65,7 +64,7 @@ export default function Transcripts() {
   });
 
   useEffect(() => {
-    if (!user?.id || readableChannelIds.length === 0) return undefined;
+    if (!user?.id || !user?.role || readableChannelIds.length === 0) return undefined;
 
     const unsub = api.entities.VoiceMessage.subscribeMany(
       (event) => {

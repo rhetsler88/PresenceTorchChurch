@@ -4,7 +4,7 @@ import { Radio, MessageSquare, FileText, Eye, Shield, Crown } from "lucide-react
 import { useAuth } from "@/lib/AuthContext";
 import DailyCodeGate from "@/components/dailycode/DailyCodeGate";
 import UserMenu from "@/components/layout/UserMenu";
-import { isPlatformAdmin, canViewAllVoiceMessages } from "@/lib/userUtils";
+import { isPlatformAdmin, canAccessMonitorPage } from "@/lib/userUtils";
 import { BluetoothPTTProvider } from "@/components/ptt/BluetoothPTTContext";
 import RedAlertBanner from "@/components/ptt/RedAlertBanner";
 import useRedAlert from "@/hooks/useRedAlert";
@@ -14,7 +14,7 @@ export default function AppLayout() {
   const { user, checkUserAuth } = useAuth();
   const { alertChannel, dismiss: dismissAlert } = useRedAlert(user);
 
-  const showMonitor = canViewAllVoiceMessages(user);
+  const showMonitor = canAccessMonitorPage(user);
   const isAdmin = isPlatformAdmin(user);
   const isDirector = user?.role === "director";
 

@@ -45,7 +45,7 @@ service cloud.firestore {
     }
 
     function canViewAllVoiceMessages() {
-      return isPlatformAdmin() || isDirector() || isMonitor();
+      return isSuperAdmin() || isDirector() || isMonitor();
     }
 
     function channelDoc(channelId) {

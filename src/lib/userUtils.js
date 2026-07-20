@@ -109,14 +109,19 @@ export function canAccessChannel(user, channel) {
   return isChannelTalkMember(user, channel);
 }
 
-/** Matches Firestore canViewAllVoiceMessages — platform/director/monitor roles and is_monitor flag. */
+/** Matches Firestore canViewAllVoiceMessages — super_admin, director, monitor roles. */
 export function canViewAllVoiceMessages(user) {
   return (
-    isPlatformAdmin(user) ||
+    isSuperAdmin(user) ||
     user?.role === "director" ||
     user?.role === "monitor" ||
     user?.is_monitor === true
   );
+}
+
+/** Monitor tab + multi-channel listen (includes org/platform admins). */
+export function canAccessMonitorPage(user) {
+  return canViewAllVoiceMessages(user) || isPlatformAdmin(user);
 }
 
 /** Org-scoped channel list (matches Admin.jsx). Empty org => all channels. */
@@ -125,6 +130,37 @@ export function filterChannelsByOrganization(user, channels) {
   const org = user?.organization?.trim();
   if (!org) return channels;
   return channels.filter((c) => !c.organization || c.organization === org);
+}
+
+/** Channels whose voiceMessages the user may list/subscribe to (matches Firestore query scope). */
+export function getReadableVoiceChannels(user, channels) {
+  if (!user?.id || !channels?.length) return [];
+
+  if (isSuperAdmin(user)) {
+    return channels.filter((c) => canReadVoiceMessageForChannel(user, c));
+  }
+
+  if (isPlatformAdmin(user)) {
+    return filterChannelsByOrganization(user, channels).filter((c) =>
+      canReadVoiceMessageForChannel(user, c)
+    );
+  }
+
+  if (user.role === "director") {
+    const directed = user.directed_channels || [];
+    const scoped = directed.length > 0
+      ? channels.filter((c) => directed.includes(c.id))
+      : filterChannelsByOrganization(user, channels);
+    return scoped.filter((c) => canReadVoiceMessageForChannel(user, c));
+  }
+
+  if (user.role === "monitor" || user.is_monitor === true) {
+    return filterChannelsByOrganization(user, channels).filter((c) =>
+      canReadVoiceMessageForChannel(user, c)
+    );
+  }
+
+  return channels.filter((c) => canReadVoiceMessageForChannel(user, c));
 }
 
 /** Channels visible on the Monitor page for the current user. */

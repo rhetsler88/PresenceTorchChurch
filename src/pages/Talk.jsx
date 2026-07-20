@@ -83,8 +83,9 @@ export default function Talk() {
     activeChannel && user && canSendOnChannelForChannel(user, activeChannel)
   );
   const relayListenChannelId = canAccessAlerts ? effectiveChannelId : null;
-  // Join Agora for live listen whenever alerts are allowed, not only when user can PTT.
+  // Agora joins lazily — only while PTT is held or a remote PTT signal is active.
   const agoraChannelId = canAccessAlerts ? effectiveChannelId : null;
+  const agoraListenActive = Boolean(agoraChannelId && (isPTTPressed || isChannelBusy));
 
   const {
     isRecording,
@@ -96,6 +97,7 @@ export default function Talk() {
     channelId: agoraChannelId,
     userId: user?.id,
     userName: user ? getDisplayName(user) : "",
+    listenActive: agoraListenActive,
   });
 
   const { isReceiving: storageLiveReceiving, heardBroadcastsRef: relayHeardRef } = usePttReceiver({
@@ -147,7 +149,7 @@ export default function Talk() {
         throw err;
       }
     },
-    enabled: !!effectiveChannelId && !!user?.id && canReadMessages,
+    enabled: !!effectiveChannelId && !!user?.id && !!user?.role && canReadMessages,
     placeholderData: keepPreviousData,
     refetchInterval: 15000,
   });
@@ -206,7 +208,7 @@ export default function Talk() {
 
   // Subscribe to channel messages — merge creates/updates locally; avoid refetching Talk feed (prevents wipe races)
   useEffect(() => {
-    if (!effectiveChannelId || !canReadMessages) return;
+    if (!effectiveChannelId || !canReadMessages || !user?.role) return;
     const unsub = api.entities.VoiceMessage.subscribe(
       (event) => {
         if (event.data?.channel_id !== effectiveChannelId) return;

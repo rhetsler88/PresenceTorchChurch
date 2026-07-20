@@ -6,10 +6,12 @@ import useAgoraPTT from "./useAgoraPTT";
 /**
  * PTT broadcast: Agora WebRTC when configured (live publish + listen),
  * with Storage relay as fallback if Agora join/publish fails.
+ * Agora joins lazily — only while listenActive or actively transmitting.
  */
 export default function usePttBroadcast(options) {
-  const agora = useAgoraPTT(options);
-  const relay = useRelayBroadcast(options);
+  const { listenActive = false, ...agoraOptions } = options;
+  const agora = useAgoraPTT({ ...agoraOptions, listenActive });
+  const relay = useRelayBroadcast(agoraOptions);
   const usingRelayRef = useRef(false);
   const heardBroadcastsRef = useRef({
     has(id) {
@@ -36,8 +38,6 @@ export default function usePttBroadcast(options) {
       usingRelayRef.current = false;
       return relay.stopRecording();
     }
-    // Prefer Agora when enabled — useAgoraPTT tracks activeRef internally; React
-    // isRecording can be stale if PTT is released before the next render.
     if (isAgoraEnabled()) {
       const agoraResult = await agora.stopRecording();
       if (agoraResult) return agoraResult;

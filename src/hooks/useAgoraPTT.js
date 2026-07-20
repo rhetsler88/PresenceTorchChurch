@@ -13,6 +13,9 @@ import { playClearTone } from "@/lib/pttTones";
 
 configureAgoraSdk();
 
+const RETRY_DELAYS_MS = [1000, 3000, 8000];
+const IDLE_LEAVE_MS = 30000;
+
 function getSupportedMime() {
   const types = ["audio/webm;codecs=opus", "audio/webm", "audio/ogg;codecs=opus", "audio/mp4"];
   for (const t of types) {
@@ -39,7 +42,7 @@ function markRemoteSpeaker(remoteSpeakerCountRef, setIsReceiving) {
   playClearTone();
 }
 
-function attachRemoteHandlers(client, joinGen, joinGenRef, uid, remoteSpeakerCountRef, setIsReceiving) {
+function attachRemoteHandlers(client, joinGen, joinGenRef, uid, remoteSpeakerCountRef, setIsReceiving, onRemoteActivity) {
   client.on("user-published", async (remoteUser, mediaType) => {
     if (joinGen !== joinGenRef.current) return;
     if (mediaType !== "audio") return;
@@ -48,6 +51,7 @@ function attachRemoteHandlers(client, joinGen, joinGenRef, uid, remoteSpeakerCou
       const subscribed = await subscribeRemoteAudio(client, remoteUser, uid, mediaType);
       if (subscribed && joinGen === joinGenRef.current) {
         markRemoteSpeaker(remoteSpeakerCountRef, setIsReceiving);
+        onRemoteActivity?.();
       }
     } catch (err) {
       console.error("Agora subscribe failed:", err);
@@ -68,12 +72,13 @@ function detachRemoteHandlers(client) {
 
 /**
  * Real-time PTT over Agora WebRTC.
- * Joins the channel as a listener; publishes mic only while PTT is held.
- * MediaRecorder captures the session for voiceMessages history on release.
+ * Lazy-joins the channel only while listening (remote PTT) or transmitting.
+ * Storage relay handles idle passive listening to avoid Agora billing.
  */
 export default function useAgoraPTT({
   channelId,
   userId,
+  listenActive = false,
 }) {
   const [isRecording, setIsRecording] = useState(false);
   const [isReceiving, setIsReceiving] = useState(false);
@@ -93,50 +98,124 @@ export default function useAgoraPTT({
   const heardBroadcastsRef = useRef(new Set());
   const joinGenRef = useRef(0);
   const joinPromiseRef = useRef(null);
+  const idleLeaveTimerRef = useRef(null);
+  const listenActiveRef = useRef(listenActive);
+  const releaseConnectionRef = useRef(null);
+
+  listenActiveRef.current = listenActive;
 
   const paramsRef = useRef({ channelId, userId });
   paramsRef.current = { channelId, userId };
 
-  useEffect(() => {
-    if (!channelId || !userId) {
-      setIsChannelReady(false);
-      return undefined;
+  const clearIdleLeaveTimer = useCallback(() => {
+    if (idleLeaveTimerRef.current) {
+      clearTimeout(idleLeaveTimerRef.current);
+      idleLeaveTimerRef.current = null;
+    }
+  }, []);
+
+  const scheduleIdleLeave = useCallback(() => {
+    clearIdleLeaveTimer();
+    if (activeRef.current || listenActiveRef.current) return;
+    idleLeaveTimerRef.current = setTimeout(() => {
+      if (activeRef.current || listenActiveRef.current || remoteSpeakerCountRef.current > 0) return;
+      releaseConnectionRef.current?.();
+    }, IDLE_LEAVE_MS);
+  }, [clearIdleLeaveTimer]);
+
+  const bumpRemoteActivity = useCallback(() => {
+    clearIdleLeaveTimer();
+    scheduleIdleLeave();
+  }, [clearIdleLeaveTimer, scheduleIdleLeave]);
+
+  const releaseConnection = useCallback(async () => {
+    clearIdleLeaveTimer();
+    joinGenRef.current += 1;
+
+    const pendingJoin = joinPromiseRef.current;
+    joinPromiseRef.current = null;
+    if (pendingJoin) {
+      await pendingJoin.catch(() => {});
     }
 
-    const joinGen = ++joinGenRef.current;
-    let cancelled = false;
-    let joinedClient = null;
+    if (activeRef.current) return;
 
-    const attemptJoin = async (retry = false) => {
+    setIsChannelReady(false);
+    setIsReceiving(false);
+    remoteSpeakerCountRef.current = 0;
+
+    if (localAudioTrackRef.current) {
+      localAudioTrackRef.current.stop();
+      localAudioTrackRef.current.close();
+      localAudioTrackRef.current = null;
+    }
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((track) => track.stop());
+      streamRef.current = null;
+    }
+
+    const client = clientRef.current;
+    const key = sessionKeyRef.current;
+    if (client) detachRemoteHandlers(client);
+    clientRef.current = null;
+    sessionKeyRef.current = null;
+
+    if (key) {
+      await releaseAgoraClient(key).catch(() => {});
+    }
+  }, [clearIdleLeaveTimer]);
+
+  releaseConnectionRef.current = releaseConnection;
+
+  const ensureJoined = useCallback(async (retryIndex = 0) => {
+    const { channelId: cid, userId: uid } = paramsRef.current;
+    if (!cid || !uid) return null;
+    if (clientRef.current) return clientRef.current;
+
+    const joinGen = ++joinGenRef.current;
+    clearIdleLeaveTimer();
+
+    const attemptJoin = async (retry = retryIndex) => {
       try {
-        const { appId, token, channelName, uid } = await fetchAgoraCredentials(channelId, userId);
-        if (cancelled || joinGen !== joinGenRef.current) return null;
+        const { appId, token, channelName, uid: agoraUid } = await fetchAgoraCredentials(cid, uid);
+        if (joinGen !== joinGenRef.current) return null;
         if (!appId || !token) throw new Error("Missing Agora credentials");
 
-        const key = sessionKey(channelName, uid);
+        const key = sessionKey(channelName, agoraUid);
         sessionKeyRef.current = key;
 
-        const client = await acquireAgoraClient(key, async (pendingClient) => {
-          await pendingClient.join(appId, channelName, token, uid);
+        const joinPromise = acquireAgoraClient(key, async (pendingClient) => {
+          await pendingClient.join(appId, channelName, token, agoraUid);
         });
+        joinPromiseRef.current = joinPromise;
 
-        if (cancelled || joinGen !== joinGenRef.current) {
+        const client = await joinPromise;
+        joinPromiseRef.current = null;
+
+        if (joinGen !== joinGenRef.current) {
+          detachRemoteHandlers(client);
           await releaseAgoraClient(key);
           sessionKeyRef.current = null;
           return null;
         }
 
-        attachRemoteHandlers(client, joinGen, joinGenRef, uid, remoteSpeakerCountRef, setIsReceiving);
-        joinedClient = client;
+        attachRemoteHandlers(
+          client,
+          joinGen,
+          joinGenRef,
+          agoraUid,
+          remoteSpeakerCountRef,
+          setIsReceiving,
+          bumpRemoteActivity
+        );
         clientRef.current = client;
 
-        await subscribeExistingRemoteUsers(
-          client,
-          uid,
-          () => markRemoteSpeaker(remoteSpeakerCountRef, setIsReceiving)
-        );
+        await subscribeExistingRemoteUsers(client, agoraUid, () => {
+          markRemoteSpeaker(remoteSpeakerCountRef, setIsReceiving);
+          bumpRemoteActivity();
+        });
 
-        if (cancelled || joinGen !== joinGenRef.current) {
+        if (joinGen !== joinGenRef.current) {
           detachRemoteHandlers(client);
           clientRef.current = null;
           await releaseAgoraClient(key);
@@ -145,89 +224,80 @@ export default function useAgoraPTT({
         }
 
         setIsChannelReady(true);
+        scheduleIdleLeave();
         return client;
       } catch (err) {
+        joinPromiseRef.current = null;
         if (sessionKeyRef.current) {
-          if (joinedClient) detachRemoteHandlers(joinedClient);
           await releaseAgoraClient(sessionKeyRef.current).catch(() => {});
           sessionKeyRef.current = null;
-          clientRef.current = null;
         }
-        if (cancelled || joinGen !== joinGenRef.current || isExpectedJoinCancel(err)) {
+        clientRef.current = null;
+
+        if (joinGen !== joinGenRef.current || isExpectedJoinCancel(err)) {
           return null;
         }
-        if (!retry) {
-          await new Promise((r) => setTimeout(r, 800));
-          if (cancelled || joinGen !== joinGenRef.current) return null;
-          return attemptJoin(true);
+
+        const nextRetry = retry + 1;
+        if (nextRetry <= RETRY_DELAYS_MS.length) {
+          await new Promise((r) => setTimeout(r, RETRY_DELAYS_MS[retry] ?? 8000));
+          if (joinGen !== joinGenRef.current) return null;
+          return attemptJoin(nextRetry);
         }
+
         console.error("Agora join failed:", err);
         if (joinGen === joinGenRef.current) setIsChannelReady(false);
         return null;
       }
     };
 
-    const joinTask = attemptJoin(false);
+    const joinTask = attemptJoin(retryIndex);
     joinPromiseRef.current = joinTask;
-    void joinTask;
+    return joinTask;
+  }, [bumpRemoteActivity, clearIdleLeaveTimer, scheduleIdleLeave]);
+
+  // Tear down when channel/user changes — do not auto-join the new channel.
+  useEffect(() => {
+    if (!channelId || !userId) {
+      setIsChannelReady(false);
+      return undefined;
+    }
 
     return () => {
-      cancelled = true;
-      joinGenRef.current += 1;
-      const key = sessionKeyRef.current;
-      const client = joinedClient || clientRef.current;
-
-      void (async () => {
-        const pendingJoin = joinPromiseRef.current;
-        joinPromiseRef.current = null;
-        if (pendingJoin) {
-          await pendingJoin.catch(() => {});
-        }
-
-        if (activeRef.current) {
-          // Unpublish happens in stopRecording — don't leave mid-transmit
-          return;
-        }
-
-        setIsChannelReady(false);
-        setIsReceiving(false);
-        remoteSpeakerCountRef.current = 0;
-
-        if (localAudioTrackRef.current) {
-          localAudioTrackRef.current.stop();
-          localAudioTrackRef.current.close();
-          localAudioTrackRef.current = null;
-        }
-        if (streamRef.current) {
-          streamRef.current.getTracks().forEach((track) => track.stop());
-          streamRef.current = null;
-        }
-
-        if (client) detachRemoteHandlers(client);
-        clientRef.current = null;
-        sessionKeyRef.current = null;
-
-        if (key) {
-          await releaseAgoraClient(key);
-        }
-      })();
+      void releaseConnection();
     };
-  }, [channelId, userId]);
+  }, [channelId, userId, releaseConnection]);
+
+  // Join for live listen only while listenActive (remote PTT signal / local press).
+  useEffect(() => {
+    if (!channelId || !userId) return undefined;
+
+    if (listenActive) {
+      clearIdleLeaveTimer();
+      const joinTask = ensureJoined();
+      void joinTask;
+      return undefined;
+    }
+
+    scheduleIdleLeave();
+    return undefined;
+  }, [listenActive, channelId, userId, ensureJoined, clearIdleLeaveTimer, scheduleIdleLeave]);
+
+  useEffect(() => () => {
+    clearIdleLeaveTimer();
+  }, [clearIdleLeaveTimer]);
 
   const startRecording = useCallback(async () => {
     const { channelId: cid, userId: uid } = paramsRef.current;
     if (!cid || !uid || activeRef.current) return Boolean(activeRef.current);
 
+    clearIdleLeaveTimer();
     let client = clientRef.current;
+    if (!client) {
+      client = await ensureJoined();
+    }
     if (!client && joinPromiseRef.current) {
       client = await joinPromiseRef.current;
-    }
-    if (!client) {
-      await new Promise((r) => setTimeout(r, 500));
-      client = clientRef.current;
-      if (!client && joinPromiseRef.current) {
-        client = await joinPromiseRef.current;
-      }
     }
     if (!client) {
       console.error("Agora client not ready — join failed or still connecting");
@@ -280,9 +350,10 @@ export default function useAgoraPTT({
         streamRef.current.getTracks().forEach((track) => track.stop());
         streamRef.current = null;
       }
+      scheduleIdleLeave();
       return false;
     }
-  }, []);
+  }, [ensureJoined, clearIdleLeaveTimer, scheduleIdleLeave]);
 
   const stopRecording = useCallback(async () => {
     if (!activeRef.current && !localAudioTrackRef.current) return null;
@@ -312,6 +383,8 @@ export default function useAgoraPTT({
       streamRef.current = null;
     }
 
+    scheduleIdleLeave();
+
     const duration = (Date.now() - startTimeRef.current) / 1000;
     const broadcastId = broadcastIdRef.current;
     const fullBlob = fullChunksRef.current.length
@@ -335,7 +408,7 @@ export default function useAgoraPTT({
       console.error("Private audio upload failed:", err);
       return null;
     }
-  }, []);
+  }, [scheduleIdleLeave]);
 
   return {
     isRecording,

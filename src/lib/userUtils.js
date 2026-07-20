@@ -124,12 +124,35 @@ export function canAccessMonitorPage(user) {
   return canViewAllVoiceMessages(user) || isPlatformAdmin(user);
 }
 
+export function normalizeOrganization(value) {
+  return (value || "").trim().toLowerCase();
+}
+
+/** Empty/missing target org is visible to scoped admins (matches Firestore channelOrgMatchesUser). */
+export function matchesOrganization(adminOrg, targetOrg) {
+  const scoped = normalizeOrganization(adminOrg);
+  if (!scoped) return true;
+  const target = normalizeOrganization(targetOrg);
+  if (!target) return true;
+  return scoped === target;
+}
+
+/** Org-scoped user list for Admin. Super admins and empty org => all users. */
+export function filterUsersByOrganization(user, users) {
+  if (!users?.length) return [];
+  if (isSuperAdmin(user)) return users;
+  const org = user?.organization?.trim();
+  if (!org) return users;
+  return users.filter((u) => matchesOrganization(org, u.organization));
+}
+
 /** Org-scoped channel list (matches Admin.jsx). Empty org => all channels. */
 export function filterChannelsByOrganization(user, channels) {
   if (!channels?.length) return [];
+  if (isSuperAdmin(user)) return channels;
   const org = user?.organization?.trim();
   if (!org) return channels;
-  return channels.filter((c) => !c.organization || c.organization === org);
+  return channels.filter((c) => matchesOrganization(org, c.organization));
 }
 
 /** Channels whose voiceMessages the user may list/subscribe to (matches Firestore query scope). */

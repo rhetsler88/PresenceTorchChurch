@@ -20,7 +20,7 @@ import {
 } from "@/components/ui/dialog";
 import { Pencil, Search } from "lucide-react";
 import { toast } from "sonner";
-import { getDisplayName } from "@/lib/userUtils";
+import { getDisplayName, isPlatformAdmin } from "@/lib/userUtils";
 import { useAuth } from "@/lib/AuthContext";
 
 const ROLES = ["user", "monitor", "director", "admin", "super_admin"];
@@ -85,7 +85,7 @@ export default function Users() {
     });
   };
 
-  const canEditRole = currentUser?.role === "super_admin";
+  const canEditRole = isPlatformAdmin(currentUser);
 
   return (
     <div className="p-8 max-w-5xl">
@@ -211,7 +211,7 @@ export default function Users() {
               </Select>
               {!canEditRole && (
                 <p className="text-xs text-muted-foreground mt-1">
-                  Only super admins can change roles
+                  Only platform admins can change roles
                 </p>
               )}
             </div>

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React from "react";
 import { api } from "@/api/client";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Shield, Crown, User } from "lucide-react";
@@ -7,14 +7,27 @@ import PendingRequests from "@/components/admin/PendingRequests";
 import StaffAlertRequests from "@/components/admin/StaffAlertRequests";
 import DailyCodeCard from "@/components/dailycode/DailyCodeCard";
 import { toast } from "sonner";
+import { useAuth } from "@/lib/AuthContext";
+import {
+  isPlatformAdmin,
+  filterUsersByOrganization,
+  filterChannelsByOrganization,
+} from "@/lib/userUtils";
+
+function mutationErrorToast(action) {
+  return (err) => {
+    console.error(`Admin ${action} failed:`, err);
+    toast.error(
+      err?.code === "permission-denied"
+        ? "Permission denied — check your admin role in Firestore"
+        : `Couldn't ${action}. Please try again.`
+    );
+  };
+}
 
 export default function Admin() {
-  const [currentUser, setCurrentUser] = useState(null);
+  const { user: currentUser } = useAuth();
   const queryClient = useQueryClient();
-
-  useEffect(() => {
-    api.auth.me().then(setCurrentUser);
-  }, []);
 
   const { data: users = [], isLoading } = useQuery({
     queryKey: ["users"],
@@ -32,6 +45,7 @@ export default function Admin() {
       queryClient.invalidateQueries({ queryKey: ["users"] });
       toast.success(`${[user.first_name, user.last_name].filter(Boolean).join(" ") || user.full_name || "User"} is now ${ROLE_CONFIG[role].label}`);
     },
+    onError: mutationErrorToast("change role"),
   });
 
   const toggleMonitorMutation = useMutation({
@@ -41,6 +55,7 @@ export default function Admin() {
       queryClient.invalidateQueries({ queryKey: ["users"] });
       toast.success(`${[user.first_name, user.last_name].filter(Boolean).join(" ") || user.full_name || "User"} monitoring ${user.is_monitor ? "disabled" : "enabled"}`);
     },
+    onError: mutationErrorToast("update monitoring"),
   });
 
   const toggleChannelMutation = useMutation({
@@ -54,6 +69,7 @@ export default function Admin() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["users"] });
     },
+    onError: mutationErrorToast("update channel assignment"),
   });
 
   const approveMutation = useMutation({
@@ -69,6 +85,7 @@ export default function Admin() {
       queryClient.invalidateQueries({ queryKey: ["channels"] });
       toast.success("User approved");
     },
+    onError: mutationErrorToast("approve user"),
   });
 
   const rejectMutation = useMutation({
@@ -80,6 +97,7 @@ export default function Admin() {
       queryClient.invalidateQueries({ queryKey: ["channels"] });
       toast.success("Request rejected");
     },
+    onError: mutationErrorToast("reject request"),
   });
 
   const approveStaffAlertMutation = useMutation({
@@ -92,6 +110,7 @@ export default function Admin() {
       queryClient.invalidateQueries({ queryKey: ["users"] });
       toast.success(`${[user.first_name, user.last_name].filter(Boolean).join(" ") || user.full_name || "User"} staff alerts enabled`);
     },
+    onError: mutationErrorToast("approve staff alerts"),
   });
 
   const rejectStaffAlertMutation = useMutation({
@@ -101,6 +120,7 @@ export default function Admin() {
       queryClient.invalidateQueries({ queryKey: ["users"] });
       toast.success("Staff alert request rejected");
     },
+    onError: mutationErrorToast("reject staff alerts"),
   });
 
   const toggleStaffAlertsMutation = useMutation({
@@ -114,19 +134,42 @@ export default function Admin() {
         `${[user.first_name, user.last_name].filter(Boolean).join(" ") || user.full_name || "User"} staff alerts ${user.receives_staff_alerts ? "disabled" : "enabled"}`
       );
     },
+    onError: mutationErrorToast("update staff alerts"),
   });
 
-  const isAdmin = currentUser?.role === "admin" || currentUser?.role === "super_admin";
-  const isDirector = currentUser?.role === "director";
-  const directedChannelIds = currentUser?.directed_channels || [];
-  const myOrg = currentUser?.organization;
+  if (!currentUser) {
+    return (
+      <div className="flex justify-center py-16">
+        <div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
+  }
 
-  // Admins are scoped to their own organization
+  const isAdmin = isPlatformAdmin(currentUser);
+  const isDirector = currentUser.role === "director";
+  const directedChannelIds = currentUser.directed_channels || [];
+
+  if (!isAdmin && !isDirector) {
+    return (
+      <div className="min-h-screen safe-top flex items-center justify-center px-6">
+        <div className="text-center max-w-sm">
+          <Shield className="w-12 h-12 text-muted-foreground/30 mx-auto mb-3" />
+          <p className="text-sm font-semibold text-foreground mb-1">Admin access required</p>
+          <p className="text-xs text-muted-foreground">
+            Your role is <span className="font-mono">{currentUser.role || "user"}</span>. Ask a platform admin to set your Firestore{" "}
+            <span className="font-mono">users/{currentUser.id}.role</span> to{" "}
+            <span className="font-mono">admin</span> or <span className="font-mono">super_admin</span>.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   const orgUsers = isAdmin || isDirector
-    ? users.filter(u => !myOrg || u.organization === myOrg)
+    ? filterUsersByOrganization(currentUser, users)
     : users;
   const orgChannels = isAdmin || isDirector
-    ? channels.filter(c => !myOrg || c.organization === myOrg)
+    ? filterChannelsByOrganization(currentUser, channels)
     : channels;
 
   const hasPendingChannelRequests = (c) => (c.pending_members || []).length > 0;
@@ -145,7 +188,7 @@ export default function Admin() {
 
   const directors = orgUsers.filter(u => u.role === "director");
   const monitors = orgUsers.filter(u => u.role === "monitor");
-  const admins = orgUsers.filter(u => u.role === "admin");
+  const admins = orgUsers.filter(u => u.role === "admin" || u.role === "super_admin");
   const regularUsers = orgUsers.filter(u => !u.role || u.role === "user");
 
   const rowProps = (u) => ({

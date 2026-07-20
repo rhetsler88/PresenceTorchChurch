@@ -10,6 +10,7 @@ import {
 import DirectorControls from "@/components/admin/DirectorControls";
 
 export const ROLE_CONFIG = {
+  super_admin: { label: "Super Admin", color: "text-red-400", bg: "bg-red-500/10", icon: Shield },
   admin: { label: "Admin", color: "text-red-400", bg: "bg-red-500/10", icon: Shield },
   director: { label: "Director/Lead", color: "text-purple-400", bg: "bg-purple-500/10", icon: Crown },
   monitor: { label: "Monitor", color: "text-amber-400", bg: "bg-amber-500/10", icon: Eye },
@@ -102,7 +103,7 @@ export default function UserRow({
               <DropdownMenuItem
                 key={role}
                 className={`gap-2 ${color} ${user.role === role ? "font-bold" : ""}`}
-                onClick={() => onChangeRole(user, role)}
+                onSelect={() => onChangeRole(user, role)}
               >
                 <RoleIcon className="w-3.5 h-3.5" />
                 {label}

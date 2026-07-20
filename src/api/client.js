@@ -34,6 +34,7 @@ import { uploadPublicAudio, uploadPrivateAudio } from "@/api/storage";
 import { getDownloadURL, ref } from "firebase/storage";
 import seedData from "../../scripts/seed-data.json";
 import { isDefaultSetupComplete } from "@/lib/defaultSeed";
+import { markOAuthRedirectPending } from "@/lib/logoutOnClose";
 
 const functions = getFunctions(app, "us-east5");
 
@@ -88,6 +89,7 @@ function docToObject(docSnap) {
   };
 }
 
+/** @returns {{ field: string, direction: import('firebase/firestore').OrderByDirection }} */
 function parseSort(sortField) {
   if (!sortField) return { field: "created_date", direction: "desc" };
   const desc = sortField.startsWith("-");
@@ -277,9 +279,17 @@ function createEntityApi(collectionName) {
 
       return () => activeUnsub();
     },
+
+    /** One listener per filter set (e.g. per channel_id) to satisfy Firestore rules. */
+    subscribeMany(callback, filtersList) {
+      if (!filtersList?.length) return () => {};
+      const unsubs = filtersList.map((filters) => this.subscribe(callback, filters));
+      return () => unsubs.forEach((unsub) => unsub());
+    },
   };
 }
 
+/** @returns {Promise<{ id: string, email: string | null, role?: string, [key: string]: unknown }>} */
 async function getCurrentUser() {
   const firebaseUser = auth.currentUser;
   if (!firebaseUser) throw new Error("Not authenticated");
@@ -408,16 +418,20 @@ export const authApi = {
     }
 
     const provider = new GoogleAuthProvider();
+
     try {
       await signInWithPopup(auth, provider);
+      return;
     } catch (err) {
-      if (err?.code === "auth/popup-blocked" || err?.code === "auth/popup-closed-by-user") {
-        await signInWithRedirect(auth, provider);
-        return;
-      }
-      console.error("Sign-in failed:", err);
-      throw err;
+      const useRedirect =
+        err?.code === "auth/popup-blocked" ||
+        err?.code === "auth/cancelled-popup-request" ||
+        String(err?.message || "").includes("Cross-Origin-Opener-Policy");
+      if (!useRedirect) throw err;
     }
+
+    markOAuthRedirectPending();
+    await signInWithRedirect(auth, provider);
   },
 
   async signInWithEmail(email, password) {
@@ -500,7 +514,11 @@ export const functionsApi = {
 
     if (name === "getAgoraToken") {
       const callable = httpsCallable(functions, "getAgoraToken");
-      const result = await callable({ channel_id: params.channel_id });
+      const payload = { channel_id: params.channel_id };
+      if (typeof params.client_uid === "number" && Number.isFinite(params.client_uid)) {
+        payload.client_uid = Math.floor(params.client_uid);
+      }
+      const result = await callable(payload);
       return result.data;
     }
 

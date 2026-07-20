@@ -46,6 +46,8 @@ if (typeof window !== "undefined") {
 /**
  * Plays an audio URL through the Web Audio API (same AudioContext as the PTT beeps),
  * which is already unlocked after first user interaction and bypasses HTML5 autoplay restrictions.
+ * @param {string} url
+ * @param {{ onEnded?: () => void, onError?: (err?: unknown) => void }} [options]
  */
 export async function playAudioUrl(url, { onEnded, onError } = {}) {
   return playAudioTailFromUrl(url, 0, { onEnded, onError });
@@ -54,6 +56,9 @@ export async function playAudioUrl(url, { onEnded, onError } = {}) {
 /**
  * Plays audio from `startSeconds` to the end. Used for live relay where each
  * uploaded chunk is a growing recording rather than a standalone fragment.
+ * @param {string} url
+ * @param {number} [startSeconds]
+ * @param {{ onEnded?: () => void, onError?: (err?: unknown) => void }} [options]
  */
 export async function playAudioTailFromUrl(url, startSeconds = 0, { onEnded, onError } = {}) {
   const ctx = getContext();
@@ -146,6 +151,9 @@ export function stopAudio() {
 /**
  * Plays relay audio via HTML Audio (no fetch/CORS). Each chunk is a growing
  * recording; only the tail after `startSeconds` is heard.
+ * @param {string} url
+ * @param {number} [startSeconds]
+ * @param {{ onEnded?: () => void, onError?: (err?: unknown) => void }} [options]
  */
 export async function playRelayAudioTail(url, startSeconds = 0, { onEnded, onError } = {}) {
   const resolved = await resolveAudioUrl(url);

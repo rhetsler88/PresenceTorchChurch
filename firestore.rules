@@ -78,20 +78,78 @@ service cloud.firestore {
         || (channelExistsPath(channelId) && isListedOnChannel(channelNotificationMembers(channelId)));
     }
 
+    function userDirectedChannels() {
+      return userDoc().data.get('directed_channels', []);
+    }
+
+    function isDirectorForChannel(channelId) {
+      return isDirector()
+        && (
+          userDirectedChannels().size() == 0
+          || channelId in userDirectedChannels()
+        );
+    }
+
+    function channelOrganization(channelId) {
+      return channelDoc(channelId).data.get('organization', '');
+    }
+
+    // Match client userUtils: empty/missing channel organization => visible to scoped roles.
+    function channelOrgMatchesUser(channelId) {
+      return !userHasOrganizationConstraint()
+        || channelOrganization(channelId).size() == 0
+        || channelOrganization(channelId) == userOrganization();
+    }
+
+    function isMonitorForChannel(channelId) {
+      return isMonitor()
+        && channelExistsPath(channelId)
+        && channelOrgMatchesUser(channelId);
+    }
+
+    // PTT / voice create — members plus roles that can monitor/respond on a channel.
+    function canSendOnChannel(channelId) {
+      return isPlatformAdmin()
+        || isChannelTalkMember(channelId)
+        || isOrgAdminForChannel(channelId)
+        || isDirectorForChannel(channelId)
+        || isMonitorForChannel(channelId);
+    }
+
+    function userOrganization() {
+      return userDoc().data.get('organization', '');
+    }
+
+    // Match client canAccessChannel: empty/missing organization => all org channels.
+    function userHasOrganizationConstraint() {
+      return userOrganization() is string && userOrganization().size() > 0;
+    }
+
     function isOrgAdminForChannel(channelId) {
       return isAdmin()
         && channelExistsPath(channelId)
+        && channelOrgMatchesUser(channelId);
+    }
+
+    function canReadVoiceMessage() {
+      return resource.data.channel_id is string
+        && resource.data.channel_id.size() > 0
         && (
-          !userDoc().data.keys().hasAny(['organization'])
-          || channelDoc(channelId).data.get('organization', '') == userDoc().data.get('organization', '')
+          canViewAllVoiceMessages()
+          || isChannelTalkMember(resource.data.channel_id)
+          || isChannelAlertRecipient(resource.data.channel_id)
+          || isOrgAdminForChannel(resource.data.channel_id)
+          || isDirectorForChannel(resource.data.channel_id)
+          || isMonitorForChannel(resource.data.channel_id)
         );
     }
 
     function canAccessChannelAlerts(channelId) {
-      return isChannelAlertRecipient(channelId)
+      return canViewAllVoiceMessages()
+        || isChannelAlertRecipient(channelId)
         || isOrgAdminForChannel(channelId)
-        || isDirector()
-        || isMonitor();
+        || isDirectorForChannel(channelId)
+        || isMonitorForChannel(channelId);
     }
 
     function userSelfUpdateForbiddenKeys() {
@@ -160,20 +218,15 @@ service cloud.firestore {
 
     // ── Voice messages ─────────────────────────────────────────────────
     match /voiceMessages/{messageId} {
-      allow read: if isSignedIn() && (
-        canViewAllVoiceMessages()
-        || canAccessChannelAlerts(resource.data.channel_id)
-      );
+      allow read: if isSignedIn() && canReadVoiceMessage();
 
       allow create: if isSignedIn()
         && request.resource.data.channel_id is string
-        && isChannelTalkMember(request.resource.data.channel_id)
+        && request.resource.data.channel_id.size() > 0
+        && canSendOnChannel(request.resource.data.channel_id)
         && request.resource.data.get('created_by_id', request.auth.uid) == request.auth.uid;
 
-      allow update: if isSignedIn() && (
-        canViewAllVoiceMessages()
-        || canAccessChannelAlerts(resource.data.channel_id)
-      );
+      allow update: if isSignedIn() && canReadVoiceMessage();
 
       allow delete: if isSignedIn() && isAdminOrDirector();
     }
@@ -185,7 +238,7 @@ service cloud.firestore {
 
       allow create: if isSignedIn()
         && request.resource.data.channel_id is string
-        && isChannelTalkMember(request.resource.data.channel_id)
+        && canSendOnChannel(request.resource.data.channel_id)
         && request.resource.data.sender_id == request.auth.uid;
 
       allow delete: if isSignedIn()
@@ -205,7 +258,7 @@ service cloud.firestore {
 
       allow create: if isSignedIn()
         && request.resource.data.channel_id is string
-        && isChannelTalkMember(request.resource.data.channel_id)
+        && canSendOnChannel(request.resource.data.channel_id)
         && request.resource.data.sender_id == request.auth.uid;
 
       allow delete: if isSignedIn() && isAdminOrDirector();

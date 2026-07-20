@@ -89,7 +89,7 @@ export default function useWiredPTT({ onPress, onRelease }) {
 
     try {
       for (const [action, handler] of Object.entries(actionHandlers)) {
-        navigator.mediaSession.setActionHandler(action, handler);
+        navigator.mediaSession.setActionHandler(/** @type {MediaSessionAction} */ (action), handler);
       }
     } catch {
       // Some actions may not be supported on all browsers.
@@ -98,7 +98,7 @@ export default function useWiredPTT({ onPress, onRelease }) {
     return () => {
       try {
         for (const action of Object.keys(actionHandlers)) {
-          navigator.mediaSession.setActionHandler(action, null);
+          navigator.mediaSession.setActionHandler(/** @type {MediaSessionAction} */ (action), null);
         }
       } catch {
         // ignore

@@ -7,11 +7,13 @@ import { initPushNotifications, teardownPushNotifications } from "@/lib/pushNoti
 import { clearDailyCodeSession } from "@/lib/dailyCode";
 import {
   LOGIN_TIME_KEY,
-  consumeCloseLogoutFlag,
+  clearOAuthRedirectPending,
   installCloseLogoutHandler,
+  shouldLogoutAfterClose,
 } from "@/lib/logoutOnClose";
+import { formatAuthError } from "@/api/client";
 
-const AuthContext = createContext();
+const AuthContext = createContext(null);
 
 const AUTO_LOGOUT_MS = 88 * 60 * 60 * 1000;
 
@@ -142,60 +144,87 @@ export const AuthProvider = ({ children }) => {
   };
 
   useEffect(() => {
-    setIsLoadingAuth(true);
-    let pendingCloseLogout = consumeCloseLogoutFlag();
+    let unsub = () => {};
+    let cancelled = false;
 
-    getRedirectResult(auth).catch((error) => {
-      console.error("Redirect sign-in failed:", error);
-    });
-
-    const unsub = onAuthStateChanged(auth, async (firebaseUser) => {
-      if (pendingCloseLogout) {
-        pendingCloseLogout = false;
-        if (firebaseUser) {
-          await expireSession();
-        } else {
-          localStorage.removeItem(LOGIN_TIME_KEY);
-          clearDailyCodeSession();
-        }
-        applySignedOut();
-        return;
-      }
-
-      if (!firebaseUser) {
-        await teardownPushNotifications();
-        applySignedOut();
-        return;
-      }
+    const initAuth = async () => {
+      setIsLoadingAuth(true);
+      let pendingCloseLogout = shouldLogoutAfterClose();
 
       try {
-        if (isSessionExpired()) {
-          await expireSession();
+        const redirectResult = await getRedirectResult(auth);
+        if (redirectResult?.user) {
+          pendingCloseLogout = false;
+        }
+      } catch (error) {
+        console.error("Redirect sign-in failed:", error);
+        if (!cancelled) {
+          setAuthError({
+            type: "unknown",
+            message: formatAuthError(error),
+          });
+          setIsLoadingAuth(false);
+          setAuthChecked(true);
+        }
+      } finally {
+        clearOAuthRedirectPending();
+      }
+
+      if (cancelled) return;
+
+      unsub = onAuthStateChanged(auth, async (firebaseUser) => {
+        if (pendingCloseLogout) {
+          pendingCloseLogout = false;
+          if (firebaseUser) {
+            await expireSession();
+          } else {
+            localStorage.removeItem(LOGIN_TIME_KEY);
+            clearDailyCodeSession();
+          }
           applySignedOut();
-          setAuthError({ type: "auth_required", message: "Session expired" });
           return;
         }
 
-        const currentUser = await loadOrCreateUser(firebaseUser);
-
-        const loginTime = localStorage.getItem(LOGIN_TIME_KEY);
-        if (!loginTime) {
-          localStorage.setItem(LOGIN_TIME_KEY, Date.now().toString());
+        if (!firebaseUser) {
+          await teardownPushNotifications();
+          applySignedOut();
+          return;
         }
 
-        applyAuthenticatedUser(currentUser);
-        initPushNotifications(firebaseUser.uid, currentUser).catch((err) => {
-          console.error("Push notification init failed:", err);
-        });
-      } catch (error) {
-        console.error("Auth state error:", error);
-        setAuthError({ type: "unknown", message: error.message });
-        setIsLoadingAuth(false);
-        setAuthChecked(true);
-      }
-    });
+        try {
+          if (isSessionExpired()) {
+            await expireSession();
+            applySignedOut();
+            setAuthError({ type: "auth_required", message: "Session expired" });
+            return;
+          }
 
-    return unsub;
+          const currentUser = await loadOrCreateUser(firebaseUser);
+
+          const loginTime = localStorage.getItem(LOGIN_TIME_KEY);
+          if (!loginTime) {
+            localStorage.setItem(LOGIN_TIME_KEY, Date.now().toString());
+          }
+
+          applyAuthenticatedUser(currentUser);
+          initPushNotifications(firebaseUser.uid, currentUser).catch((err) => {
+            console.error("Push notification init failed:", err);
+          });
+        } catch (error) {
+          console.error("Auth state error:", error);
+          setAuthError({ type: "unknown", message: error.message });
+          setIsLoadingAuth(false);
+          setAuthChecked(true);
+        }
+      });
+    };
+
+    initAuth();
+
+    return () => {
+      cancelled = true;
+      unsub();
+    };
   }, []);
 
   useEffect(() => {
@@ -224,9 +253,7 @@ export const AuthProvider = ({ children }) => {
 
   useEffect(() => {
     if (!isAuthenticated) return undefined;
-    return installCloseLogoutHandler((shouldRedirect) =>
-      logoutRef.current?.(shouldRedirect)
-    );
+    return installCloseLogoutHandler();
   }, [isAuthenticated]);
 
   const logout = async (shouldRedirect = true) => {

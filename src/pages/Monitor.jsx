@@ -4,13 +4,12 @@ import { useQuery, useMutation, useQueryClient, keepPreviousData } from "@tansta
 import { motion, AnimatePresence } from "framer-motion";
 import { DragDropContext, Droppable, Draggable } from "@hello-pangea/dnd";
 import { Radio, Volume2, VolumeX, Activity, Eye, Play, Pause, Wifi, WifiOff } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { etzTime } from "@/lib/etz";
 import { deviceDayKey, deviceDayLabel } from "@/lib/deviceDate";
-import { getDisplayName } from "@/lib/userUtils";
+import { getDisplayName, getMonitorChannels, canReadVoiceMessageForChannel } from "@/lib/userUtils";
 import { playClearTone, playBusyTone } from "@/lib/pttTones";
 import { cleanupStalePTTSignals } from "@/lib/pttSignals";
 import { playAudioUrl, stopAudio } from "@/lib/audioPlayer";
@@ -172,9 +171,38 @@ export default function Monitor() {
     queryFn: () => api.entities.Channel.list("-created_date", 50),
   });
 
+  const monitorChannels = useMemo(
+    () => getMonitorChannels(user, channels),
+    [user, channels]
+  );
+  const readableMonitorChannels = useMemo(
+    () => monitorChannels.filter((c) => canReadVoiceMessageForChannel(user, c)),
+    [monitorChannels, user]
+  );
+  const monitorChannelIds = useMemo(
+    () => readableMonitorChannels.map((c) => c.id).filter(Boolean),
+    [readableMonitorChannels]
+  );
+  const monitorChannelIdKey = monitorChannelIds.join(",");
+
   const { data: allMessages = [] } = useQuery({
-    queryKey: ["all-channel-messages"],
-    queryFn: () => api.entities.VoiceMessage.list("-created_date", 200),
+    queryKey: ["all-channel-messages", user?.id, monitorChannelIdKey],
+    enabled: !!user?.id && monitorChannelIds.length > 0,
+    queryFn: async () => {
+      const batches = await Promise.all(
+        monitorChannelIds.map(async (id) => {
+          try {
+            return await api.entities.VoiceMessage.filter({ channel_id: id }, "-created_date", 50);
+          } catch (err) {
+            if (err?.code === "permission-denied") return [];
+            throw err;
+          }
+        })
+      );
+      const items = batches.flat();
+      items.sort((a, b) => String(b.created_date || "").localeCompare(String(a.created_date || "")));
+      return items.slice(0, 200);
+    },
     placeholderData: keepPreviousData,
     refetchInterval: 15000,
   });
@@ -184,17 +212,29 @@ export default function Monitor() {
     queryFn: () => api.entities.User.list(),
   });
 
-  // Initialize target channel from localStorage or first channel
+  // Initialize target channel from localStorage or first monitor channel
   useEffect(() => {
-    if (channels.length > 0 && !targetChannelId) {
+    if (monitorChannels.length > 0 && !targetChannelId) {
       const lastId = localStorage.getItem("lastChannelId");
-      if (lastId && channels.find(c => c.id === lastId)) {
+      if (lastId && monitorChannels.find((c) => c.id === lastId)) {
         setTargetChannelId(lastId);
       } else {
-        setTargetChannelId(channels[0].id);
+        setTargetChannelId(monitorChannels[0].id);
       }
     }
-  }, [channels, targetChannelId]);
+  }, [monitorChannels, targetChannelId]);
+
+  // Drop target channel when it falls outside the user's monitor scope
+  useEffect(() => {
+    if (!targetChannelId) return;
+    if (monitorChannels.length === 0) {
+      setTargetChannelId(null);
+      return;
+    }
+    if (!monitorChannels.some((c) => c.id === targetChannelId)) {
+      setTargetChannelId(monitorChannels[0].id);
+    }
+  }, [monitorChannels, targetChannelId]);
 
   const handleTargetChannelChange = useCallback((id) => {
     setTargetChannelId(id);
@@ -204,9 +244,9 @@ export default function Monitor() {
   // Half-duplex PTT for the target channel (Agora WebRTC or Storage relay)
   const otherChannelIds = useMemo(
     () => (isAgoraEnabled()
-      ? channels.map((c) => c.id).filter((id) => id && id !== targetChannelId)
+      ? monitorChannels.map((c) => c.id).filter((id) => id && id !== targetChannelId)
       : []),
-    [channels, targetChannelId]
+    [monitorChannels, targetChannelId]
   );
 
   const {
@@ -222,7 +262,7 @@ export default function Monitor() {
   });
 
   const { isReceiving: multiLiveReceiving, heardBroadcastsRef: multiHeardRef } = usePttReceiver({
-    channelIds: isAgoraEnabled() ? otherChannelIds : channels.map((c) => c.id),
+    channelIds: isAgoraEnabled() ? otherChannelIds : monitorChannels.map((c) => c.id),
     userId: user?.id,
   });
 
@@ -232,45 +272,46 @@ export default function Monitor() {
 
   const heardBroadcastsRef = isAgoraEnabled() ? pttHeardRef : multiHeardRef;
 
-  // Subscribe to PTT signals across all channels � busy tones + channel busy state
+  // Per-channel PTT subscriptions — collection-wide queries fail Firestore rules for partial access
   useEffect(() => {
-    if (!user?.id) return;
-    const channelIdSet = new Set(channels.map((c) => c.id));
+    if (!user?.id || monitorChannelIds.length === 0) return;
 
-    const unsub = api.entities.PTTSignal.subscribe((event) => {
-      if (!channelIdSet.has(event.data?.channel_id)) return;
-      if (event.data?.sender_id === user.id) return;
+    const unsub = api.entities.PTTSignal.subscribeMany(
+      (event) => {
+        if (event.data?.sender_id === user.id) return;
 
-      const channelId = event.data.channel_id;
-      if (event.type === "create") {
-        playClearTone();
-        setBusyChannelIds((prev) => new Set(prev).add(channelId));
-        setIsChannelBusy(true);
-        if (channelBusyTimeoutRef.current) clearTimeout(channelBusyTimeoutRef.current);
-        channelBusyTimeoutRef.current = setTimeout(() => {
-          setBusyChannelIds(new Set());
-          setIsChannelBusy(false);
-        }, 15000);
-      } else if (event.type === "delete") {
-        setBusyChannelIds((prev) => {
-          const next = new Set(prev);
-          next.delete(channelId);
-          setIsChannelBusy(next.size > 0);
-          return next;
-        });
-        if (channelBusyTimeoutRef.current) {
-          clearTimeout(channelBusyTimeoutRef.current);
-          channelBusyTimeoutRef.current = null;
+        const channelId = event.data.channel_id;
+        if (event.type === "create") {
+          playClearTone();
+          setBusyChannelIds((prev) => new Set(prev).add(channelId));
+          setIsChannelBusy(true);
+          if (channelBusyTimeoutRef.current) clearTimeout(channelBusyTimeoutRef.current);
+          channelBusyTimeoutRef.current = setTimeout(() => {
+            setBusyChannelIds(new Set());
+            setIsChannelBusy(false);
+          }, 15000);
+        } else if (event.type === "delete") {
+          setBusyChannelIds((prev) => {
+            const next = new Set(prev);
+            next.delete(channelId);
+            setIsChannelBusy(next.size > 0);
+            return next;
+          });
+          if (channelBusyTimeoutRef.current) {
+            clearTimeout(channelBusyTimeoutRef.current);
+            channelBusyTimeoutRef.current = null;
+          }
         }
-      }
-    });
+      },
+      monitorChannelIds.map((channelId) => ({ channel_id: channelId }))
+    );
     return unsub;
-  }, [channels, user?.id]);
+  }, [monitorChannelIdKey, user?.id]);
 
   // Clean up stale PTT signals on mount
   useEffect(() => {
     if (!user?.id) return;
-    cleanupStalePTTSignals({ excludeSenderId: user.id })
+    cleanupStalePTTSignals({ channelIds: monitorChannelIds, excludeSenderId: user.id })
       .then((active) => {
         if (active.length > 0) {
           setBusyChannelIds(new Set(active.map((s) => s.channel_id)));
@@ -278,7 +319,7 @@ export default function Monitor() {
         }
       })
       .catch(() => {});
-  }, [user?.id]);
+  }, [monitorChannelIdKey, user?.id]);
 
   // Clean up PTT signals on unmount
   useEffect(() => {
@@ -304,13 +345,13 @@ export default function Monitor() {
   const orderedChannels = useMemo(() => {
     const orderMap = {};
     channelOrder.forEach((id, idx) => { orderMap[id] = idx; });
-    return [...channels].sort((a, b) => {
+    return [...monitorChannels].sort((a, b) => {
       const ai = orderMap[a.id] ?? 9999;
       const bi = orderMap[b.id] ?? 9999;
       if (ai === bi) return 0;
       return ai - bi;
     });
-  }, [channels, channelOrder]);
+  }, [monitorChannels, channelOrder]);
 
   const handleDragEnd = (result) => {
     if (!result.destination) return;
@@ -325,7 +366,7 @@ export default function Monitor() {
 
   // Group messages by channel
   const messagesByChannel = {};
-  channels.forEach(c => { messagesByChannel[c.id] = []; });
+  monitorChannels.forEach(c => { messagesByChannel[c.id] = []; });
   allMessages.forEach(m => {
     if (messagesByChannel[m.channel_id]) {
       messagesByChannel[m.channel_id].push(m);
@@ -365,9 +406,13 @@ export default function Monitor() {
     });
   }, []);
 
-  // Real-time subscription across ALL channels
+  // Real-time subscription scoped to monitor channels
   useEffect(() => {
-    const unsub = api.entities.VoiceMessage.subscribe((event) => {
+    if (!user?.id || monitorChannelIds.length === 0) return;
+
+    const onEvent = (event) => {
+      if (!monitorChannelIds.includes(event.data?.channel_id)) return;
+
       queryClient.invalidateQueries({ queryKey: ["all-channel-messages"] });
 
       if (event.type !== "create") return;
@@ -377,25 +422,28 @@ export default function Monitor() {
         return;
       }
 
-      if (event.data?.audio_url && event.data.created_by_id !== user?.id) {
-        const channel = channels.find(c => c.id === event.data.channel_id);
-        // Log activity
-        setActivityLog(prev => [{
+      if (event.data?.audio_url && event.data.created_by_id !== user.id) {
+        const channel = monitorChannels.find((c) => c.id === event.data.channel_id);
+        setActivityLog((prev) => [{
           ...event.data,
           channelName: channel?.name || "Unknown",
           channelColor: channel?.color || "#f59e0b",
           ts: new Date(),
         }, ...prev].slice(0, 20));
 
-        // Queue for auto-play
         if (autoPlay) {
           autoPlayQueueRef.current.push(event.data);
           processQueue();
         }
       }
-    });
+    };
+
+    const unsub = api.entities.VoiceMessage.subscribeMany(
+      onEvent,
+      monitorChannelIds.map((channelId) => ({ channel_id: channelId }))
+    );
     return unsub;
-  }, [channels, autoPlay, user, queryClient, processQueue]);
+  }, [monitorChannelIds, monitorChannels, autoPlay, user, queryClient, processQueue, heardBroadcastsRef]);
 
   const handlePlayMessage = (msg) => {
     if (!msg.audio_url) return;
@@ -442,7 +490,7 @@ export default function Monitor() {
   const handleSetAllProtectionLevel = async (level) => {
     try {
       await api.entities.Channel.updateMany({}, { $set: { protection_level: level } });
-      queryClient.setQueryData(["channels"], (old) =>
+      queryClient.setQueryData(["channels"], (/** @type {any[] | undefined} */ old) =>
         (old ?? []).map((c) => ({ ...c, protection_level: level }))
       );
       queryClient.invalidateQueries({ queryKey: ["channels"] });
@@ -470,7 +518,7 @@ export default function Monitor() {
       const targetId = targetChannelIdRef.current;
 
       const targetIds = isBroadcastAll
-        ? channels.map(c => c.id)
+        ? monitorChannels.map(c => c.id)
         : [targetId].filter(Boolean);
 
       const created = await Promise.all(targetIds.map(cid =>
@@ -515,7 +563,7 @@ export default function Monitor() {
 
       return isBroadcastAll
         ? `all ${targetIds.length} channels`
-        : channels.find(c => c.id === targetId)?.name || "channel";
+        : monitorChannels.find(c => c.id === targetId)?.name || "channel";
     },
     onSuccess: (label) => {
       if (label) toast.success(`Sent to ${label}`);
@@ -536,7 +584,7 @@ export default function Monitor() {
     setIsPTTPressed(true);
 
     const targetIds = broadcastAllRef.current
-      ? channels.map((c) => c.id)
+      ? monitorChannels.map((c) => c.id)
       : [targetChannelIdRef.current].filter(Boolean);
 
     try {
@@ -563,7 +611,7 @@ export default function Monitor() {
       ids.forEach((id) => api.entities.PTTSignal.delete(id).catch(() => {}));
       toast.error("Microphone access denied");
     }
-  }, [isPTTPressed, isLiveReceiving, isTargetChannelBusy, startRecording, channels, user]);
+  }, [isPTTPressed, isLiveReceiving, isTargetChannelBusy, startRecording, monitorChannels, user]);
 
   const handlePTTStop = useCallback(() => {
     if (!isPTTPressed) return;
@@ -628,7 +676,7 @@ export default function Monitor() {
         {/* Stats */}
         <div className="grid grid-cols-3 gap-3">
           {[
-            { label: "Channels", value: channels.length, icon: Radio },
+            { label: "Channels", value: monitorChannels.length, icon: Radio },
             { label: "Active", value: activeChannelCount, icon: Activity },
             { label: "Messages", value: totalMessages, icon: Wifi },
           ].map(({ label, value, icon: Icon }) => (
@@ -657,7 +705,7 @@ export default function Monitor() {
             />
             <Volume2 className="w-3.5 h-3.5 text-green-500" />
             <span className="text-xs font-semibold text-green-400">
-              Playing from: {channels.find(c => c.id === playingChannel)?.name || "Unknown Channel"}
+              Playing from: {monitorChannels.find(c => c.id === playingChannel)?.name || "Unknown Channel"}
             </span>
           </motion.div>
         )}
@@ -665,7 +713,7 @@ export default function Monitor() {
 
       {/* Channel grid */}
       <div className="p-3 pb-36 sm:p-4">
-        {channels.length === 0 ? (
+        {monitorChannels.length === 0 ? (
           <div className="text-center py-16">
             <WifiOff className="w-12 h-12 text-muted-foreground/30 mx-auto mb-3" />
             <p className="text-sm text-muted-foreground">No channels to monitor</p>
@@ -709,9 +757,9 @@ export default function Monitor() {
       </div>
 
       {/* PTT response bar */}
-      {channels.length > 0 && (
+      {monitorChannels.length > 0 && (
         <MonitorPTTBar
-          channels={channels}
+          channels={monitorChannels}
           targetChannelId={targetChannelId}
           onTargetChannelChange={handleTargetChannelChange}
           broadcastAll={broadcastAll}

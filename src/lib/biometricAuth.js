@@ -30,7 +30,7 @@ export async function getBiometricLabel() {
       case BiometryType.TOUCH_ID:
       case BiometryType.FINGERPRINT:
         return "Fingerprint";
-      case BiometryType.IRIS:
+      case /** @type {any} */ (BiometryType).IRIS:
         return "Iris scan";
       default:
         return "Biometric";

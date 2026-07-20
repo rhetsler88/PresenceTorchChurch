@@ -77,51 +77,54 @@ export default function useMonitorRelayReceiver({ userId, channelIds }) {
   }, [clearReceiving]);
 
   useEffect(() => {
-    if (!userId) return;
+    if (!userId || channelIds.length === 0) return;
 
-    const unsub = api.entities.AudioChunk.subscribe((event) => {
-      if (event.type !== "create") return;
-      if (!channelIdsRef.current.has(event.data?.channel_id)) return;
-      if (event.data?.sender_id === userId) return;
+    const unsub = api.entities.AudioChunk.subscribeMany(
+      (event) => {
+        if (event.type !== "create") return;
+        if (!channelIdsRef.current.has(event.data?.channel_id)) return;
+        if (event.data?.sender_id === userId) return;
 
-      const chunk = event.data;
-      const bId = chunk.broadcast_id;
-      if (!bId || !chunk.audio_url) return;
+        const chunk = event.data;
+        const bId = chunk.broadcast_id;
+        if (!bId || !chunk.audio_url) return;
 
-      heardBroadcastsRef.current.add(bId);
+        heardBroadcastsRef.current.add(bId);
 
-      if (!queuesRef.current[bId]) {
-        queuesRef.current[bId] = {
-          nextSeq: 0,
-          chunks: {},
-          finalReceived: false,
-          finalSeq: null,
-          playing: false,
-          playedDuration: 0,
-        };
-      }
+        if (!queuesRef.current[bId]) {
+          queuesRef.current[bId] = {
+            nextSeq: 0,
+            chunks: {},
+            finalReceived: false,
+            finalSeq: null,
+            playing: false,
+            playedDuration: 0,
+          };
+        }
 
-      const q = queuesRef.current[bId];
-      q.chunks[chunk.sequence] = chunk.audio_url;
+        const q = queuesRef.current[bId];
+        q.chunks[chunk.sequence] = chunk.audio_url;
 
-      if (chunk.is_final) {
-        q.finalReceived = true;
-        q.finalSeq = chunk.sequence;
-      }
+        if (chunk.is_final) {
+          q.finalReceived = true;
+          q.finalSeq = chunk.sequence;
+        }
 
-      if (!isReceivingRef.current) {
-        isReceivingRef.current = true;
-        setIsReceiving(true);
-      }
-      resetIdleTimer();
-      playNext(bId);
-    });
+        if (!isReceivingRef.current) {
+          isReceivingRef.current = true;
+          setIsReceiving(true);
+        }
+        resetIdleTimer();
+        playNext(bId);
+      },
+      channelIds.map((channelId) => ({ channel_id: channelId }))
+    );
 
     return () => {
       unsub();
       clearReceiving();
     };
-  }, [userId, playNext, resetIdleTimer, clearReceiving]);
+  }, [userId, channelIds, playNext, resetIdleTimer, clearReceiving]);
 
   return { isReceiving, heardBroadcastsRef };
 }

@@ -1,3 +1,8 @@
+import {
+  isChannelTalkMember,
+  isChannelNotificationMember,
+} from "@/lib/channelAlerts";
+
 /**
  * Returns the user's display name from their input first/last name,
  * falling back to full_name, then "Unknown".
@@ -34,14 +39,115 @@ export function isPlatformAdmin(user) {
   return isSuperAdmin(user) || isOrgAdmin(user);
 }
 
+function isDirectorForChannel(user, channel) {
+  if (!user || !channel || user.role !== "director") return false;
+  const directed = user.directed_channels || [];
+  if (directed.length > 0) return directed.includes(channel.id);
+  const org = user.organization?.trim();
+  if (!org) return true;
+  return !channel.organization || channel.organization === org;
+}
+
+function isMonitorForChannel(user, channel) {
+  if (!user || !channel) return false;
+  if (user.role !== "monitor" && user.is_monitor !== true) return false;
+  const org = user.organization?.trim();
+  if (!org) return true;
+  return !channel.organization || channel.organization === org;
+}
+
+function isOrgAdminForChannel(user, channel) {
+  if (!user || !channel || !isOrgAdmin(user)) return false;
+  const org = user.organization?.trim();
+  if (!org) return true;
+  return !channel.organization || channel.organization === org;
+}
+
+/** Matches Firestore canReadVoiceMessage — per-channel voice log read access. */
+export function canReadVoiceMessageForChannel(user, channel) {
+  if (!user || !channel) return false;
+  if (canViewAllVoiceMessages(user)) return true;
+  if (isChannelTalkMember(user, channel)) return true;
+  if (isChannelNotificationMember(user, channel)) return true;
+  if (isOrgAdminForChannel(user, channel)) return true;
+  if (isDirectorForChannel(user, channel)) return true;
+  if (isMonitorForChannel(user, channel)) return true;
+  return false;
+}
+
+/** Matches Firestore canAccessChannelAlerts — PTT signals, relay chunks. */
+export function canAccessChannelAlertsForChannel(user, channel) {
+  if (!user || !channel) return false;
+  if (canViewAllVoiceMessages(user)) return true;
+  if (isChannelNotificationMember(user, channel)) return true;
+  if (isChannelTalkMember(user, channel)) return true;
+  if (isOrgAdminForChannel(user, channel)) return true;
+  if (isDirectorForChannel(user, channel)) return true;
+  if (isMonitorForChannel(user, channel)) return true;
+  return false;
+}
+
+/** Matches Firestore canSendOnChannel — PTT claim, voice message create, relay chunks. */
+export function canSendOnChannelForChannel(user, channel) {
+  if (!user || !channel) return false;
+  if (isPlatformAdmin(user)) return true;
+  if (isChannelTalkMember(user, channel)) return true;
+  if (isOrgAdminForChannel(user, channel)) return true;
+  if (isDirectorForChannel(user, channel)) return true;
+  if (isMonitorForChannel(user, channel)) return true;
+  return false;
+}
+
 export function canAccessChannel(user, channel) {
   if (!user || !channel) return false;
   if (isSuperAdmin(user)) return true;
   if (isOrgAdmin(user)) {
-    return !user.organization || channel.organization === user.organization;
+    return isOrgAdminForChannel(user, channel);
   }
+  if (isDirectorForChannel(user, channel)) return true;
+  if (isMonitorForChannel(user, channel)) return true;
+  return isChannelTalkMember(user, channel);
+}
+
+/** Matches Firestore canViewAllVoiceMessages — platform/director/monitor roles and is_monitor flag. */
+export function canViewAllVoiceMessages(user) {
   return (
-    channel.members?.includes(user.id) ||
-    channel.members?.includes(user.email)
+    isPlatformAdmin(user) ||
+    user?.role === "director" ||
+    user?.role === "monitor" ||
+    user?.is_monitor === true
   );
+}
+
+/** Org-scoped channel list (matches Admin.jsx). Empty org => all channels. */
+export function filterChannelsByOrganization(user, channels) {
+  if (!channels?.length) return [];
+  const org = user?.organization?.trim();
+  if (!org) return channels;
+  return channels.filter((c) => !c.organization || c.organization === org);
+}
+
+/** Channels visible on the Monitor page for the current user. */
+export function getMonitorChannels(user, channels) {
+  if (!user || !channels?.length) return [];
+
+  let scoped = [];
+
+  if (isSuperAdmin(user)) {
+    scoped = channels;
+  } else if (user.role === "director") {
+    const directed = user.directed_channels || [];
+    scoped = directed.length > 0
+      ? channels.filter((c) => directed.includes(c.id))
+      : filterChannelsByOrganization(user, channels);
+  } else if (user.role === "monitor" || user.is_monitor === true) {
+    scoped = filterChannelsByOrganization(user, channels);
+  } else if (isOrgAdmin(user)) {
+    scoped = filterChannelsByOrganization(user, channels);
+  } else {
+    scoped = channels.filter((channel) => isChannelTalkMember(user, channel));
+  }
+
+  // Never query voiceMessages / relay for channels Firestore will reject.
+  return scoped.filter((channel) => canAccessChannelAlertsForChannel(user, channel));
 }

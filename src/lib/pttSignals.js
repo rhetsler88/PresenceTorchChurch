@@ -16,14 +16,23 @@ export function isStalePTTSignal(signal, ttlMs = PTT_SIGNAL_TTL_MS) {
 
 /**
  * Deletes expired PTT signals and returns non-stale signals from other senders.
+ * @param {{ channelId?: string, excludeSenderId?: string, limit?: number }} [options]
  */
 export async function cleanupStalePTTSignals({
   channelId,
+  channelIds,
   excludeSenderId,
   limit = 50,
 } = {}) {
-  const filters = channelId ? { channel_id: channelId } : {};
-  const signals = await api.entities.PTTSignal.filter(filters, "-created_date", limit);
+  const ids = channelIds?.length ? channelIds : channelId ? [channelId] : [];
+  const batches = ids.length
+    ? await Promise.all(
+        ids.map((id) =>
+          api.entities.PTTSignal.filter({ channel_id: id }, "-created_date", limit)
+        )
+      )
+    : [];
+  const signals = batches.flat();
   const activeFromOthers = [];
 
   for (const signal of signals) {

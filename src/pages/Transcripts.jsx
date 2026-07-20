@@ -1,15 +1,13 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { api } from "@/api/client";
 import { useQuery, useQueryClient, keepPreviousData } from "@tanstack/react-query";
 import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
-import { Search, FileText, Clock, User, Radio, FileUp } from "lucide-react";
+import { Search, FileText, FileUp } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { etzDayKey, etzFullTimestamp, etzMediumTimestamp } from "@/lib/etz";
 
 const ETZ = 'America/New_York';
-import { getDisplayName, isPlatformAdmin } from "@/lib/userUtils";
-import { receivesChannelRedAlert } from "@/lib/channelAlerts";
+import { getDisplayName, canReadVoiceMessageForChannel } from "@/lib/userUtils";
 import { toast } from "sonner";
 import DayGroup from "@/components/transcripts/DayGroup";
 
@@ -28,51 +26,58 @@ export default function Transcripts() {
     queryFn: () => api.auth.me(),
   });
 
-  const canViewAllLogs =
-    isPlatformAdmin(user) ||
-    user?.role === "director" ||
-    user?.is_monitor === true;
+  const { data: channels = [] } = useQuery({
+    queryKey: ["channels"],
+    queryFn: () => api.entities.Channel.list("-created_date", 100),
+  });
+
+  const readableChannelIds = useMemo(() => {
+    if (!user?.id || !channels.length) return [];
+    return channels
+      .filter((c) => canReadVoiceMessageForChannel(user, c))
+      .map((c) => c.id)
+      .filter(Boolean);
+  }, [user, channels]);
+
+  const readableChannelIdKey = readableChannelIds.join(",");
 
   const { data: messages = [], isLoading } = useQuery({
-    queryKey: ["all-messages", user?.id, canViewAllLogs],
-    enabled: !!user?.id,
+    queryKey: ["all-messages", user?.id, readableChannelIdKey],
+    enabled: !!user?.id && readableChannelIds.length > 0,
     placeholderData: keepPreviousData,
     refetchInterval: 15000,
     queryFn: async () => {
-      let items = [];
-      if (canViewAllLogs) {
-        items = await api.entities.VoiceMessage.list("-created_date", 300);
-      } else {
-        const channelList = await api.entities.Channel.list("-created_date", 100);
-        const alertChannelIds = channelList
-          .filter((c) => receivesChannelRedAlert(user, c))
-          .map((c) => c.id);
-        const batches = await Promise.all(
-          alertChannelIds.map((id) =>
-            api.entities.VoiceMessage.filter({ channel_id: id }, "-created_date", 100)
-          )
-        );
-        items = batches.flat();
-        items.sort((a, b) => String(b.created_date || "").localeCompare(String(a.created_date || "")));
-        items = items.slice(0, 300);
-      }
+      const batches = await Promise.all(
+        readableChannelIds.map(async (id) => {
+          try {
+            return await api.entities.VoiceMessage.filter({ channel_id: id }, "-created_date", 100);
+          } catch (err) {
+            if (err?.code === "permission-denied") return [];
+            throw err;
+          }
+        })
+      );
+      let items = batches.flat();
+      items.sort((a, b) => String(b.created_date || "").localeCompare(String(a.created_date || "")));
+      items = items.slice(0, 300);
       return items.filter((m) => m.audio_url || m.text_content || m.transcript);
     },
   });
 
   useEffect(() => {
-    const unsub = api.entities.VoiceMessage.subscribe((event) => {
-      if (event.type === "create" || event.type === "update") {
-        queryClient.invalidateQueries({ queryKey: ["all-messages"] });
-      }
-    });
-    return unsub;
-  }, [queryClient]);
+    if (!user?.id || readableChannelIds.length === 0) return undefined;
 
-  const { data: channels = [] } = useQuery({
-    queryKey: ["channels"],
-    queryFn: () => api.entities.Channel.list("-created_date", 100),
-  });
+    const unsub = api.entities.VoiceMessage.subscribeMany(
+      (event) => {
+        if (event.type === "create" || event.type === "update") {
+          queryClient.invalidateQueries({ queryKey: ["all-messages"] });
+        }
+      },
+      readableChannelIds.map((channelId) => ({ channel_id: channelId }))
+    );
+
+    return unsub;
+  }, [user?.id, readableChannelIdKey, queryClient]);
 
   const { data: users = [] } = useQuery({
     queryKey: ["users"],

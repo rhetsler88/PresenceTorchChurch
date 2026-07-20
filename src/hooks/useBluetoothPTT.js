@@ -55,6 +55,8 @@ export default function useBluetoothPTT({ onPress, onRelease }) {
     setError(null);
     try {
       await ensureBluetoothPermissions();
+      /** @type {any} */
+      /** @type {any} */
       const device = await navigator.bluetooth.requestDevice({
         acceptAllDevices: true,
         optionalServices: OPTIONAL_SERVICES,

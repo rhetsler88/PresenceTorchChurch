@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from "react";
+import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { api } from "@/api/client";
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from "@tanstack/react-query";
 import PTTButton from "../components/ptt/PTTButton";
@@ -14,7 +14,14 @@ import { playClearTone, playBusyTone, unlockAudioForPTT } from "@/lib/pttTones";
 import { cleanupStalePTTSignals } from "@/lib/pttSignals";
 import { playAudioUrl, stopAudio } from "@/lib/audioPlayer";
 import { deviceDayKey } from "@/lib/deviceDate";
-import { getDisplayName, canAccessChannel, isPlatformAdmin } from "@/lib/userUtils";
+import {
+  getDisplayName,
+  canAccessChannel,
+  isPlatformAdmin,
+  canReadVoiceMessageForChannel,
+  canAccessChannelAlertsForChannel,
+  canSendOnChannelForChannel,
+} from "@/lib/userUtils";
 import { getCodeDateKey } from "@/lib/dailyCode";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -37,26 +44,6 @@ export default function Talk() {
   const pttStopPendingRef = useRef(false);
   const channelBusyTimeoutRef = useRef(null);
   const receivingTimeoutRef = useRef(null);
-  const {
-    isRecording,
-    startRecording,
-    stopRecording,
-    isLiveReceiving: agoraLiveReceiving,
-    heardBroadcastsRef,
-  } = usePttBroadcast({
-    channelId: activeChannelId,
-    userId: user?.id,
-    userName: user ? getDisplayName(user) : "",
-  });
-
-  const { isReceiving: storageLiveReceiving, heardBroadcastsRef: relayHeardRef } = usePttReceiver({
-    channelId: activeChannelId,
-    userId: user?.id,
-  });
-
-  const isLiveReceiving = isAgoraEnabled()
-    ? (agoraLiveReceiving || storageLiveReceiving)
-    : storageLiveReceiving;
 
   const urlParams = new URLSearchParams(window.location.search);
   const channelParam = urlParams.get("channel");
@@ -76,7 +63,49 @@ export default function Talk() {
   });
 
   // Approved members, plus org/platform admins who manage those channels
-  const myChannels = channels.filter((channel) => canAccessChannel(user, channel));
+  const myChannels = useMemo(
+    () => channels.filter((channel) => canAccessChannel(user, channel)),
+    [channels, user]
+  );
+
+  const activeChannel = useMemo(
+    () => myChannels.find((c) => c.id === activeChannelId) ?? myChannels[0] ?? null,
+    [myChannels, activeChannelId]
+  );
+  const effectiveChannelId = activeChannel?.id ?? null;
+  const canReadMessages = Boolean(
+    activeChannel && user && canReadVoiceMessageForChannel(user, activeChannel)
+  );
+  const canAccessAlerts = Boolean(
+    activeChannel && user && canAccessChannelAlertsForChannel(user, activeChannel)
+  );
+  const canSendPtt = Boolean(
+    activeChannel && user && canSendOnChannelForChannel(user, activeChannel)
+  );
+  const relayListenChannelId = canAccessAlerts ? effectiveChannelId : null;
+  // Join Agora for live listen whenever alerts are allowed, not only when user can PTT.
+  const agoraChannelId = canAccessAlerts ? effectiveChannelId : null;
+
+  const {
+    isRecording,
+    startRecording,
+    stopRecording,
+    isLiveReceiving: agoraLiveReceiving,
+    heardBroadcastsRef,
+  } = usePttBroadcast({
+    channelId: agoraChannelId,
+    userId: user?.id,
+    userName: user ? getDisplayName(user) : "",
+  });
+
+  const { isReceiving: storageLiveReceiving, heardBroadcastsRef: relayHeardRef } = usePttReceiver({
+    channelId: relayListenChannelId,
+    userId: user?.id,
+  });
+
+  const isLiveReceiving = isAgoraEnabled()
+    ? (agoraLiveReceiving || storageLiveReceiving)
+    : storageLiveReceiving;
 
   // Auto-select channel from URL param, last selected, or first approved channel
   useEffect(() => {
@@ -90,20 +119,35 @@ export default function Talk() {
     }
   }, [myChannels, activeChannelId, channelParam]);
 
+  // Drop stale selection when membership or admin scope changes
+  useEffect(() => {
+    if (!user) return;
+    if (activeChannelId && !myChannels.some((c) => c.id === activeChannelId)) {
+      setActiveChannelId(myChannels[0]?.id ?? null);
+    }
+  }, [user, myChannels, activeChannelId]);
+
   // Persist channel selection
   useEffect(() => {
     if (activeChannelId) localStorage.setItem("lastChannelId", activeChannelId);
   }, [activeChannelId]);
 
-  const activeChannel = myChannels.find(c => c.id === activeChannelId) || myChannels[0];
-
   const { data: messages = [] } = useQuery({
-    queryKey: ["messages", activeChannelId],
-    queryFn: () =>
-      activeChannelId
-        ? api.entities.VoiceMessage.filter({ channel_id: activeChannelId }, "-created_date", 50)
-        : [],
-    enabled: !!activeChannelId,
+    queryKey: ["messages", effectiveChannelId, user?.id, canReadMessages],
+    queryFn: async () => {
+      if (!effectiveChannelId || !canReadMessages) return [];
+      try {
+        return await api.entities.VoiceMessage.filter(
+          { channel_id: effectiveChannelId },
+          "-created_date",
+          50
+        );
+      } catch (err) {
+        if (err?.code === "permission-denied") return [];
+        throw err;
+      }
+    },
+    enabled: !!effectiveChannelId && !!user?.id && canReadMessages,
     placeholderData: keepPreviousData,
     refetchInterval: 15000,
   });
@@ -136,11 +180,11 @@ export default function Talk() {
   }, []);
 
   const deleteMessagesMutation = useMutation({
-    mutationFn: async (ids) => {
+    mutationFn: async (/** @type {string[]} */ ids) => {
       await Promise.all(ids.map(id => api.entities.VoiceMessage.delete(id)));
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["messages", activeChannelId] });
+      queryClient.invalidateQueries({ queryKey: ["messages", effectiveChannelId] });
       setSelectionMode(false);
       setSelectedIds(new Set());
       toast.success("Messages deleted");
@@ -148,9 +192,9 @@ export default function Talk() {
   });
 
   const mergeChannelMessage = useCallback((message) => {
-    if (!message?.id || !activeChannelId) return;
-    if (message.channel_id && message.channel_id !== activeChannelId) return;
-    queryClient.setQueryData(["messages", activeChannelId], (old = []) => {
+    if (!message?.id || !effectiveChannelId) return;
+    if (message.channel_id && message.channel_id !== effectiveChannelId) return;
+    queryClient.setQueryData(["messages", effectiveChannelId], (old = []) => {
       const list = Array.isArray(old) ? old : [];
       const idx = list.findIndex((m) => m.id === message.id);
       if (idx === -1) return [message, ...list];
@@ -158,60 +202,63 @@ export default function Talk() {
       next[idx] = { ...next[idx], ...message };
       return next;
     });
-  }, [activeChannelId, queryClient]);
+  }, [effectiveChannelId, queryClient]);
 
   // Subscribe to channel messages — merge creates/updates locally; avoid refetching Talk feed (prevents wipe races)
   useEffect(() => {
-    if (!activeChannelId || !user) return;
-    const unsub = api.entities.VoiceMessage.subscribe((event) => {
-      if (event.data?.channel_id !== activeChannelId) return;
+    if (!effectiveChannelId || !canReadMessages) return;
+    const unsub = api.entities.VoiceMessage.subscribe(
+      (event) => {
+        if (event.data?.channel_id !== effectiveChannelId) return;
 
-      if (event.type === "create" || event.type === "update") {
-        mergeChannelMessage(event.data);
-        queryClient.invalidateQueries({ queryKey: ["all-messages"] });
-        queryClient.invalidateQueries({ queryKey: ["all-channel-messages"] });
-      }
+        if (event.type === "create" || event.type === "update") {
+          mergeChannelMessage(event.data);
+          queryClient.invalidateQueries({ queryKey: ["all-messages"] });
+          queryClient.invalidateQueries({ queryKey: ["all-channel-messages"] });
+        }
 
-      // Auto-play incoming voice messages from other users
-      if (event.type === "create" && event.data?.audio_url && event.data?.created_by_id !== user.id) {
-        // Skip auto-play if already heard via live relay
-        if (event.data?.broadcast_id && (
-          heardBroadcastsRef.current.has(event.data.broadcast_id)
-          || relayHeardRef.current.has(event.data.broadcast_id)
-        )) return;
-        setPlayingId(event.data.id);
-        setIsReceiving(true);
-        if (receivingTimeoutRef.current) clearTimeout(receivingTimeoutRef.current);
-        receivingTimeoutRef.current = setTimeout(() => {
-          setPlayingId(null);
-          setIsReceiving(false);
-        }, 30000);
-        playAudioUrl(event.data.audio_url, {
-          onEnded: () => {
+        // Auto-play incoming voice messages from other users
+        if (event.type === "create" && event.data?.audio_url && event.data?.created_by_id !== user.id) {
+          // Skip auto-play if already heard via live relay
+          if (event.data?.broadcast_id && (
+            heardBroadcastsRef.current.has(event.data.broadcast_id)
+            || relayHeardRef.current.has(event.data.broadcast_id)
+          )) return;
+          setPlayingId(event.data.id);
+          setIsReceiving(true);
+          if (receivingTimeoutRef.current) clearTimeout(receivingTimeoutRef.current);
+          receivingTimeoutRef.current = setTimeout(() => {
+            setPlayingId(null);
+            setIsReceiving(false);
+          }, 30000);
+          playAudioUrl(event.data.audio_url, {
+            onEnded: () => {
+              if (receivingTimeoutRef.current) { clearTimeout(receivingTimeoutRef.current); receivingTimeoutRef.current = null; }
+              setPlayingId(null);
+              setIsReceiving(false);
+            },
+            onError: () => {
+              if (receivingTimeoutRef.current) { clearTimeout(receivingTimeoutRef.current); receivingTimeoutRef.current = null; }
+              setPlayingId(null);
+              setIsReceiving(false);
+            },
+          }).catch(() => {
             if (receivingTimeoutRef.current) { clearTimeout(receivingTimeoutRef.current); receivingTimeoutRef.current = null; }
             setPlayingId(null);
             setIsReceiving(false);
-          },
-          onError: () => {
-            if (receivingTimeoutRef.current) { clearTimeout(receivingTimeoutRef.current); receivingTimeoutRef.current = null; }
-            setPlayingId(null);
-            setIsReceiving(false);
-          },
-        }).catch(() => {
-          if (receivingTimeoutRef.current) { clearTimeout(receivingTimeoutRef.current); receivingTimeoutRef.current = null; }
-          setPlayingId(null);
-          setIsReceiving(false);
-        });
-      }
-    }, { channel_id: activeChannelId });
+          });
+        }
+      },
+      { channel_id: effectiveChannelId }
+    );
     return unsub;
-  }, [activeChannelId, queryClient, user, heardBroadcastsRef, relayHeardRef, mergeChannelMessage]);
+  }, [effectiveChannelId, canReadMessages, queryClient, user, heardBroadcastsRef, relayHeardRef, mergeChannelMessage]);
 
   // Subscribe to PTT signals — broadcast beeps to all channel members
   useEffect(() => {
-    if (!activeChannelId || !user?.id) return;
+    if (!effectiveChannelId || !user?.id || !canAccessAlerts) return;
     const unsub = api.entities.PTTSignal.subscribe((event) => {
-      if (event.data?.channel_id !== activeChannelId) return;
+      if (event.data?.channel_id !== effectiveChannelId) return;
       if (event.data?.sender_id === user.id) return;
 
       if (event.type === "create") {
@@ -228,15 +275,15 @@ export default function Talk() {
         }
         setIsChannelBusy(false);
       }
-    }, { channel_id: activeChannelId });
+    }, { channel_id: effectiveChannelId });
     return unsub;
-  }, [activeChannelId, user?.id]);
+  }, [effectiveChannelId, user?.id, canAccessAlerts]);
 
   // Check for existing active signals and clean up stale ones when joining a channel
   useEffect(() => {
-    if (!activeChannelId || !user?.id) return;
+    if (!effectiveChannelId || !user?.id || !canAccessAlerts) return;
     setIsChannelBusy(false);
-    cleanupStalePTTSignals({ channelId: activeChannelId, excludeSenderId: user.id })
+    cleanupStalePTTSignals({ channelId: effectiveChannelId, excludeSenderId: user.id })
       .then((active) => {
         if (active.length > 0) {
           setIsChannelBusy(true);
@@ -244,7 +291,7 @@ export default function Talk() {
         }
       })
       .catch(() => {});
-  }, [activeChannelId, user?.id]);
+  }, [effectiveChannelId, user?.id, canAccessAlerts]);
 
   // Clean up PTT signal on channel change, tab close, or unmount
   useEffect(() => {
@@ -266,7 +313,7 @@ export default function Talk() {
         channelBusyTimeoutRef.current = null;
       }
     };
-  }, [activeChannelId]);
+  }, [effectiveChannelId]);
 
   // Subscribe to channel updates (sync protection level from Monitor)
   useEffect(() => {
@@ -295,7 +342,7 @@ export default function Talk() {
 
       const now = new Date();
       const msg = await api.entities.VoiceMessage.create({
-        channel_id: activeChannelId,
+        channel_id: effectiveChannelId,
         sender_name: getDisplayName(user),
         sender_email: user?.email || "",
         audio_url: file_url,
@@ -314,7 +361,7 @@ export default function Talk() {
       }
 
       // Transcribe in background
-      transcribeMessage(msg.id, file_url, activeChannelId);
+      transcribeMessage(msg.id, file_url, effectiveChannelId);
       return msg;
     },
     onSuccess: (msg) => {
@@ -335,7 +382,7 @@ export default function Talk() {
     mutationFn: async (text) => {
       const now = new Date();
       return api.entities.VoiceMessage.create({
-        channel_id: activeChannelId,
+        channel_id: effectiveChannelId,
         sender_name: getDisplayName(user),
         sender_email: user?.email || "",
         text_content: text,
@@ -361,8 +408,9 @@ export default function Talk() {
   });
 
   const transcribeMessage = async (msgId, audioUrl, channelId) => {
-    const messageChannelId = channelId || activeChannelId;
+    const messageChannelId = channelId || effectiveChannelId;
     try {
+      /** @type {any} */
       const result = await api.functions.invoke("transcribeAudio", {
         audio_url: audioUrl,
         message_id: msgId,
@@ -406,7 +454,7 @@ export default function Talk() {
   }, [sendMutation]);
 
   const handlePTTStart = useCallback(async () => {
-    if (!activeChannel || isPTTPressed || !user?.id) return;
+    if (!activeChannel || isPTTPressed || !user?.id || !canSendPtt) return;
     if (isReceiving || isLiveReceiving || isChannelBusy) {
       playBusyTone();
       return;
@@ -422,7 +470,7 @@ export default function Talk() {
     let signalId = null;
     try {
       const signal = await api.entities.PTTSignal.create({
-        channel_id: activeChannelId,
+        channel_id: effectiveChannelId,
         sender_id: user.id,
         sender_name: getDisplayName(user),
       });
@@ -469,8 +517,9 @@ export default function Talk() {
     isChannelBusy,
     startRecording,
     stopRecording,
-    activeChannelId,
+    effectiveChannelId,
     user,
+    canSendPtt,
   ]);
 
   const handlePTTStop = useCallback(() => {

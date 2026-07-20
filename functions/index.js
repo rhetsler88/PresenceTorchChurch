@@ -26,7 +26,6 @@ const CLEANUP_BATCH_SIZE = 500;
 
 const SPEECH_CONFIG = {
   encoding: "WEBM_OPUS",
-  sampleRateHertz: 48000,
   languageCode: "en-US",
   enableAutomaticPunctuation: true,
 };
@@ -211,7 +210,15 @@ exports.getAgoraToken = onCall(
     }
 
     const channelName = toAgoraChannelName(channelId);
-    const uid = agoraUidFromFirebaseId(request.auth.uid);
+    const clientUid = request.data?.client_uid;
+    const uid = (
+      typeof clientUid === "number"
+      && Number.isFinite(clientUid)
+      && clientUid > 0
+      && clientUid < 2147483647
+    )
+      ? Math.floor(clientUid)
+      : agoraUidFromFirebaseId(request.auth.uid);
     const expireTime = Math.floor(Date.now() / 1000) + 3600;
     const token = RtcTokenBuilder.buildTokenWithUid(
       appId,

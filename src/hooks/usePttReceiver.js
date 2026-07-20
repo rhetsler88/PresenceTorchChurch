@@ -8,6 +8,7 @@ import useAgoraMultiListen from "./useAgoraMultiListen";
  * Talk: pass channelId. Monitor: pass channelIds.
  * When Agora is enabled, Agora is primary; storage relay is kept active on Talk
  * so relay-fallback broadcasts are still heard live.
+ * @param {{ channelId?: string, channelIds?: string[], userId?: string, onRemoteTalkStart?: () => void }} options
  */
 export default function usePttReceiver({ channelId, channelIds, userId, onRemoteTalkStart }) {
   const relay = useRelayReceiver({ channelId, userId });

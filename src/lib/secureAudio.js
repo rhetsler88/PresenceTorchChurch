@@ -16,6 +16,7 @@ export async function resolveAudioUrl(urlOrUri) {
       const path = urlOrUri.replace(/^gs:\/\/[^/]+\//, "");
       return getDownloadURL(ref(storage, path));
     }
+    /** @type {any} */
     const response = await functionsApi.invoke("getSecureAudioUrl", {
       file_uri: urlOrUri,
     });

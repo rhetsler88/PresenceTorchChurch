@@ -10,6 +10,44 @@ service firebase.storage {
       return request.resource.contentType.matches('audio/.*');
     }
 
+    function userDoc() {
+      return firestore.get(/databases/(default)/documents/users/$(request.auth.uid));
+    }
+
+    function userExists() {
+      return isSignedIn() && userDoc() != null;
+    }
+
+    function role() {
+      return userDoc().data.role;
+    }
+
+    function isSuperAdmin() {
+      return userExists() && role() == 'super_admin';
+    }
+
+    function isAdmin() {
+      return userExists() && role() == 'admin';
+    }
+
+    function isDirector() {
+      return userExists() && role() == 'director';
+    }
+
+    function isPlatformAdmin() {
+      return isSuperAdmin() || isAdmin();
+    }
+
+    function isMonitor() {
+      return userExists() && (
+        userDoc().data.get('is_monitor', false) == true || role() == 'monitor'
+      );
+    }
+
+    function canViewAllVoiceMessages() {
+      return isPlatformAdmin() || isDirector() || isMonitor();
+    }
+
     function channelDoc(channelId) {
       return firestore.get(/databases/(default)/documents/channels/$(channelId));
     }
@@ -22,17 +60,79 @@ service firebase.storage {
       return list.hasAny([request.auth.uid, request.auth.token.email]);
     }
 
+    function channelMembers(channelId) {
+      return channelDoc(channelId).data.get('members', []);
+    }
+
+    function channelNotificationMembers(channelId) {
+      return channelDoc(channelId).data.get('notification_members', []);
+    }
+
     function isChannelTalkMember(channelId) {
-      return channelExists(channelId)
-        && isListedOnChannel(channelDoc(channelId).data.get('members', []));
+      return isSuperAdmin()
+        || (channelExists(channelId) && isListedOnChannel(channelMembers(channelId)));
     }
 
     function isChannelAlertRecipient(channelId) {
       return isChannelTalkMember(channelId)
-        || (
-          channelExists(channelId)
-          && isListedOnChannel(channelDoc(channelId).data.get('notification_members', []))
+        || (channelExists(channelId) && isListedOnChannel(channelNotificationMembers(channelId)));
+    }
+
+    function userOrganization() {
+      return userDoc().data.get('organization', '');
+    }
+
+    function userHasOrganizationConstraint() {
+      return userOrganization() is string && userOrganization().size() > 0;
+    }
+
+    function userDirectedChannels() {
+      return userDoc().data.get('directed_channels', []);
+    }
+
+    function isDirectorForChannel(channelId) {
+      return isDirector()
+        && channelExists(channelId)
+        && (
+          userDirectedChannels().size() == 0
+          || channelId in userDirectedChannels()
         );
+    }
+
+    function isMonitorForChannel(channelId) {
+      return isMonitor()
+        && channelExists(channelId)
+        && (
+          !userHasOrganizationConstraint()
+          || channelDoc(channelId).data.get('organization', '') == userOrganization()
+        );
+    }
+
+    function isOrgAdminForChannel(channelId) {
+      return isAdmin()
+        && channelExists(channelId)
+        && (
+          !userHasOrganizationConstraint()
+          || channelDoc(channelId).data.get('organization', '') == userOrganization()
+        );
+    }
+
+    // Match Firestore canSendOnChannel — PTT upload + voice message storage.
+    function canSendOnChannel(channelId) {
+      return isPlatformAdmin()
+        || isChannelTalkMember(channelId)
+        || isOrgAdminForChannel(channelId)
+        || isDirectorForChannel(channelId)
+        || isMonitorForChannel(channelId);
+    }
+
+    // Match Firestore canAccessChannelAlerts / canReadVoiceMessage for playback.
+    function canAccessChannelAudio(channelId) {
+      return canViewAllVoiceMessages()
+        || isChannelAlertRecipient(channelId)
+        || isOrgAdminForChannel(channelId)
+        || isDirectorForChannel(channelId)
+        || isMonitorForChannel(channelId);
     }
 
     // Legacy relay + message paths (pre channel-scoped layout)
@@ -48,18 +148,18 @@ service firebase.storage {
 
     // Live relay chunks scoped by channel
     match /audio/public/{channelId}/{allPaths=**} {
-      allow read: if isSignedIn() && isChannelAlertRecipient(channelId);
+      allow read: if isSignedIn() && canAccessChannelAudio(channelId);
       allow write: if isSignedIn()
-        && isChannelTalkMember(channelId)
+        && canSendOnChannel(channelId)
         && isAudio()
         && request.resource.size < 5 * 1024 * 1024;
     }
 
     // Recorded voice messages scoped by channel
     match /audio/private/{channelId}/{allPaths=**} {
-      allow read: if isSignedIn() && isChannelAlertRecipient(channelId);
+      allow read: if isSignedIn() && canAccessChannelAudio(channelId);
       allow write: if isSignedIn()
-        && isChannelTalkMember(channelId)
+        && canSendOnChannel(channelId)
         && isAudio()
         && request.resource.size < 25 * 1024 * 1024;
     }

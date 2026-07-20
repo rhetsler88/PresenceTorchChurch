@@ -4,7 +4,7 @@ import { Radio, MessageSquare, FileText, Eye, Shield, Crown } from "lucide-react
 import { useAuth } from "@/lib/AuthContext";
 import DailyCodeGate from "@/components/dailycode/DailyCodeGate";
 import UserMenu from "@/components/layout/UserMenu";
-import { isPlatformAdmin } from "@/lib/userUtils";
+import { isPlatformAdmin, canViewAllVoiceMessages } from "@/lib/userUtils";
 import { BluetoothPTTProvider } from "@/components/ptt/BluetoothPTTContext";
 import RedAlertBanner from "@/components/ptt/RedAlertBanner";
 import useRedAlert from "@/hooks/useRedAlert";
@@ -14,17 +14,14 @@ export default function AppLayout() {
   const { user, checkUserAuth } = useAuth();
   const { alertChannel, dismiss: dismissAlert } = useRedAlert(user);
 
-  const isMonitor =
-    user?.role === "monitor" ||
-    isPlatformAdmin(user) ||
-    user?.is_monitor === true;
+  const showMonitor = canViewAllVoiceMessages(user);
   const isAdmin = isPlatformAdmin(user);
   const isDirector = user?.role === "director";
 
   const navItems = [
     { path: "/", icon: Radio, label: "Talk" },
     { path: "/transcripts", icon: FileText, label: "Logs" },
-    ...(isMonitor ? [{ path: "/monitor", icon: Eye, label: "Monitor" }] : []),
+    ...(showMonitor ? [{ path: "/monitor", icon: Eye, label: "Monitor" }] : []),
     ...(isAdmin || isDirector
       ? [{ path: "/admin", icon: isAdmin ? Shield : Crown, label: isAdmin ? "Admin" : "Approve" }]
       : []),

@@ -23,7 +23,7 @@ export default function Contacts() {
   });
 
   const deleteMutation = useMutation({
-    mutationFn: (contact) => api.entities.Contact.delete(contact.id),
+    mutationFn: (/** @type {any} */ contact) => api.entities.Contact.delete(contact.id),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["contacts"] }),
   });
 

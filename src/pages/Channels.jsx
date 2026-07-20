@@ -3,7 +3,6 @@ import { api } from "@/api/client";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Plus, Radio } from "lucide-react";
-import ProtectionLevelControl from "@/components/monitor/ProtectionLevelControl";
 import SetAllProtectionLevel from "@/components/monitor/SetAllProtectionLevel";
 import ChannelCard from "../components/channels/ChannelCard";
 import CreateChannelDialog from "../components/channels/CreateChannelDialog";
@@ -45,7 +44,7 @@ export default function Channels() {
   });
 
   const joinChannelMutation = useMutation({
-    mutationFn: async ({ channel }) => {
+    mutationFn: async (/** @type {{ channel: any }} */ { channel }) => {
       if (!user?.id) return;
       const pending = channel.pending_members || [];
       const approved = channel.members || [];
@@ -65,7 +64,7 @@ export default function Channels() {
   });
 
   const renameMutation = useMutation({
-    mutationFn: ({ channelId, name, color }) => api.entities.Channel.update(channelId, { name, color }),
+    mutationFn: (/** @type {{ channelId: any, name: any, color: any }} */ { channelId, name, color }) => api.entities.Channel.update(channelId, { name, color }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["channels"] });
       toast.success("Channel renamed");
@@ -73,14 +72,14 @@ export default function Channels() {
   });
 
   const protectionMutation = useMutation({
-    mutationFn: ({ channelId, level }) => api.entities.Channel.update(channelId, { protection_level: level }),
+    mutationFn: (/** @type {{ channelId: any, level: any }} */ { channelId, level }) => api.entities.Channel.update(channelId, { protection_level: level }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["channels"] }),
   });
 
   const setAllProtectionMutation = useMutation({
     mutationFn: (level) => api.entities.Channel.updateMany({}, { $set: { protection_level: level } }),
     onSuccess: (_data, level) => {
-      queryClient.setQueryData(["channels"], (old) =>
+      queryClient.setQueryData(["channels"], (/** @type {any[] | undefined} */ old) =>
         (old ?? []).map((c) => ({ ...c, protection_level: level }))
       );
       queryClient.invalidateQueries({ queryKey: ["channels"] });

@@ -11,6 +11,8 @@
     "typecheck": "tsc -p ./jsconfig.json",
     "preview": "vite preview",
     "seed": "node scripts/seed-firestore.mjs",
+    "channels:list": "node scripts/list-channels.mjs",
+    "channels:delete-excess": "node scripts/delete-channel.mjs --excess",
     "dev:admin": "npm run dev --prefix admin",
     "build:admin": "npm run build --prefix admin",
     "setup:domains": "node scripts/add-firebase-domains.mjs",

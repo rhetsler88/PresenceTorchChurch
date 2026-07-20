@@ -27,7 +27,7 @@ export default function Admin() {
   });
 
   const changeRoleMutation = useMutation({
-    mutationFn: ({ user, role }) => api.entities.User.update(user.id, { role }),
+    mutationFn: (/** @type {{ user: any, role: any }} */ { user, role }) => api.entities.User.update(user.id, { role }),
     onSuccess: (_, { user, role }) => {
       queryClient.invalidateQueries({ queryKey: ["users"] });
       toast.success(`${[user.first_name, user.last_name].filter(Boolean).join(" ") || user.full_name || "User"} is now ${ROLE_CONFIG[role].label}`);
@@ -35,7 +35,7 @@ export default function Admin() {
   });
 
   const toggleMonitorMutation = useMutation({
-    mutationFn: ({ user }) =>
+    mutationFn: (/** @type {{ user: any }} */ { user }) =>
       api.entities.User.update(user.id, { is_monitor: !user.is_monitor }),
     onSuccess: (_, { user }) => {
       queryClient.invalidateQueries({ queryKey: ["users"] });
@@ -44,7 +44,7 @@ export default function Admin() {
   });
 
   const toggleChannelMutation = useMutation({
-    mutationFn: ({ user, channelId }) => {
+    mutationFn: (/** @type {{ user: any, channelId: any }} */ { user, channelId }) => {
       const current = user.directed_channels || [];
       const directed = current.includes(channelId)
         ? current.filter(id => id !== channelId)
@@ -57,7 +57,7 @@ export default function Admin() {
   });
 
   const approveMutation = useMutation({
-    mutationFn: async ({ channel, memberId }) => {
+    mutationFn: async (/** @type {{ channel: any, memberId: any }} */ { channel, memberId }) => {
       const members = channel.members || [];
       const pending = (channel.pending_members || []).filter((e) => e !== memberId);
       await api.entities.Channel.update(channel.id, {
@@ -72,7 +72,7 @@ export default function Admin() {
   });
 
   const rejectMutation = useMutation({
-    mutationFn: async ({ channel, memberId }) => {
+    mutationFn: async (/** @type {{ channel: any, memberId: any }} */ { channel, memberId }) => {
       const pending = (channel.pending_members || []).filter((e) => e !== memberId);
       await api.entities.Channel.update(channel.id, { pending_members: pending });
     },
@@ -83,7 +83,7 @@ export default function Admin() {
   });
 
   const approveStaffAlertMutation = useMutation({
-    mutationFn: ({ user }) =>
+    mutationFn: (/** @type {{ user: any }} */ { user }) =>
       api.entities.User.update(user.id, {
         receives_staff_alerts: true,
         pending_staff_alerts: false,
@@ -95,7 +95,7 @@ export default function Admin() {
   });
 
   const rejectStaffAlertMutation = useMutation({
-    mutationFn: ({ user }) =>
+    mutationFn: (/** @type {{ user: any }} */ { user }) =>
       api.entities.User.update(user.id, { pending_staff_alerts: false }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["users"] });
@@ -104,7 +104,7 @@ export default function Admin() {
   });
 
   const toggleStaffAlertsMutation = useMutation({
-    mutationFn: ({ user }) =>
+    mutationFn: (/** @type {{ user: any }} */ { user }) =>
       api.entities.User.update(user.id, {
         receives_staff_alerts: !user.receives_staff_alerts,
       }),

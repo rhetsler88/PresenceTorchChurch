@@ -17,17 +17,25 @@ import {
 function mutationErrorToast(action) {
   return (err) => {
     console.error(`Admin ${action} failed:`, err);
-    toast.error(
-      err?.code === "permission-denied"
-        ? "Permission denied — check your admin role in Firestore"
-        : `Couldn't ${action}. Please try again.`
-    );
+    if (err?.code === "permission-denied") {
+      toast.error(
+        "Permission denied — confirm Firestore users/{yourUid}.role is admin or super_admin, then refresh the app."
+      );
+      return;
+    }
+    toast.error(`Couldn't ${action}. Please try again.`);
   };
 }
 
 export default function Admin() {
-  const { user: currentUser } = useAuth();
+  const { user: currentUser, checkUserAuth } = useAuth();
   const queryClient = useQueryClient();
+
+  React.useEffect(() => {
+    checkUserAuth?.().catch((err) => {
+      console.warn("Admin profile refresh failed:", err);
+    });
+  }, [checkUserAuth]);
 
   const { data: users = [], isLoading } = useQuery({
     queryKey: ["users"],

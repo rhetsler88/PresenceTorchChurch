@@ -1,59 +1,37 @@
-import { useCallback, useRef } from "react";
+import { useCallback } from "react";
 import { isAgoraEnabled } from "@/lib/agora";
 import useRelayBroadcast from "./useRelayBroadcast";
 import useAgoraPTT from "./useAgoraPTT";
 
 /**
- * PTT broadcast: Agora WebRTC when configured (live publish + listen),
- * with Storage relay as fallback if Agora join/publish fails.
- * Agora joins lazily — only while listenActive or actively transmitting.
+ * PTT broadcast: always record/send via Storage relay (reliable in browser).
+ * When Agora is configured, optionally join as a listener for lower-latency live audio.
+ * Relay is the source of truth — Agora must never be the only transmit path.
  */
 export default function usePttBroadcast(options) {
   const { listenActive = false, ...agoraOptions } = options;
   const agora = useAgoraPTT({ ...agoraOptions, listenActive });
   const relay = useRelayBroadcast(agoraOptions);
-  const usingRelayRef = useRef(false);
-  const heardBroadcastsRef = useRef({
-    has(id) {
-      return agora.heardBroadcastsRef.current.has(id) || relay.heardBroadcastsRef.current.has(id);
-    },
-    add(id) {
-      agora.heardBroadcastsRef.current.add(id);
-      relay.heardBroadcastsRef.current.add(id);
-    },
-  });
 
   const startRecording = useCallback(async () => {
-    usingRelayRef.current = false;
-    if (isAgoraEnabled()) {
-      const ok = await agora.startRecording();
-      if (ok) return true;
-    }
-    usingRelayRef.current = true;
     return relay.startRecording();
-  }, [agora.startRecording, relay.startRecording]);
+  }, [relay.startRecording]);
 
   const stopRecording = useCallback(async () => {
-    if (usingRelayRef.current) {
-      usingRelayRef.current = false;
-      return relay.stopRecording();
-    }
-    if (isAgoraEnabled()) {
-      const agoraResult = await agora.stopRecording();
-      if (agoraResult) return agoraResult;
-    }
     return relay.stopRecording();
-  }, [agora.stopRecording, relay.stopRecording]);
+  }, [relay.stopRecording]);
+
+  const heardBroadcastsRef = relay.heardBroadcastsRef;
 
   if (isAgoraEnabled()) {
     return {
-      isRecording: agora.isRecording || relay.isRecording,
+      isRecording: relay.isRecording,
       startRecording,
       stopRecording,
       isLiveReceiving: agora.isReceiving || false,
       isChannelReady: agora.isChannelReady,
       heardBroadcastsRef,
-      transport: "agora+relay-fallback",
+      transport: "relay+agora-listen",
     };
   }
 
@@ -63,7 +41,7 @@ export default function usePttBroadcast(options) {
     stopRecording,
     isLiveReceiving: false,
     isChannelReady: true,
-    heardBroadcastsRef: relay.heardBroadcastsRef,
+    heardBroadcastsRef,
     transport: "storage",
   };
 }

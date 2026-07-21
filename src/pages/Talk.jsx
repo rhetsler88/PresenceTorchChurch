@@ -82,10 +82,9 @@ export default function Talk() {
   const canSendPtt = Boolean(
     activeChannel && user && canSendOnChannelForChannel(user, activeChannel)
   );
-  const relayListenChannelId = canAccessAlerts ? effectiveChannelId : null;
-  // Agora joins lazily — only while PTT is held or a remote PTT signal is active.
-  const agoraChannelId = canAccessAlerts ? effectiveChannelId : null;
-  const agoraListenActive = Boolean(agoraChannelId && (isPTTPressed || isChannelBusy));
+  // Storage relay always listens on the active channel; Agora joins lazily on PTT activity.
+  const relayListenChannelId = effectiveChannelId;
+  const agoraListenActive = Boolean(effectiveChannelId && (isPTTPressed || isChannelBusy));
 
   const {
     isRecording,
@@ -94,7 +93,7 @@ export default function Talk() {
     isLiveReceiving: agoraLiveReceiving,
     heardBroadcastsRef,
   } = usePttBroadcast({
-    channelId: agoraChannelId,
+    channelId: effectiveChannelId,
     userId: user?.id,
     userName: user ? getDisplayName(user) : "",
     listenActive: agoraListenActive,
@@ -149,7 +148,7 @@ export default function Talk() {
         throw err;
       }
     },
-    enabled: !!effectiveChannelId && !!user?.id && !!user?.role && canReadMessages,
+    enabled: !!effectiveChannelId && !!user?.id && canReadMessages,
     placeholderData: keepPreviousData,
     refetchInterval: 15000,
   });
@@ -208,7 +207,7 @@ export default function Talk() {
 
   // Subscribe to channel messages — merge creates/updates locally; avoid refetching Talk feed (prevents wipe races)
   useEffect(() => {
-    if (!effectiveChannelId || !canReadMessages || !user?.role) return;
+    if (!effectiveChannelId || !canReadMessages) return;
     const unsub = api.entities.VoiceMessage.subscribe(
       (event) => {
         if (event.data?.channel_id !== effectiveChannelId) return;

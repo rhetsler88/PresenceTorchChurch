@@ -146,6 +146,7 @@ service cloud.firestore {
 
     function canAccessChannelAlerts(channelId) {
       return canViewAllVoiceMessages()
+        || isChannelTalkMember(channelId)
         || isChannelAlertRecipient(channelId)
         || isOrgAdminForChannel(channelId)
         || isDirectorForChannel(channelId)

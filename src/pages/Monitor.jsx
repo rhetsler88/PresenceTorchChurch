@@ -186,7 +186,7 @@ export default function Monitor() {
 
   const { data: allMessages = [] } = useQuery({
     queryKey: ["all-channel-messages", user?.id, monitorChannelIdKey],
-    enabled: !!user?.id && !!user?.role && monitorChannelIds.length > 0,
+    enabled: !!user?.id && monitorChannelIds.length > 0,
     queryFn: async () => {
       const batches = await Promise.all(
         monitorChannelIds.map(async (id) => {
@@ -405,7 +405,7 @@ export default function Monitor() {
 
   // Real-time subscription scoped to monitor channels
   useEffect(() => {
-    if (!user?.id || !user?.role || monitorChannelIds.length === 0) return;
+    if (!user?.id || monitorChannelIds.length === 0) return;
 
     const onEvent = (event) => {
       if (!monitorChannelIds.includes(event.data?.channel_id)) return;

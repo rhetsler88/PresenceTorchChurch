@@ -1,4 +1,4 @@
-import React, { createContext, useState, useContext, useEffect, useRef } from "react";
+import React, { createContext, useState, useContext, useEffect, useRef, useCallback } from "react";
 import { onAuthStateChanged, getRedirectResult } from "firebase/auth";
 import { doc, getDoc, setDoc } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase";
@@ -99,9 +99,9 @@ export const AuthProvider = ({ children }) => {
     setAuthError({ type: "auth_required", message: "Authentication required" });
   };
 
-  const checkUserAuth = async () => {
+  const checkUserAuth = useCallback(async ({ silent = false } = {}) => {
     try {
-      setIsLoadingAuth(true);
+      if (!silent) setIsLoadingAuth(true);
       const currentUser = await authApi.me();
 
       const loginTime = localStorage.getItem(LOGIN_TIME_KEY);
@@ -136,7 +136,7 @@ export const AuthProvider = ({ children }) => {
         });
       }
     }
-  };
+  }, []);
 
   const checkAppState = async () => {
     setIsLoadingPublicSettings(false);

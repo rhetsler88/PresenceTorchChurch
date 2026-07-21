@@ -32,7 +32,7 @@ export default function Admin() {
   const queryClient = useQueryClient();
 
   React.useEffect(() => {
-    checkUserAuth?.().catch((err) => {
+    checkUserAuth?.({ silent: true }).catch((err) => {
       console.warn("Admin profile refresh failed:", err);
     });
   }, [checkUserAuth]);
@@ -184,9 +184,11 @@ export default function Admin() {
 
   const pendingRequests = isAdmin
     ? orgChannels.filter(hasPendingChannelRequests)
-    : channels.filter(
-        (c) => directedChannelIds.includes(c.id) && hasPendingChannelRequests(c)
-      );
+    : (directedChannelIds.length > 0
+        ? channels.filter(
+            (c) => directedChannelIds.includes(c.id) && hasPendingChannelRequests(c)
+          )
+        : filterChannelsByOrganization(currentUser, channels).filter(hasPendingChannelRequests));
 
   const staffAlertCandidates = isAdmin
     ? orgUsers.filter((u) => u.pending_staff_alerts === true)

@@ -25,8 +25,8 @@ function AdminGate({ user, authError, logout }) {
 
   if (needsSignIn) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-background p-6">
-        <div className="max-w-md w-full bg-card border border-border rounded-2xl p-8">
+      <div className="min-h-dvh flex items-center justify-center bg-background p-4 sm:p-6 safe-top">
+        <div className="max-w-md w-full bg-card border border-border rounded-2xl p-6 sm:p-8">
           <div className="text-center mb-6">
             <AppLogo className="w-16 h-16 mx-auto mb-4" />
             <h1 className="text-xl font-bold text-foreground mb-2">Admin Dashboard</h1>
@@ -45,8 +45,8 @@ function AdminGate({ user, authError, logout }) {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-background p-6">
-      <div className="max-w-md w-full bg-card border border-border rounded-2xl p-8 text-center">
+    <div className="min-h-dvh flex items-center justify-center bg-background p-4 sm:p-6 safe-top">
+      <div className="max-w-md w-full bg-card border border-border rounded-2xl p-6 sm:p-8 text-center">
         <AppLogo className="w-16 h-16 mx-auto mb-4" />
         <h1 className="text-xl font-bold text-foreground mb-2">Admin access required</h1>
         <p className="text-sm text-muted-foreground mb-2">
@@ -86,7 +86,7 @@ function AdminAppRoutes() {
 
   if (isLoadingAuth) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-background">
+      <div className="min-h-dvh flex items-center justify-center bg-background safe-top">
         <div className="w-8 h-8 border-4 border-primary/20 border-t-primary rounded-full animate-spin" />
       </div>
     );

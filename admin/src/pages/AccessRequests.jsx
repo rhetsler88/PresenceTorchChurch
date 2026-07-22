@@ -26,7 +26,7 @@ export default function AccessRequests() {
   const resolved = requests.filter((r) => r.status !== "pending");
 
   return (
-    <div className="p-8 max-w-4xl">
+    <div className="p-4 md:p-8 w-full max-w-4xl mx-auto">
       <h1 className="text-2xl font-bold text-foreground mb-1">Access Requests</h1>
       <p className="text-sm text-muted-foreground mb-8">
         Review users who requested access before signing in
@@ -80,7 +80,7 @@ function RequestRow({ request, onApprove, onReject, resolved }) {
   const name = [request.first_name, request.last_name].filter(Boolean).join(" ") || "Unknown";
 
   return (
-    <div className="flex items-center justify-between bg-card border border-border rounded-xl px-4 py-3">
+    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between bg-card border border-border rounded-xl px-4 py-3">
       <div>
         <p className="font-semibold text-foreground">{name}</p>
         <p className="text-sm text-muted-foreground">{request.email}</p>
@@ -90,7 +90,7 @@ function RequestRow({ request, onApprove, onReject, resolved }) {
         </p>
       </div>
       {!resolved && (
-        <div className="flex gap-2">
+        <div className="flex gap-2 shrink-0 self-end sm:self-auto">
           <Button size="sm" variant="outline" onClick={onReject}>
             <X className="w-4 h-4" />
           </Button>

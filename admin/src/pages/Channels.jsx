@@ -107,8 +107,8 @@ export default function Channels() {
   };
 
   return (
-    <div className="p-8 max-w-5xl">
-      <div className="flex items-center justify-between mb-8">
+    <div className="p-4 md:p-8 w-full max-w-5xl mx-auto">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between mb-6 md:mb-8">
         <div>
           <h1 className="text-2xl font-bold text-foreground">Channels</h1>
           <p className="text-sm text-muted-foreground mt-1">
@@ -154,7 +154,7 @@ export default function Channels() {
           {channels.map((ch) => (
             <div
               key={ch.id}
-              className="flex items-center justify-between bg-card border border-border rounded-xl px-4 py-3"
+              className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between bg-card border border-border rounded-xl px-4 py-3"
             >
               <div className="flex items-center gap-3">
                 <div

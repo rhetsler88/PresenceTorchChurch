@@ -8,7 +8,7 @@ export default function InitializeDatabaseBanner({ seedMutation, user, showIniti
   const isSuperAdmin = user?.role === "super_admin";
 
   return (
-    <div className="mx-8 mt-6 bg-amber-500/10 border border-amber-500/30 rounded-xl p-4 flex flex-col sm:flex-row sm:items-center gap-3">
+    <div className="mx-4 md:mx-8 mt-4 md:mt-6 bg-amber-500/10 border border-amber-500/30 rounded-xl p-4 flex flex-col sm:flex-row sm:items-center gap-3">
       <div className="flex items-start gap-3 flex-1">
         <Database className="w-5 h-5 text-amber-400 mt-0.5 flex-shrink-0" />
         <div>

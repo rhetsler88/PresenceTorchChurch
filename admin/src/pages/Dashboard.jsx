@@ -46,7 +46,7 @@ export default function Dashboard() {
   );
 
   return (
-    <div className="p-8 max-w-6xl">
+    <div className="p-4 md:p-8 w-full max-w-6xl mx-auto">
       <h1 className="text-2xl font-bold text-foreground mb-1">Dashboard</h1>
       <p className="text-sm text-muted-foreground mb-8">
         Platform overview for Presence Torch Church

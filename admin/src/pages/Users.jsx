@@ -88,13 +88,13 @@ export default function Users() {
   const canEditRole = isPlatformAdmin(currentUser);
 
   return (
-    <div className="p-8 max-w-5xl">
+    <div className="p-4 md:p-8 w-full max-w-5xl mx-auto">
       <h1 className="text-2xl font-bold text-foreground mb-1">Users</h1>
       <p className="text-sm text-muted-foreground mb-6">
         Edit user profiles, roles, and organization assignments
       </p>
 
-      <div className="relative mb-6 max-w-sm">
+      <div className="relative mb-6 max-w-sm w-full">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
         <Input
           className="pl-9"
@@ -109,8 +109,8 @@ export default function Users() {
           <div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin" />
         </div>
       ) : (
-        <div className="bg-card border border-border rounded-xl overflow-hidden">
-          <table className="w-full text-sm">
+        <div className="bg-card border border-border rounded-xl overflow-x-auto">
+          <table className="w-full text-sm min-w-[640px]">
             <thead>
               <tr className="border-b border-border text-left text-muted-foreground">
                 <th className="px-4 py-3 font-medium">Name</th>

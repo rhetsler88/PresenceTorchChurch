@@ -15,6 +15,7 @@ import { Sheet, SheetContent } from "@/components/ui/sheet";
 import { useAuth } from "@/lib/AuthContext";
 import { getDisplayName } from "@/lib/userUtils";
 import { useBootstrapDatabase } from "@admin/hooks/useBootstrapDatabase";
+import useDesktopNav from "@admin/hooks/useDesktopNav";
 import InitializeDatabaseBanner from "@admin/components/InitializeDatabaseBanner";
 import BackToAppLink from "@admin/components/BackToAppLink";
 import AppLogo from "@/components/branding/AppLogo";
@@ -100,6 +101,7 @@ function SidebarPanel({ user, showInitialize, bootstrap, onNavigate }) {
 
 export default function AdminLayout({ user }) {
   const bootstrap = useBootstrapDatabase(user, { autoSeed: true });
+  const desktopNav = useDesktopNav();
   const isSuperAdmin = user?.role === "super_admin";
   const showInitialize =
     isSuperAdmin &&
@@ -112,34 +114,38 @@ export default function AdminLayout({ user }) {
 
   return (
     <div className="h-dvh bg-background flex overflow-hidden safe-top">
-      <aside className="hidden md:flex w-64 shrink-0 border-r border-border flex-col">
-        <SidebarPanel user={user} showInitialize={showInitialize} bootstrap={bootstrap} />
-      </aside>
-
-      <Sheet open={mobileNavOpen} onOpenChange={setMobileNavOpen}>
-        <SheetContent side="left" className="w-64 p-0">
-          <SidebarPanel
-            user={user}
-            showInitialize={showInitialize}
-            bootstrap={bootstrap}
-            onNavigate={closeMobileNav}
-          />
-        </SheetContent>
-      </Sheet>
+      {desktopNav ? (
+        <aside className="w-64 shrink-0 border-r border-border flex flex-col">
+          <SidebarPanel user={user} showInitialize={showInitialize} bootstrap={bootstrap} />
+        </aside>
+      ) : (
+        <Sheet open={mobileNavOpen} onOpenChange={setMobileNavOpen}>
+          <SheetContent side="left" className="w-64 max-w-[85vw] p-0">
+            <SidebarPanel
+              user={user}
+              showInitialize={showInitialize}
+              bootstrap={bootstrap}
+              onNavigate={closeMobileNav}
+            />
+          </SheetContent>
+        </Sheet>
+      )}
 
       <main className="flex-1 min-w-0 flex flex-col overflow-hidden">
-        <div className="flex items-center justify-between gap-2 px-4 py-3 border-b border-border bg-card/50 md:hidden shrink-0">
-          <Button
-            variant="ghost"
-            size="icon"
-            className="shrink-0"
-            onClick={() => setMobileNavOpen(true)}
-            aria-label="Open navigation menu"
-          >
-            <Menu className="w-5 h-5" />
-          </Button>
-          <BackToAppLink variant="outline" className="text-xs h-8" />
-        </div>
+        {!desktopNav && (
+          <div className="flex items-center justify-between gap-2 px-4 py-3 border-b border-border bg-card/50 shrink-0">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="shrink-0"
+              onClick={() => setMobileNavOpen(true)}
+              aria-label="Open navigation menu"
+            >
+              <Menu className="w-5 h-5" />
+            </Button>
+            <BackToAppLink variant="outline" className="text-xs h-8" />
+          </div>
+        )}
         <InitializeDatabaseBanner user={user} {...bootstrap} showInitialize={showInitialize} />
         <div className="flex-1 overflow-auto">
           <Outlet />

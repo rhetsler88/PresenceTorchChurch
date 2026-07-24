@@ -43,6 +43,7 @@ export default function PendingRequests({ channels, users = [], onApprove, onRej
   const userMap = {};
   users.forEach((u) => {
     userMap[u.id] = u;
+    if (u.email) userMap[u.email] = u;
   });
 
   const pendingRows = channels.flatMap((channel) =>

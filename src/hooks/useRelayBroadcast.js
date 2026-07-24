@@ -12,11 +12,27 @@ function getSupportedMime() {
   return "";
 }
 
+async function stopMediaRecorder(recorder) {
+  if (!recorder || recorder.state === "inactive") return;
+  if (recorder.state === "recording") {
+    try {
+      recorder.requestData();
+    } catch {
+      // Some browsers reject requestData on certain recorder states.
+    }
+  }
+  await new Promise((resolve) => {
+    recorder.addEventListener("stop", resolve, { once: true });
+    recorder.stop();
+  });
+}
+
 /**
  * Half-duplex relay broadcast hook.
  *
- * Uses a single MediaRecorder with timeslice to produce relay chunks
- * and the full recording for VoiceMessage history.
+ * Uses two recorders on the same mic stream:
+ * - Relay recorder (timeslice) for live chunk playback
+ * - Full recorder (single blob on stop) for chat voice messages
  */
 export default function useRelayBroadcast({ channelId, userId, userName }) {
   const [isRecording, setIsRecording] = useState(false);
@@ -25,7 +41,10 @@ export default function useRelayBroadcast({ channelId, userId, userName }) {
   paramsRef.current = { channelId, userId, userName };
 
   const streamRef = useRef(null);
-  const recorderRef = useRef(null);
+  const ownsStreamRef = useRef(true);
+  const archiveOnlyRef = useRef(false);
+  const relayRecorderRef = useRef(null);
+  const fullRecorderRef = useRef(null);
   const fullChunksRef = useRef([]);
   const mimeRef = useRef("audio/webm");
   const broadcastIdRef = useRef(null);
@@ -46,7 +65,7 @@ export default function useRelayBroadcast({ channelId, userId, userName }) {
       file,
       `${channelId}/chunks/${broadcastIdRef.current}/${seq}.webm`
     );
-    await api.entities.AudioChunk.create({
+    await api.entities.AudioChunk.createChunk({
       broadcast_id: broadcastIdRef.current,
       channel_id: channelId,
       sender_id: userId,
@@ -64,96 +83,134 @@ export default function useRelayBroadcast({ channelId, userId, userName }) {
       console.error("Relay chunk upload failed:", err);
     });
     pendingUploadsRef.current.push(uploadP);
-    if (isFinal) {
-      return uploadP;
-    }
     return uploadP;
   }, [uploadChunk]);
 
-  const startRecording = useCallback(async () => {
+  const startRecording = useCallback(async ({
+    sharedStream = null,
+    archiveOnly = false,
+    broadcastId = null,
+    ownsStream = null,
+  } = {}) => {
     const { channelId, userId } = paramsRef.current;
     if (!channelId || !userId) return false;
     if (activeRef.current) return true;
 
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true,
-        },
-      });
-      streamRef.current = stream;
-    } catch (err) {
-      console.error("Microphone access denied:", err);
-      return false;
+    archiveOnlyRef.current = archiveOnly;
+    ownsStreamRef.current = ownsStream ?? !sharedStream;
+
+    if (sharedStream) {
+      streamRef.current = sharedStream;
+      startTimeRef.current = Date.now();
+    } else {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          audio: {
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true,
+          },
+        });
+        streamRef.current = stream;
+        startTimeRef.current = Date.now();
+      } catch (err) {
+        console.error("Microphone access denied:", err);
+        return false;
+      }
     }
 
-    broadcastIdRef.current = crypto.randomUUID();
+    broadcastIdRef.current = broadcastId || crypto.randomUUID();
     heardBroadcastsRef.current.add(broadcastIdRef.current);
     sequenceRef.current = 0;
     fullChunksRef.current = [];
     initSegmentRef.current = null;
     pendingUploadsRef.current = [];
-    startTimeRef.current = Date.now();
     activeRef.current = true;
 
     const mimeType = getSupportedMime();
     mimeRef.current = mimeType || "audio/webm";
-    const recorder = new MediaRecorder(streamRef.current, mimeType ? { mimeType } : {});
+    const recorderOptions = mimeType ? { mimeType } : {};
 
-    recorder.ondataavailable = (event) => {
-      if (!event.data || event.data.size === 0) return;
-      fullChunksRef.current.push(event.data);
+    if (!archiveOnly) {
+      const relayRecorder = new MediaRecorder(streamRef.current, recorderOptions);
+      relayRecorder.ondataavailable = (event) => {
+        if (!event.data || event.data.size === 0) return;
 
-      let uploadBlob;
-      if (!initSegmentRef.current) {
-        initSegmentRef.current = event.data;
-        uploadBlob = event.data;
-      } else {
-        uploadBlob = new Blob([initSegmentRef.current, event.data], { type: mimeRef.current });
+        let uploadBlob;
+        if (!initSegmentRef.current) {
+          initSegmentRef.current = event.data;
+          uploadBlob = event.data;
+        } else {
+          uploadBlob = new Blob([initSegmentRef.current, event.data], { type: mimeRef.current });
+        }
+        queueChunkUpload(uploadBlob, isStoppingRef.current);
+      };
+      relayRecorderRef.current = relayRecorder;
+      relayRecorder.start(CHUNK_MS);
+    }
+
+    const fullRecorder = new MediaRecorder(streamRef.current, recorderOptions);
+    fullRecorder.ondataavailable = (event) => {
+      if (event.data?.size > 0) {
+        fullChunksRef.current.push(event.data);
       }
-      queueChunkUpload(uploadBlob, isStoppingRef.current);
     };
+    fullRecorderRef.current = fullRecorder;
+    fullRecorder.start(archiveOnly || sharedStream ? CHUNK_MS : undefined);
 
-    recorderRef.current = recorder;
-    recorder.start(CHUNK_MS);
     setIsRecording(true);
     return true;
   }, [queueChunkUpload]);
 
+  const stopLiveRelay = useCallback(async () => {
+    if (!relayRecorderRef.current) return;
+    if (relayRecorderRef.current.state === "recording") {
+      isStoppingRef.current = true;
+    }
+    await stopMediaRecorder(relayRecorderRef.current);
+    isStoppingRef.current = false;
+    relayRecorderRef.current = null;
+  }, []);
+
   const stopRecording = useCallback(async () => {
-    if (!activeRef.current && !recorderRef.current) return null;
+    if (!activeRef.current && !relayRecorderRef.current && !fullRecorderRef.current) {
+      return null;
+    }
 
     activeRef.current = false;
     setIsRecording(false);
 
-    if (recorderRef.current && recorderRef.current.state === "recording") {
+    if (relayRecorderRef.current?.state === "recording") {
       isStoppingRef.current = true;
-      await new Promise((resolve) => {
-        recorderRef.current.addEventListener("stop", resolve, { once: true });
-        recorderRef.current.stop();
-      });
-      isStoppingRef.current = false;
     }
 
-    // Don't block channel release on relay chunk uploads finishing
+    await stopMediaRecorder(relayRecorderRef.current);
+    isStoppingRef.current = false;
+    relayRecorderRef.current = null;
+
+    if (fullRecorderRef.current?.state === "recording") {
+      fullRecorderRef.current.requestData();
+    }
+    await stopMediaRecorder(fullRecorderRef.current);
+    fullRecorderRef.current = null;
+
     void Promise.allSettled(pendingUploadsRef.current);
     pendingUploadsRef.current = [];
 
-    if (streamRef.current) {
+    if (streamRef.current && ownsStreamRef.current) {
       streamRef.current.getTracks().forEach((track) => track.stop());
-      streamRef.current = null;
     }
+    streamRef.current = null;
+    ownsStreamRef.current = true;
+    archiveOnlyRef.current = false;
 
     const duration = (Date.now() - startTimeRef.current) / 1000;
     const broadcastId = broadcastIdRef.current;
     const fullBlob = fullChunksRef.current.length
       ? new Blob(fullChunksRef.current, { type: mimeRef.current })
       : null;
-
-    recorderRef.current = null;
     fullChunksRef.current = [];
+    initSegmentRef.current = null;
 
     if (!fullBlob || fullBlob.size === 0) {
       console.error("Recording produced no audio data");
@@ -162,16 +219,24 @@ export default function useRelayBroadcast({ channelId, userId, userName }) {
 
     try {
       const file = new File([fullBlob], "message.webm", { type: mimeRef.current });
-      const { file_uri } = await uploadPrivateAudio(
+      const { file_url, file_uri } = await uploadPrivateAudio(
         file,
         `${paramsRef.current.channelId}/messages/${broadcastId}.webm`
       );
-      return { file_url: file_uri, duration, broadcast_id: broadcastId };
+      return {
+        file_url: file_uri || file_url,
+        file_uri: file_uri || file_url,
+        duration,
+        broadcast_id: broadcastId,
+      };
     } catch (err) {
       console.error("Private audio upload failed:", err);
+      if (err?.code === "storage/unauthorized" || err?.code?.includes?.("permission")) {
+        throw err;
+      }
       return null;
     }
   }, []);
 
-  return { isRecording, startRecording, stopRecording, heardBroadcastsRef };
+  return { isRecording, startRecording, stopLiveRelay, stopRecording, heardBroadcastsRef };
 }

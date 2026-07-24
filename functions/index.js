@@ -1,9 +1,10 @@
-const { onDocumentUpdated, onDocumentCreated } = require("firebase-functions/v2/firestore");
+const { onDocumentUpdated, onDocumentCreated, onDocumentWritten } = require("firebase-functions/v2/firestore");
 const { onCall, HttpsError } = require("firebase-functions/v2/https");
 const { onSchedule } = require("firebase-functions/v2/scheduler");
 const { defineSecret } = require("firebase-functions/params");
 const { setGlobalOptions } = require("firebase-functions/v2");
 const { initializeApp } = require("firebase-admin/app");
+const { getAuth } = require("firebase-admin/auth");
 const { getFirestore, FieldValue } = require("firebase-admin/firestore");
 const { getMessaging } = require("firebase-admin/messaging");
 const { getStorage } = require("firebase-admin/storage");
@@ -24,12 +25,6 @@ const THROTTLE_MS = 15000;
 const VOICE_MESSAGE_RETENTION_DAYS = 20;
 const CLEANUP_BATCH_SIZE = 500;
 
-const SPEECH_CONFIG = {
-  encoding: "WEBM_OPUS",
-  languageCode: "en-US",
-  enableAutomaticPunctuation: true,
-};
-
 function toGcsUri(audioUrl) {
   if (!audioUrl) return null;
   if (audioUrl.startsWith("gs://")) return audioUrl;
@@ -42,14 +37,25 @@ function toGcsUri(audioUrl) {
     }
   }
 
+  if (audioUrl.startsWith("audio/")) {
+    const bucket = getStorage().bucket();
+    return `gs://${bucket.name}/${audioUrl}`;
+  }
+
   return null;
 }
 
-function storagePathFromAudioUrl(audioUrl) {
+function resolveStoragePath(audioUrl) {
   const gcsUri = toGcsUri(audioUrl);
   if (!gcsUri) return null;
   return gcsUri.replace(/^gs:\/\/[^/]+\//, "");
 }
+
+const SPEECH_TRY_CONFIGS = [
+  { encoding: "WEBM_OPUS", languageCode: "en-US", enableAutomaticPunctuation: true },
+  { encoding: "OGG_OPUS", languageCode: "en-US", enableAutomaticPunctuation: true },
+  { encoding: "MP3", languageCode: "en-US", enableAutomaticPunctuation: true },
+];
 
 async function cleanupOldVoiceMessages() {
   const db = getFirestore();
@@ -74,7 +80,7 @@ async function cleanupOldVoiceMessages() {
 
     snap.docs.forEach((docSnap) => {
       batch.delete(docSnap.ref);
-      const storagePath = storagePathFromAudioUrl(docSnap.data().audio_url);
+      const storagePath = resolveStoragePath(docSnap.data().audio_url);
       if (storagePath) {
         fileDeletes.push(
           bucket
@@ -101,13 +107,38 @@ async function cleanupOldVoiceMessages() {
   return { deletedDocs, deletedFiles };
 }
 
-async function runSpeechToText(gcsUri) {
-  const client = new speech.SpeechClient();
+async function runSpeechToText(storagePath) {
+  if (!storagePath) {
+    throw new Error("Missing storage path for transcription");
+  }
 
+  const bucket = getStorage().bucket();
+  const [buffer] = await bucket.file(storagePath).download();
+  const client = new speech.SpeechClient();
+  const audioContent = buffer.toString("base64");
+
+  for (const config of SPEECH_TRY_CONFIGS) {
+    try {
+      const [response] = await client.recognize({
+        audio: { content: audioContent },
+        config,
+      });
+      const text = (response.results || [])
+        .map((r) => r.alternatives?.[0]?.transcript || "")
+        .join(" ")
+        .trim();
+      if (text) return text;
+    } catch (err) {
+      console.warn(`recognize failed (${config.encoding}):`, err.message);
+    }
+  }
+
+  // Long-form fallback for larger recordings.
+  const gcsUri = `gs://${bucket.name}/${storagePath}`;
   try {
     const [operation] = await client.longRunningRecognize({
       audio: { uri: gcsUri },
-      config: SPEECH_CONFIG,
+      config: SPEECH_TRY_CONFIGS[0],
     });
     const [response] = await operation.promise();
     return (response.results || [])
@@ -115,18 +146,8 @@ async function runSpeechToText(gcsUri) {
       .join(" ")
       .trim();
   } catch (longErr) {
-    console.warn("longRunningRecognize failed, trying sync recognize:", longErr.message);
-    const bucket = getStorage().bucket();
-    const path = gcsUri.replace(/^gs:\/\/[^/]+\//, "");
-    const [buffer] = await bucket.file(path).download();
-    const [response] = await client.recognize({
-      audio: { content: buffer.toString("base64") },
-      config: SPEECH_CONFIG,
-    });
-    return (response.results || [])
-      .map((r) => r.alternatives?.[0]?.transcript || "")
-      .join(" ")
-      .trim();
+    console.warn("longRunningRecognize failed:", longErr.message);
+    return "";
   }
 }
 
@@ -141,32 +162,71 @@ async function transcribeAndUpdate(messageId, audioUrl) {
     return { transcript: data.transcript || data.text_content, skipped: true };
   }
 
-  const gcsUri = toGcsUri(audioUrl || data.audio_url);
+  const storagePath = resolveStoragePath(audioUrl || data.audio_url);
   let transcript = "[Transcription unavailable]";
 
-  if (gcsUri) {
+  if (storagePath) {
     try {
-      const text = await runSpeechToText(gcsUri);
+      const text = await runSpeechToText(storagePath);
       transcript = text || "[No speech detected]";
     } catch (err) {
       console.error(`Transcription failed for ${messageId}:`, err);
     }
+  } else {
+    console.error(`Transcription skipped — could not resolve storage path`, {
+      messageId,
+      audioUrl: audioUrl || data.audio_url,
+    });
   }
 
   await docRef.update({ transcript, is_transcribed: true });
   return { transcript };
 }
 
+async function applyAuthClaims(uid, data) {
+  if (!data) return;
+  const role = typeof data.role === "string" ? data.role : "user";
+  const is_monitor = data.is_monitor === true || role === "monitor";
+  await getAuth().setCustomUserClaims(uid, { role, is_monitor });
+}
+
+exports.syncUserAuthClaims = onDocumentWritten("users/{userId}", async (event) => {
+  const after = event.data?.after;
+  if (!after?.exists) {
+    try {
+      await getAuth().setCustomUserClaims(event.params.userId, null);
+    } catch (_) {
+      // user may already be deleted
+    }
+    return;
+  }
+  await applyAuthClaims(event.params.userId, after.data());
+});
+
+exports.refreshMyAuthClaims = onCall({ invoker: "public" }, async (request) => {
+  if (!request.auth) {
+    throw new HttpsError("unauthenticated", "Sign in required");
+  }
+  const snap = await getFirestore().collection("users").doc(request.auth.uid).get();
+  if (!snap.exists) {
+    throw new HttpsError("not-found", "User profile not found");
+  }
+  await applyAuthClaims(request.auth.uid, snap.data());
+  return { role: snap.data().role || "user" };
+});
+
 exports.transcribeOnVoiceMessage = onDocumentCreated(
   { document: "voiceMessages/{messageId}" },
   async (event) => {
-    const data = event.data?.data();
+    const snapshot = event.data;
+    if (!snapshot) return;
+    const data = snapshot.data();
     if (!data?.audio_url || data.text_content || data.is_transcribed) return;
     await transcribeAndUpdate(event.params.messageId, data.audio_url);
   }
 );
 
-exports.transcribeAudio = onCall(async (request) => {
+exports.transcribeAudio = onCall({ invoker: "public" }, async (request) => {
   if (!request.auth) {
     throw new HttpsError("unauthenticated", "Sign in required");
   }

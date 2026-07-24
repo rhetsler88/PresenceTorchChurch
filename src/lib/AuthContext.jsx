@@ -1,6 +1,6 @@
 import React, { createContext, useState, useContext, useEffect, useRef, useCallback } from "react";
 import { onAuthStateChanged, getRedirectResult } from "firebase/auth";
-import { doc, getDoc, setDoc } from "firebase/firestore";
+import { doc, getDoc, setDoc, collection, query, where, limit, getDocs } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase";
 import { authApi } from "@/api/client";
 import { initPushNotifications, teardownPushNotifications } from "@/lib/pushNotifications";
@@ -12,10 +12,44 @@ import {
   shouldLogoutAfterClose,
 } from "@/lib/logoutOnClose";
 import { formatAuthError } from "@/api/client";
+import { syncUserChannelMembership } from "@/lib/channelMembership";
 
 const AuthContext = createContext(null);
 
 const AUTO_LOGOUT_MS = 88 * 60 * 60 * 1000;
+
+/** Trigger syncUserAuthClaims (Cloud Function on users/{uid} writes) and refresh token. */
+async function refreshAuthCustomClaims(firebaseUser) {
+  try {
+    await setDoc(
+      doc(db, "users", firebaseUser.uid),
+      { claims_sync_at: new Date().toISOString() },
+      { merge: true }
+    );
+    await new Promise((resolve) => setTimeout(resolve, 2500));
+  } catch (err) {
+    console.warn("[Auth] Claims sync touch failed:", err?.message || err);
+  }
+  await firebaseUser.getIdToken(true);
+}
+
+async function hydrateUserWithMembership(firebaseUser, currentUser) {
+  try {
+    const channelIds = await syncUserChannelMembership(
+      firebaseUser.uid,
+      firebaseUser.email || currentUser.email
+    );
+    return {
+      ...currentUser,
+      member_of_channels: channelIds.length
+        ? channelIds
+        : currentUser.member_of_channels || [],
+    };
+  } catch (err) {
+    console.warn("Channel membership sync failed:", err);
+    return currentUser;
+  }
+}
 
 function isSessionExpired() {
   const loginTime = localStorage.getItem(LOGIN_TIME_KEY);
@@ -29,6 +63,23 @@ async function expireSession() {
   await authApi.logout();
 }
 
+async function findOrphanProfileByEmail(email, excludeUid) {
+  if (!email) return null;
+  const snap = await getDocs(
+    query(collection(db, "users"), where("email", "==", email), limit(5))
+  );
+  for (const candidate of snap.docs) {
+    if (candidate.id === excludeUid) continue;
+    const data = candidate.data() || {};
+    const role = data.role || "user";
+    const hasChannels = (data.member_of_channels || []).length > 0;
+    if (role !== "user" || data.is_monitor || hasChannels) {
+      return { orphanId: candidate.id, ...data };
+    }
+  }
+  return null;
+}
+
 async function loadOrCreateUser(firebaseUser) {
   const userRef = doc(db, "users", firebaseUser.uid);
   const userDoc = await getDoc(userRef);
@@ -37,6 +88,32 @@ async function loadOrCreateUser(firebaseUser) {
   const lastName = rest.join(" ");
 
   if (!userDoc.exists()) {
+    const orphan = await findOrphanProfileByEmail(firebaseUser.email, firebaseUser.uid);
+    if (orphan) {
+      console.warn("[Auth] Migrating elevated profile to users/{auth.uid}", {
+        auth_uid: firebaseUser.uid,
+        orphan_doc_id: orphan.orphanId,
+        role: orphan.role,
+      });
+      const { orphanId: _orphanId, ...orphanData } = orphan;
+      const profile = {
+        email: firebaseUser.email,
+        first_name: orphanData.first_name || firstName,
+        last_name: orphanData.last_name || lastName,
+        full_name: orphanData.full_name || displayName,
+        role: orphanData.role || "user",
+        onboarded: orphanData.onboarded ?? false,
+        directed_channels: orphanData.directed_channels || [],
+        member_of_channels: orphanData.member_of_channels || [],
+        is_monitor: orphanData.is_monitor ?? false,
+        organization: orphanData.organization || "",
+        receives_staff_alerts: orphanData.receives_staff_alerts ?? false,
+        pending_staff_alerts: orphanData.pending_staff_alerts ?? false,
+      };
+      await setDoc(userRef, profile);
+      return { id: firebaseUser.uid, ...profile };
+    }
+
     const profile = {
       email: firebaseUser.email,
       first_name: firstName,
@@ -45,6 +122,7 @@ async function loadOrCreateUser(firebaseUser) {
       role: "user",
       onboarded: false,
       directed_channels: [],
+      member_of_channels: [],
       is_monitor: false,
       pending_staff_alerts: false,
     };
@@ -53,6 +131,40 @@ async function loadOrCreateUser(firebaseUser) {
   }
 
   const existing = userDoc.data() || {};
+  // Auth UID doc exists but is a default user while an older doc holds the real role.
+  if (
+    (existing.role || "user") === "user"
+    && !existing.is_monitor
+    && !(existing.member_of_channels || []).length
+  ) {
+    const orphan = await findOrphanProfileByEmail(firebaseUser.email, firebaseUser.uid);
+    if (orphan && orphan.orphanId !== firebaseUser.uid) {
+      console.warn("[Auth] Merging elevated profile into users/{auth.uid}", {
+        auth_uid: firebaseUser.uid,
+        orphan_doc_id: orphan.orphanId,
+        role: orphan.role,
+      });
+      const { orphanId: _orphanId, ...orphanData } = orphan;
+      const merged = {
+        role: orphanData.role || existing.role,
+        onboarded: orphanData.onboarded ?? existing.onboarded,
+        directed_channels: orphanData.directed_channels || existing.directed_channels || [],
+        member_of_channels: orphanData.member_of_channels || existing.member_of_channels || [],
+        is_monitor: orphanData.is_monitor ?? existing.is_monitor,
+        organization: orphanData.organization || existing.organization || "",
+        receives_staff_alerts: orphanData.receives_staff_alerts ?? existing.receives_staff_alerts,
+        pending_staff_alerts: orphanData.pending_staff_alerts ?? existing.pending_staff_alerts,
+      };
+      await setDoc(userRef, merged, { merge: true });
+      return {
+        id: firebaseUser.uid,
+        email: firebaseUser.email,
+        ...existing,
+        ...merged,
+      };
+    }
+  }
+
   // Backfill names when Firebase displayName is set after email registration
   if (displayName && !existing.full_name && !existing.first_name) {
     const updates = {
@@ -68,7 +180,7 @@ async function loadOrCreateUser(firebaseUser) {
     id: firebaseUser.uid,
     email: firebaseUser.email,
     ...existing,
-  };
+  }
 }
 
 export const AuthProvider = ({ children }) => {
@@ -102,7 +214,11 @@ export const AuthProvider = ({ children }) => {
   const checkUserAuth = useCallback(async ({ silent = false } = {}) => {
     try {
       if (!silent) setIsLoadingAuth(true);
-      const currentUser = await authApi.me();
+      const firebaseUser = auth.currentUser;
+      if (!firebaseUser) {
+        applySignedOut();
+        return;
+      }
 
       const loginTime = localStorage.getItem(LOGIN_TIME_KEY);
       if (loginTime) {
@@ -116,6 +232,8 @@ export const AuthProvider = ({ children }) => {
         localStorage.setItem(LOGIN_TIME_KEY, Date.now().toString());
       }
 
+      const profile = await loadOrCreateUser(firebaseUser);
+      const currentUser = await hydrateUserWithMembership(firebaseUser, profile);
       applyAuthenticatedUser(currentUser);
     } catch (error) {
       console.error("User auth check failed:", error);
@@ -136,6 +254,26 @@ export const AuthProvider = ({ children }) => {
         });
       }
     }
+  }, []);
+
+  const refreshChannelMembership = useCallback(async () => {
+    const firebaseUser = auth.currentUser;
+    if (!firebaseUser) return [];
+    const channelIds = await syncUserChannelMembership(
+      firebaseUser.uid,
+      firebaseUser.email
+    );
+    setUser((prev) =>
+      prev
+        ? {
+            ...prev,
+            member_of_channels: channelIds.length
+              ? channelIds
+              : prev.member_of_channels || [],
+          }
+        : prev
+    );
+    return channelIds;
   }, []);
 
   const checkAppState = async () => {
@@ -199,7 +337,10 @@ export const AuthProvider = ({ children }) => {
             return;
           }
 
-          const currentUser = await loadOrCreateUser(firebaseUser);
+          const currentUser = await hydrateUserWithMembership(
+            firebaseUser,
+            await loadOrCreateUser(firebaseUser)
+          );
 
           const loginTime = localStorage.getItem(LOGIN_TIME_KEY);
           if (!loginTime) {
@@ -207,6 +348,7 @@ export const AuthProvider = ({ children }) => {
           }
 
           applyAuthenticatedUser(currentUser);
+          await refreshAuthCustomClaims(firebaseUser);
           initPushNotifications(firebaseUser.uid, currentUser).catch((err) => {
             console.error("Push notification init failed:", err);
           });
@@ -299,6 +441,7 @@ export const AuthProvider = ({ children }) => {
         resetPassword,
         checkUserAuth,
         checkAppState,
+        refreshChannelMembership,
       }}
     >
       {children}

@@ -44,96 +44,53 @@ if (typeof window !== "undefined") {
 }
 
 /**
- * Plays an audio URL through the Web Audio API (same AudioContext as the PTT beeps),
- * which is already unlocked after first user interaction and bypasses HTML5 autoplay restrictions.
- * @param {string} url
- * @param {{ onEnded?: () => void, onError?: (err?: unknown) => void }} [options]
+ * Full message playback via HTML Audio — avoids fetch/CORS on Firebase Storage URLs.
  */
-export async function playAudioUrl(url, { onEnded, onError } = {}) {
-  return playAudioTailFromUrl(url, 0, { onEnded, onError });
-}
-
-/**
- * Plays audio from `startSeconds` to the end. Used for live relay where each
- * uploaded chunk is a growing recording rather than a standalone fragment.
- * @param {string} url
- * @param {number} [startSeconds]
- * @param {{ onEnded?: () => void, onError?: (err?: unknown) => void }} [options]
- */
-export async function playAudioTailFromUrl(url, startSeconds = 0, { onEnded, onError } = {}) {
-  const ctx = getContext();
-  if (ctx.state === "suspended") await ctx.resume();
+async function playFullAudioViaElement(url, { onEnded, onError } = {}) {
+  const resolved = await resolveAudioUrl(url);
+  if (!resolved) throw new Error("Could not resolve audio URL");
 
   stopAudio();
 
-  try {
-    const resolved = await resolveAudioUrl(url);
-    if (!resolved) throw new Error("Could not resolve audio URL");
-    const response = await fetch(resolved);
-    const arrayBuffer = await response.arrayBuffer();
-    const fullBuffer = await ctx.decodeAudioData(arrayBuffer);
-    const totalDuration = fullBuffer.duration;
-    const startSample = Math.min(
-      Math.max(0, Math.floor(startSeconds * fullBuffer.sampleRate)),
-      Math.max(0, fullBuffer.length - 1)
-    );
-    const tailLength = fullBuffer.length - startSample;
+  return new Promise((resolve, reject) => {
+    const audio = new Audio(resolved);
+    currentRelayAudio = audio;
 
-    if (tailLength <= 0) {
+    audio.onended = () => {
+      if (currentRelayAudio === audio) currentRelayAudio = null;
       if (onEnded) onEnded();
-      return { totalDuration };
-    }
-
-    const tailBuffer = ctx.createBuffer(
-      fullBuffer.numberOfChannels,
-      tailLength,
-      fullBuffer.sampleRate
-    );
-    for (let ch = 0; ch < fullBuffer.numberOfChannels; ch++) {
-      tailBuffer.copyToChannel(fullBuffer.getChannelData(ch).subarray(startSample), ch);
-    }
-
-    const source = ctx.createBufferSource();
-    source.buffer = tailBuffer;
-    source.connect(ctx.destination);
-    currentSource = source;
-    currentOnEnded = onEnded;
-
-    source.onended = () => {
-      if (currentSource === source) {
-        currentSource = null;
-      }
-      if (currentOnEnded) currentOnEnded();
+      resolve({ totalDuration: audio.duration || null });
     };
 
-    source.start(0);
-    return { totalDuration };
-  } catch (e) {
-    // Fallback for browsers that can't decode via Web Audio (e.g. some Safari/webm cases)
-    try {
-      const resolved = await resolveAudioUrl(url);
-      if (!resolved) throw e;
-      stopRelayAudio();
-      await new Promise((resolve, reject) => {
-        const audio = new Audio(resolved);
-        currentRelayAudio = audio;
-        audio.onended = () => {
-          if (currentRelayAudio === audio) currentRelayAudio = null;
-          if (onEnded) onEnded();
-          resolve();
-        };
-        audio.onerror = () => {
-          if (currentRelayAudio === audio) currentRelayAudio = null;
-          reject(new Error("HTML audio playback failed"));
-        };
-        audio.play().catch(reject);
-      });
-      return { totalDuration: null };
-    } catch (fallbackErr) {
-      if (onError) onError(fallbackErr);
-      throw fallbackErr;
-    }
+    audio.onerror = () => {
+      if (currentRelayAudio === audio) currentRelayAudio = null;
+      const err = new Error("Audio playback failed");
+      if (onError) onError(err);
+      reject(err);
+    };
+
+    audio.play().catch((err) => {
+      if (currentRelayAudio === audio) currentRelayAudio = null;
+      if (onError) onError(err);
+      reject(err);
+    });
+  });
+}
+
+/** Plays a complete voice message from the start. */
+export async function playAudioUrl(url, { onEnded, onError } = {}) {
+  return playFullAudioViaElement(url, { onEnded, onError });
+}
+
+/**
+ * Plays audio from `startSeconds` to the end (live relay chunks).
+ * Full playback (startSeconds = 0) uses HTML Audio to avoid Storage CORS.
+ */
+export async function playAudioTailFromUrl(url, startSeconds = 0, { onEnded, onError } = {}) {
+  if (startSeconds <= 0) {
+    return playFullAudioViaElement(url, { onEnded, onError });
   }
+  return playRelayAudioTail(url, startSeconds, { onEnded, onError });
 }
 
 export function stopAudio() {
@@ -151,9 +108,6 @@ export function stopAudio() {
 /**
  * Plays relay audio via HTML Audio (no fetch/CORS). Each chunk is a growing
  * recording; only the tail after `startSeconds` is heard.
- * @param {string} url
- * @param {number} [startSeconds]
- * @param {{ onEnded?: () => void, onError?: (err?: unknown) => void }} [options]
  */
 export async function playRelayAudioTail(url, startSeconds = 0, { onEnded, onError } = {}) {
   const resolved = await resolveAudioUrl(url);

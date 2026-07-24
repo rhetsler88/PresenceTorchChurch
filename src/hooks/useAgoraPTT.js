@@ -1,6 +1,5 @@
 import { useState, useCallback, useRef, useEffect } from "react";
 import AgoraRTC from "agora-rtc-sdk-ng";
-import { uploadPrivateAudio } from "@/api/storage";
 import {
   fetchAgoraCredentials,
   isSameAgoraUid,
@@ -15,14 +14,8 @@ configureAgoraSdk();
 
 const RETRY_DELAYS_MS = [1000, 3000, 8000];
 const IDLE_LEAVE_MS = 30000;
-
-function getSupportedMime() {
-  const types = ["audio/webm;codecs=opus", "audio/webm", "audio/ogg;codecs=opus", "audio/mp4"];
-  for (const t of types) {
-    if (MediaRecorder.isTypeSupported(t)) return t;
-  }
-  return "";
-}
+/** Debounce live-listen joins so rapid PTT on/off does not open/close Agora WS mid-handshake. */
+const JOIN_DEBOUNCE_MS = 1200;
 
 function isExpectedJoinCancel(err) {
   const code = String(err?.code || "");
@@ -72,8 +65,8 @@ function detachRemoteHandlers(client) {
 
 /**
  * Real-time PTT over Agora WebRTC.
- * Lazy-joins the channel only while listening (remote PTT) or transmitting.
- * Storage relay handles idle passive listening to avoid Agora billing.
+ * Joins the channel while listening (channel open) or while transmitting.
+ * Chat history is archived by useRelayBroadcast on the same mic stream.
  */
 export default function useAgoraPTT({
   channelId,
@@ -88,9 +81,6 @@ export default function useAgoraPTT({
   const sessionKeyRef = useRef(null);
   const localAudioTrackRef = useRef(null);
   const streamRef = useRef(null);
-  const recorderRef = useRef(null);
-  const fullChunksRef = useRef([]);
-  const mimeRef = useRef("audio/webm");
   const broadcastIdRef = useRef(null);
   const startTimeRef = useRef(0);
   const activeRef = useRef(false);
@@ -256,7 +246,6 @@ export default function useAgoraPTT({
     return joinTask;
   }, [bumpRemoteActivity, clearIdleLeaveTimer, scheduleIdleLeave]);
 
-  // Tear down when channel/user changes — do not auto-join the new channel.
   useEffect(() => {
     if (!channelId || !userId) {
       setIsChannelReady(false);
@@ -268,15 +257,16 @@ export default function useAgoraPTT({
     };
   }, [channelId, userId, releaseConnection]);
 
-  // Join for live listen only while listenActive (remote PTT signal / local press).
   useEffect(() => {
     if (!channelId || !userId) return undefined;
 
     if (listenActive) {
       clearIdleLeaveTimer();
-      const joinTask = ensureJoined();
-      void joinTask;
-      return undefined;
+      const timer = setTimeout(() => {
+        if (!listenActiveRef.current) return;
+        void ensureJoined();
+      }, JOIN_DEBOUNCE_MS);
+      return () => clearTimeout(timer);
     }
 
     scheduleIdleLeave();
@@ -287,7 +277,7 @@ export default function useAgoraPTT({
     clearIdleLeaveTimer();
   }, [clearIdleLeaveTimer]);
 
-  const startRecording = useCallback(async () => {
+  const startRecording = useCallback(async ({ broadcastId } = {}) => {
     const { channelId: cid, userId: uid } = paramsRef.current;
     if (!cid || !uid || activeRef.current) return Boolean(activeRef.current);
 
@@ -305,9 +295,8 @@ export default function useAgoraPTT({
     }
 
     try {
-      broadcastIdRef.current = crypto.randomUUID();
+      broadcastIdRef.current = broadcastId || crypto.randomUUID();
       heardBroadcastsRef.current.add(broadcastIdRef.current);
-      fullChunksRef.current = [];
       startTimeRef.current = Date.now();
 
       const stream = await navigator.mediaDevices.getUserMedia({
@@ -325,15 +314,6 @@ export default function useAgoraPTT({
       });
       localAudioTrackRef.current = localTrack;
       await client.publish([localTrack]);
-
-      const mimeType = getSupportedMime();
-      mimeRef.current = mimeType || "audio/webm";
-      const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : {});
-      recorder.ondataavailable = (event) => {
-        if (event.data?.size > 0) fullChunksRef.current.push(event.data);
-      };
-      recorderRef.current = recorder;
-      recorder.start(250);
 
       activeRef.current = true;
       setIsRecording(true);
@@ -355,60 +335,33 @@ export default function useAgoraPTT({
     }
   }, [ensureJoined, clearIdleLeaveTimer, scheduleIdleLeave]);
 
-  const stopRecording = useCallback(async () => {
-    if (!activeRef.current && !localAudioTrackRef.current) return null;
+  const stopRecording = useCallback(async ({ stopStream = true } = {}) => {
+    const hadLiveTrack = activeRef.current || localAudioTrackRef.current;
 
-    activeRef.current = false;
-    setIsRecording(false);
+    if (hadLiveTrack) {
+      activeRef.current = false;
+      setIsRecording(false);
 
-    const client = clientRef.current;
-    const localTrack = localAudioTrackRef.current;
+      const client = clientRef.current;
+      const localTrack = localAudioTrackRef.current;
 
-    if (recorderRef.current?.state === "recording") {
-      await new Promise((resolve) => {
-        recorderRef.current.addEventListener("stop", resolve, { once: true });
-        recorderRef.current.stop();
-      });
+      if (localTrack && client) {
+        await client.unpublish([localTrack]).catch(() => {});
+        localTrack.stop();
+        localTrack.close();
+        localAudioTrackRef.current = null;
+      }
+
+      scheduleIdleLeave();
     }
-    recorderRef.current = null;
 
-    if (localTrack && client) {
-      await client.unpublish([localTrack]).catch(() => {});
-      localTrack.stop();
-      localTrack.close();
-      localAudioTrackRef.current = null;
-    }
-    if (streamRef.current) {
+    if (stopStream && streamRef.current) {
       streamRef.current.getTracks().forEach((track) => track.stop());
       streamRef.current = null;
     }
-
-    scheduleIdleLeave();
-
-    const duration = (Date.now() - startTimeRef.current) / 1000;
-    const broadcastId = broadcastIdRef.current;
-    const fullBlob = fullChunksRef.current.length
-      ? new Blob(fullChunksRef.current, { type: mimeRef.current })
-      : null;
-    fullChunksRef.current = [];
-
-    if (!fullBlob || fullBlob.size === 0) {
-      console.error("Agora recording produced no audio data");
-      return null;
-    }
-
-    try {
-      const file = new File([fullBlob], "message.webm", { type: mimeRef.current });
-      const { file_uri } = await uploadPrivateAudio(
-        file,
-        `${paramsRef.current.channelId}/messages/${broadcastId}.webm`
-      );
-      return { file_url: file_uri, duration, broadcast_id: broadcastId };
-    } catch (err) {
-      console.error("Private audio upload failed:", err);
-      return null;
-    }
   }, [scheduleIdleLeave]);
+
+  const getMediaStream = useCallback(() => streamRef.current, []);
 
   return {
     isRecording,
@@ -416,6 +369,7 @@ export default function useAgoraPTT({
     isChannelReady,
     startRecording,
     stopRecording,
+    getMediaStream,
     heardBroadcastsRef,
   };
 }

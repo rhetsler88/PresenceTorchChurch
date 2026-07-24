@@ -35,8 +35,36 @@ import { getDownloadURL, ref } from "firebase/storage";
 import seedData from "../../scripts/seed-data.json";
 import { isDefaultSetupComplete } from "@/lib/defaultSeed";
 import { markOAuthRedirectPending } from "@/lib/logoutOnClose";
+import { addUserChannelMembership } from "@/lib/channelMembership";
 
 const functions = getFunctions(app, "us-east5");
+
+/** Ensure Firestore requests run with a fresh auth token attached. */
+async function waitForFirestoreAuth({ forceRefresh = false } = {}) {
+  await auth.authStateReady();
+  const firebaseUser = auth.currentUser;
+  if (!firebaseUser) {
+    throw Object.assign(new Error("Not authenticated"), { code: "auth/not-authenticated" });
+  }
+  await firebaseUser.getIdToken(forceRefresh);
+  return firebaseUser;
+}
+
+/** Refresh the ID token and return the current Firebase uid for Firestore writes. */
+async function requireAuthUid({ forceRefresh = true } = {}) {
+  const firebaseUser = await waitForFirestoreAuth({ forceRefresh });
+  return firebaseUser.uid;
+}
+
+async function addDocWithAuthRetry(collectionName, payload) {
+  try {
+    return await addDoc(collection(db, collectionName), payload);
+  } catch (err) {
+    if (err?.code !== "permission-denied") throw err;
+    await requireAuthUid({ forceRefresh: true });
+    return addDoc(collection(db, collectionName), payload);
+  }
+}
 
 export function formatAuthError(err) {
   switch (err?.code) {
@@ -125,9 +153,12 @@ function sortItems(items, sortField) {
 }
 
 /** Re-throw permission errors so UI can show a real failure instead of silent empty data. */
-function handleFirestoreQueryError(collectionName, err) {
+function handleFirestoreQueryError(collectionName, err, context = {}) {
   if (err?.code === "permission-denied") {
-    console.error(`Filter query failed for ${collectionName}:`, err);
+    console.error(`Filter query failed for ${collectionName}:`, err, {
+      uid: auth.currentUser?.uid,
+      ...context,
+    });
     throw err;
   }
   console.warn(`Filter query failed for ${collectionName}:`, err);
@@ -138,13 +169,16 @@ function createEntityApi(collectionName) {
     async list(sortField, limitCount) {
       let items = [];
       try {
+        await waitForFirestoreAuth();
         const snap = await getDocs(collection(db, collectionName));
         items = sortItems(snap.docs.map(docToObject), sortField);
         if (limitCount) items = items.slice(0, limitCount);
       } catch (err) {
         if (err?.code === "permission-denied") {
-          console.error(`List query failed for ${collectionName}:`, err);
           throw err;
+        }
+        if (err?.code === "auth/not-authenticated") {
+          return [];
         }
         console.warn(`List query failed for ${collectionName}:`, err);
       }
@@ -154,6 +188,7 @@ function createEntityApi(collectionName) {
     async filter(filters, sortField, limitCount) {
       let items = [];
       try {
+        await waitForFirestoreAuth();
         const equalityConstraints = [];
         const rangeFilters = [];
 
@@ -176,7 +211,7 @@ function createEntityApi(collectionName) {
           items = items.filter((item) => item[key] < value.$lt);
         }
       } catch (err) {
-        handleFirestoreQueryError(collectionName, err);
+        handleFirestoreQueryError(collectionName, err, { filters });
       }
 
       items = sortItems(items, sortField);
@@ -185,13 +220,13 @@ function createEntityApi(collectionName) {
     },
 
     async create(data) {
-      const uid = auth.currentUser?.uid;
+      const uid = await requireAuthUid();
       const payload = {
         ...data,
-        created_by_id: data.created_by_id ?? uid ?? null,
+        created_by_id: uid,
         created_date: serverTimestamp(),
       };
-      const ref = await addDoc(collection(db, collectionName), payload);
+      const ref = await addDocWithAuthRetry(collectionName, payload);
       return {
         id: ref.id,
         ...data,
@@ -201,6 +236,7 @@ function createEntityApi(collectionName) {
     },
 
     async update(id, data) {
+      await waitForFirestoreAuth();
       await updateDoc(doc(db, collectionName, id), data);
       return { id, ...data };
     },
@@ -229,6 +265,8 @@ function createEntityApi(collectionName) {
     subscribe(callback, filters = null) {
       let activeUnsub = () => {};
       let isInitial = true;
+      let cancelled = false;
+      let retryTimer = null;
 
       const matchesFilters = (data) => {
         if (!filters) return true;
@@ -257,32 +295,56 @@ function createEntityApi(collectionName) {
         });
       };
 
-      const equalityConstraints = [];
-      if (filters) {
-        for (const [key, value] of Object.entries(filters)) {
-          if (value && typeof value === "object" && "$lt" in value) continue;
-          equalityConstraints.push(where(key, "==", value));
+      const attachListener = async (isRetry = false) => {
+        if (cancelled) return;
+
+        try {
+          await waitForFirestoreAuth({ forceRefresh: isRetry });
+        } catch {
+          return;
         }
-      }
+        if (cancelled) return;
 
-      const q = equalityConstraints.length
-        ? query(collection(db, collectionName), ...equalityConstraints)
-        : collection(db, collectionName);
-
-      activeUnsub = onSnapshot(
-        q,
-        emitChanges,
-        (err) => {
-          if (err?.code === "permission-denied") {
-            console.warn(`Subscribe skipped for ${collectionName} (permission-denied)`, filters || {});
-            activeUnsub();
-            return;
+        const equalityConstraints = [];
+        if (filters) {
+          for (const [key, value] of Object.entries(filters)) {
+            if (value && typeof value === "object" && "$lt" in value) continue;
+            equalityConstraints.push(where(key, "==", value));
           }
-          console.error(`Subscribe failed for ${collectionName}:`, err);
         }
-      );
 
-      return () => activeUnsub();
+        const q = equalityConstraints.length
+          ? query(collection(db, collectionName), ...equalityConstraints)
+          : collection(db, collectionName);
+
+        activeUnsub = onSnapshot(
+          q,
+          emitChanges,
+          (err) => {
+            if (err?.code === "permission-denied") {
+              if (!isRetry) {
+                retryTimer = setTimeout(() => {
+                  activeUnsub();
+                  isInitial = true;
+                  attachListener(true);
+                }, 1200);
+                return;
+              }
+              activeUnsub();
+              return;
+            }
+            console.error(`Subscribe failed for ${collectionName}:`, err);
+          }
+        );
+      };
+
+      attachListener();
+
+      return () => {
+        cancelled = true;
+        if (retryTimer) clearTimeout(retryTimer);
+        activeUnsub();
+      };
     },
 
     /** One listener per filter set (e.g. per channel_id) to satisfy Firestore rules. */
@@ -354,7 +416,33 @@ export const entities = {
   },
   VoiceMessage: createEntityApi("voiceMessages"),
   PTTSignal: createEntityApi("pttSignals"),
-  AudioChunk: createEntityApi("audioChunks"),
+  AudioChunk: {
+    ...createEntityApi("audioChunks"),
+    /** Idempotent chunk write — safe when offline/retry replays the same sequence. */
+    async createChunk(data) {
+      const uid = await requireAuthUid();
+      const chunkId = `${data.broadcast_id}_${data.sequence}`;
+      const payload = {
+        ...data,
+        created_by_id: uid,
+        created_date: serverTimestamp(),
+      };
+      const chunkRef = doc(db, "audioChunks", chunkId);
+      try {
+        await setDoc(chunkRef, payload, { merge: true });
+      } catch (err) {
+        if (err?.code !== "permission-denied") throw err;
+        await requireAuthUid({ forceRefresh: true });
+        await setDoc(chunkRef, payload, { merge: true });
+      }
+      return {
+        id: chunkId,
+        ...data,
+        created_by_id: uid,
+        created_date: new Date().toISOString(),
+      };
+    },
+  },
   Contact: createEntityApi("contacts"),
   AccessRequest: createEntityApi("accessRequests"),
 };
@@ -601,6 +689,9 @@ export const bootstrapApi = {
         },
         { merge: true }
       );
+      if (shouldJoin) {
+        await addUserChannelMembership(user.id, id);
+      }
       if (!exists) channelCount++;
     }
 

@@ -1,6 +1,7 @@
 import React from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/api/client";
+import { useAuth } from "@/lib/AuthContext";
 import { Building2, Users, Radio, Inbox, MessageSquare } from "lucide-react";
 
 function StatCard({ icon: Icon, label, value, color }) {
@@ -18,25 +19,33 @@ function StatCard({ icon: Icon, label, value, color }) {
 }
 
 export default function Dashboard() {
+  const { user } = useAuth();
+  const queriesEnabled = Boolean(user?.id);
+
   const { data: orgs = [] } = useQuery({
     queryKey: ["organizations"],
     queryFn: () => api.organizations.list(),
+    enabled: queriesEnabled,
   });
   const { data: users = [] } = useQuery({
     queryKey: ["users"],
     queryFn: () => api.entities.User.list(),
+    enabled: queriesEnabled,
   });
   const { data: channels = [] } = useQuery({
     queryKey: ["channels"],
     queryFn: () => api.entities.Channel.list("-created_date", 200),
+    enabled: queriesEnabled,
   });
   const { data: requests = [] } = useQuery({
     queryKey: ["accessRequests"],
     queryFn: () => api.entities.AccessRequest.list("-created_date", 200),
+    enabled: queriesEnabled,
   });
   const { data: messages = [] } = useQuery({
     queryKey: ["voiceMessages"],
     queryFn: () => api.entities.VoiceMessage.list("-created_date", 500),
+    enabled: queriesEnabled,
   });
 
   const pendingRequests = requests.filter((r) => r.status === "pending").length;

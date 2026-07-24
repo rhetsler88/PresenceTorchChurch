@@ -13,6 +13,13 @@ import {
   filterUsersByOrganization,
   filterChannelsByOrganization,
 } from "@/lib/userUtils";
+import { addUserChannelMembership } from "@/lib/channelMembership";
+
+function resolvePendingMember(users, memberId) {
+  if (!memberId) return null;
+  const match = users.find((u) => u.id === memberId || u.email === memberId);
+  return match?.id || (memberId.includes("@") ? null : memberId);
+}
 
 function mutationErrorToast(action) {
   return (err) => {
@@ -82,12 +89,23 @@ export default function Admin() {
 
   const approveMutation = useMutation({
     mutationFn: async (/** @type {{ channel: any, memberId: any }} */ { channel, memberId }) => {
-      const members = channel.members || [];
-      const pending = (channel.pending_members || []).filter((e) => e !== memberId);
+      const memberUid = resolvePendingMember(users, memberId);
+      const members = (channel.members || []).filter(
+        (entry) => entry !== memberId && entry !== memberUid
+      );
+      const pending = (channel.pending_members || []).filter(
+        (entry) => entry !== memberId && entry !== memberUid
+      );
+      const memberEntry = memberUid || memberId;
+
       await api.entities.Channel.update(channel.id, {
-        members: [...members, memberId],
+        members: memberEntry ? [...members, memberEntry] : members,
         pending_members: pending,
       });
+
+      if (memberUid) {
+        await addUserChannelMembership(memberUid, channel.id);
+      }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["channels"] });
@@ -98,7 +116,10 @@ export default function Admin() {
 
   const rejectMutation = useMutation({
     mutationFn: async (/** @type {{ channel: any, memberId: any }} */ { channel, memberId }) => {
-      const pending = (channel.pending_members || []).filter((e) => e !== memberId);
+      const memberUid = resolvePendingMember(users, memberId);
+      const pending = (channel.pending_members || []).filter(
+        (entry) => entry !== memberId && entry !== memberUid
+      );
       await api.entities.Channel.update(channel.id, { pending_members: pending });
     },
     onSuccess: () => {

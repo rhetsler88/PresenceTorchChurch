@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Radio, Check, ArrowRight, ArrowLeft, LogOut, MailCheck, Bell } from "lucide-react";
 import AppLogo from "@/components/branding/AppLogo";
 import { toast } from "sonner";
+import { addUserChannelMembership } from "@/lib/channelMembership";
 
 export default function Onboarding() {
   const { user, checkUserAuth, logout } = useAuth();
@@ -133,7 +134,7 @@ export default function Onboarding() {
                 return api.entities.Channel.update(cid, {
                   members: [...approved, userId],
                   pending_members: pending,
-                });
+                }).then(() => addUserChannelMembership(userId, cid));
               }
               if (!pending.includes(userId) && !ch.pending_members?.includes(userId)) {
                 return api.entities.Channel.update(cid, {

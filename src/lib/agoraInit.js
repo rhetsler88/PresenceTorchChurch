@@ -6,7 +6,7 @@ let configured = false;
 export function configureAgoraSdk() {
   if (configured) return;
   configured = true;
-  // 4 = no SDK console logs; network 501s from statscollector may still appear in DevTools
-  AgoraRTC.setLogLevel(import.meta.env.DEV ? 2 : 4);
+  // 4 = no SDK console logs; browser may still log WS close during aborted joins
+  AgoraRTC.setLogLevel(4);
   AgoraRTC.disableLogUpload();
 }

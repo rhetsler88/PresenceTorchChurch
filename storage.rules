@@ -15,11 +15,21 @@ service firebase.storage {
     }
 
     function userExists() {
-      return isSignedIn() && userDoc() != null;
+      return isSignedIn() && userDoc().data.keys().hasAny(['email', 'role']);
+    }
+
+    function channelOrganization(channelId) {
+      return channelDoc(channelId).data.get('organization', '');
+    }
+
+    function channelOrgMatchesUser(channelId) {
+      return !userHasOrganizationConstraint()
+        || channelOrganization(channelId).size() == 0
+        || channelOrganization(channelId) == userOrganization();
     }
 
     function role() {
-      return userDoc().data.role;
+      return userDoc().data.get('role', '');
     }
 
     function isSuperAdmin() {
@@ -44,8 +54,31 @@ service firebase.storage {
       );
     }
 
+    function tokenRole() {
+      return request.auth.token.get('role', '');
+    }
+
+    function isElevatedFromToken() {
+      return isSignedIn() && (
+        tokenRole() == 'super_admin'
+        || tokenRole() == 'admin'
+        || tokenRole() == 'director'
+        || tokenRole() == 'monitor'
+        || request.auth.token.get('is_monitor', false) == true
+      );
+    }
+
     function canViewAllVoiceMessages() {
-      return isPlatformAdmin() || isDirector() || isMonitor();
+      return isElevatedFromToken() || isPlatformAdmin() || isDirector() || isMonitor();
+    }
+
+    function memberChannelIds() {
+      let channels = userDoc().data.get('member_of_channels', []);
+      return channels is list ? channels : [];
+    }
+
+    function isUserMemberOfChannel(channelId) {
+      return isSignedIn() && memberChannelIds().hasAny([channelId]);
     }
 
     function channelDoc(channelId) {
@@ -53,7 +86,7 @@ service firebase.storage {
     }
 
     function channelExists(channelId) {
-      return channelDoc(channelId) != null;
+      return channelDoc(channelId).data.keys().hasAny(['name', 'members']);
     }
 
     function isListedOnChannel(list) {
@@ -68,8 +101,13 @@ service firebase.storage {
       return channelDoc(channelId).data.get('notification_members', []);
     }
 
+    function userMemberChannels() {
+      return memberChannelIds();
+    }
+
     function isChannelTalkMember(channelId) {
       return isSuperAdmin()
+        || isUserMemberOfChannel(channelId)
         || (channelExists(channelId) && isListedOnChannel(channelMembers(channelId)));
     }
 
@@ -95,44 +133,35 @@ service firebase.storage {
         && channelExists(channelId)
         && (
           userDirectedChannels().size() == 0
-          || channelId in userDirectedChannels()
+          || userDirectedChannels().hasAny([channelId])
         );
     }
 
     function isMonitorForChannel(channelId) {
       return isMonitor()
         && channelExists(channelId)
-        && (
-          !userHasOrganizationConstraint()
-          || channelDoc(channelId).data.get('organization', '') == userOrganization()
-        );
+        && channelOrgMatchesUser(channelId);
     }
 
     function isOrgAdminForChannel(channelId) {
       return isAdmin()
         && channelExists(channelId)
-        && (
-          !userHasOrganizationConstraint()
-          || channelDoc(channelId).data.get('organization', '') == userOrganization()
-        );
+        && channelOrgMatchesUser(channelId);
     }
 
     // Match Firestore canSendOnChannel — PTT upload + voice message storage.
     function canSendOnChannel(channelId) {
-      return isPlatformAdmin()
+      return isElevatedFromToken()
+        || isPlatformAdmin()
         || isChannelTalkMember(channelId)
         || isOrgAdminForChannel(channelId)
         || isDirectorForChannel(channelId)
         || isMonitorForChannel(channelId);
     }
 
-    // Match Firestore canAccessChannelAlerts / canReadVoiceMessage for playback.
     function canAccessChannelAudio(channelId) {
-      return canViewAllVoiceMessages()
-        || isChannelAlertRecipient(channelId)
-        || isOrgAdminForChannel(channelId)
-        || isDirectorForChannel(channelId)
-        || isMonitorForChannel(channelId);
+      // Anyone who can transmit can also read/play (incl. getDownloadURL right after upload).
+      return canSendOnChannel(channelId) || canViewAllVoiceMessages();
     }
 
     // Legacy relay + message paths (pre channel-scoped layout)

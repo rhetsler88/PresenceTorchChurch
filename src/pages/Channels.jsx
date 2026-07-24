@@ -10,6 +10,7 @@ import RenameChannelDialog from "../components/channels/RenameChannelDialog";
 import JoinChannelDialog from "../components/channels/JoinChannelDialog";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
+import { addUserChannelMembership } from "@/lib/channelMembership";
 
 export default function Channels() {
   const [showCreate, setShowCreate] = useState(false);
@@ -39,7 +40,13 @@ export default function Channels() {
   });
 
   const createMutation = useMutation({
-    mutationFn: (data) => api.entities.Channel.create(data),
+    mutationFn: async (data) => {
+      const channel = await api.entities.Channel.create(data);
+      if (user?.id && (data.members || []).includes(user.id)) {
+        await addUserChannelMembership(user.id, channel.id);
+      }
+      return channel;
+    },
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["channels"] }),
   });
 

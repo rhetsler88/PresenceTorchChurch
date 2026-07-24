@@ -3,13 +3,13 @@ import { Mic } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { unlockAudioForPTT } from "@/lib/pttTones";
 
-export default function PTTButton({ isPressed, isRecording, isConnected, isReceiving, isChannelBusy, onStart, onStop }) {
+export default function PTTButton({ isPressed, isConnected, isReceiving, isChannelBusy, onStart, onStop }) {
   const [duration, setDuration] = useState(0);
   const [isHeld, setIsHeld] = useState(false);
   const timerRef = useRef(null);
   const buttonRef = useRef(null);
 
-  const showPressed = isHeld || isPressed || isRecording;
+  const showPressed = isHeld || isPressed;
 
   useEffect(() => {
     if (showPressed) {

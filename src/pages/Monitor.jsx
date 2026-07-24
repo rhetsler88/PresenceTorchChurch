@@ -15,6 +15,7 @@ import { cleanupStalePTTSignals } from "@/lib/pttSignals";
 import { playAudioUrl, stopAudio } from "@/lib/audioPlayer";
 import usePttBroadcast from "../hooks/usePttBroadcast";
 import usePttReceiver from "../hooks/usePttReceiver";
+import { isAgoraEnabled } from "@/lib/agora";
 import MonitorPTTBar from "../components/monitor/MonitorPTTBar";
 import useExternalPTT from "../hooks/useExternalPTT";
 import ProtectionLevelControl from "../components/monitor/ProtectionLevelControl";
@@ -245,13 +246,12 @@ export default function Monitor() {
     [monitorChannels]
   );
 
-  const targetChannelBusy = Boolean(targetChannelId && busyChannelIds.has(targetChannelId));
-  const agoraListenActive = isPTTPressed || targetChannelBusy;
+  const agoraListenActive = Boolean(targetChannelId && !isPTTPressed);
 
   const {
-    isRecording,
     startRecording,
     stopRecording,
+    stopLiveTransmit,
     isLiveReceiving: targetLiveReceiving,
     heardBroadcastsRef: pttHeardRef,
   } = usePttBroadcast({
@@ -264,6 +264,7 @@ export default function Monitor() {
   const { isReceiving: multiLiveReceiving, heardBroadcastsRef: multiHeardRef } = usePttReceiver({
     channelIds: monitorRelayChannelIds,
     userId: user?.id,
+    enabled: !isAgoraEnabled(),
   });
 
   const isLiveReceiving = targetLiveReceiving || multiLiveReceiving;
@@ -620,8 +621,9 @@ export default function Monitor() {
       api.entities.PTTSignal.delete(id).catch(() => {});
     });
 
+    void stopLiveTransmit();
     sendMutation.mutate();
-  }, [isPTTPressed, sendMutation]);
+  }, [isPTTPressed, sendMutation, stopLiveTransmit]);
 
   useExternalPTT({
     onPress: handlePTTStart,

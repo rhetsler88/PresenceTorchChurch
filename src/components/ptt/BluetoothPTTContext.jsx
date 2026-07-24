@@ -1,22 +1,27 @@
-import React, { createContext, useContext, useState, useCallback } from "react";
+import React, { createContext, useContext, useRef, useCallback, useMemo } from "react";
 import useBluetoothPTT from "@/hooks/useBluetoothPTT";
 
 const BluetoothPTTContext = createContext(null);
 
 export function BluetoothPTTProvider({ children }) {
-  const [handlers, setHandlers] = useState({ onPress: null, onRelease: null });
+  const handlersRef = useRef({ onPress: null, onRelease: null });
 
   const bluetooth = useBluetoothPTT({
-    onPress: handlers.onPress,
-    onRelease: handlers.onRelease,
+    onPress: () => handlersRef.current.onPress?.(),
+    onRelease: () => handlersRef.current.onRelease?.(),
   });
 
   const registerHandlers = useCallback((onPress, onRelease) => {
-    setHandlers({ onPress, onRelease });
+    handlersRef.current = { onPress, onRelease };
   }, []);
 
+  const value = useMemo(
+    () => ({ ...bluetooth, registerHandlers }),
+    [bluetooth, registerHandlers]
+  );
+
   return (
-    <BluetoothPTTContext.Provider value={{ ...bluetooth, registerHandlers }}>
+    <BluetoothPTTContext.Provider value={value}>
       {children}
     </BluetoothPTTContext.Provider>
   );

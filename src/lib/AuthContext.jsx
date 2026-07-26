@@ -407,9 +407,11 @@ export const AuthProvider = ({ children }) => {
   };
   logoutRef.current = logout;
 
-  const navigateToLogin = () => authApi.redirectToLogin();
-  const signInWithEmail = (email, password) => authApi.signInWithEmail(email, password);
-  const signUpWithEmail = (email, password) => authApi.signUpWithEmail(email, password);
+  const navigateToLogin = (captchaToken) => authApi.redirectToLogin(captchaToken);
+  const signInWithEmail = (email, password, captchaToken) =>
+    authApi.signInWithEmail(email, password, captchaToken);
+  const signUpWithEmail = (email, password, captchaToken) =>
+    authApi.signUpWithEmail(email, password, captchaToken);
 
   const registerWithEmail = async ({ email, password, firstName, lastName }) => {
     await authApi.registerWithEmail({ email, password, firstName, lastName });

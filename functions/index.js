@@ -18,8 +18,12 @@ const {
 initializeApp();
 setGlobalOptions({ region: "us-east5" });
 
+/** Callable options: public invoker + CORS for localhost dev and web clients. */
+const CALLABLE_OPTIONS = { cors: true, invoker: "public" };
+
 const agoraAppId = defineSecret("AGORA_APP_ID");
 const agoraAppCertificate = defineSecret("AGORA_APP_CERTIFICATE");
+const recaptchaSecretKey = defineSecret("RECAPTCHA_SECRET_KEY");
 
 const THROTTLE_MS = 15000;
 const VOICE_MESSAGE_RETENTION_DAYS = 20;
@@ -203,7 +207,7 @@ exports.syncUserAuthClaims = onDocumentWritten("users/{userId}", async (event) =
   await applyAuthClaims(event.params.userId, after.data());
 });
 
-exports.refreshMyAuthClaims = onCall({ invoker: "public" }, async (request) => {
+exports.refreshMyAuthClaims = onCall(CALLABLE_OPTIONS, async (request) => {
   if (!request.auth) {
     throw new HttpsError("unauthenticated", "Sign in required");
   }
@@ -214,6 +218,199 @@ exports.refreshMyAuthClaims = onCall({ invoker: "public" }, async (request) => {
   await applyAuthClaims(request.auth.uid, snap.data());
   return { role: snap.data().role || "user" };
 });
+
+async function verifyRecaptchaResponse(token, remoteIp) {
+  const secret = recaptchaSecretKey.value();
+  if (!secret) {
+    throw new HttpsError("failed-precondition", "reCAPTCHA is not configured on the server");
+  }
+
+  const params = new URLSearchParams({ secret, response: token });
+  if (remoteIp) params.set("remoteip", remoteIp);
+
+  const response = await fetch("https://www.google.com/recaptcha/api/siteverify", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: params.toString(),
+  });
+
+  if (!response.ok) {
+    throw new HttpsError("internal", "reCAPTCHA verification request failed");
+  }
+
+  const data = await response.json();
+  if (!data.success) {
+    throw new HttpsError("permission-denied", "reCAPTCHA verification failed");
+  }
+
+  return data;
+}
+
+exports.verifyRecaptcha = onCall(
+  { ...CALLABLE_OPTIONS, secrets: [recaptchaSecretKey] },
+  async (request) => {
+    const token = request.data?.token;
+    if (!token || typeof token !== "string") {
+      throw new HttpsError("invalid-argument", "reCAPTCHA token is required");
+    }
+
+    await verifyRecaptchaResponse(token, request.rawRequest?.ip);
+    return { success: true };
+  }
+);
+
+const DELETE_BATCH_SIZE = 400;
+const CHANNEL_MEMBER_FIELDS = [
+  "members",
+  "pending_members",
+  "notification_members",
+  "pending_notification_members",
+];
+
+async function commitBatchDeletes(db, docRefs) {
+  if (!docRefs.length) return;
+  for (let i = 0; i < docRefs.length; i += DELETE_BATCH_SIZE) {
+    const batch = db.batch();
+    docRefs.slice(i, i + DELETE_BATCH_SIZE).forEach((ref) => batch.delete(ref));
+    await batch.commit();
+  }
+}
+
+async function deleteDocsByField(db, collectionName, field, value, { deleteStorage = false } = {}) {
+  const bucket = deleteStorage ? getStorage().bucket() : null;
+  let deleted = 0;
+
+  while (true) {
+    const snap = await db
+      .collection(collectionName)
+      .where(field, "==", value)
+      .limit(DELETE_BATCH_SIZE)
+      .get();
+    if (snap.empty) break;
+
+    const refs = [];
+    const fileDeletes = [];
+
+    snap.docs.forEach((docSnap) => {
+      refs.push(docSnap.ref);
+      if (deleteStorage) {
+        const storagePath = resolveStoragePath(docSnap.data().audio_url);
+        if (storagePath) {
+          fileDeletes.push(
+            bucket
+              .file(storagePath)
+              .delete()
+              .catch(() => {})
+          );
+        }
+      }
+    });
+
+    await commitBatchDeletes(db, refs);
+    await Promise.all(fileDeletes);
+    deleted += snap.size;
+
+    if (snap.size < DELETE_BATCH_SIZE) break;
+  }
+
+  return deleted;
+}
+
+async function removeUserFromAllChannels(db, uid, email) {
+  const channelsSnap = await db.collection("channels").get();
+  let batch = db.batch();
+  let ops = 0;
+  let updated = 0;
+
+  for (const channelDoc of channelsSnap.docs) {
+    const data = channelDoc.data() || {};
+    const updates = {};
+
+    for (const field of CHANNEL_MEMBER_FIELDS) {
+      const arr = data[field] || [];
+      const filtered = arr.filter((entry) => entry !== uid && (!email || entry !== email));
+      if (filtered.length !== arr.length) {
+        updates[field] = filtered;
+      }
+    }
+
+    if (Object.keys(updates).length === 0) continue;
+
+    batch.update(channelDoc.ref, updates);
+    ops += 1;
+    updated += 1;
+
+    if (ops >= DELETE_BATCH_SIZE) {
+      await batch.commit();
+      batch = db.batch();
+      ops = 0;
+    }
+  }
+
+  if (ops > 0) await batch.commit();
+  return updated;
+}
+
+async function deleteUserAccount(uid) {
+  const db = getFirestore();
+  const userRef = db.collection("users").doc(uid);
+  const userSnap = await userRef.get();
+  const email = userSnap.exists ? userSnap.data()?.email || null : null;
+
+  const channelsUpdated = await removeUserFromAllChannels(db, uid, email);
+
+  const [voiceMessages, pttSignals, audioChunksBySender, audioChunksByCreator, contacts] =
+    await Promise.all([
+      deleteDocsByField(db, "voiceMessages", "created_by_id", uid, { deleteStorage: true }),
+      deleteDocsByField(db, "pttSignals", "sender_id", uid),
+      deleteDocsByField(db, "audioChunks", "sender_id", uid),
+      deleteDocsByField(db, "audioChunks", "created_by_id", uid),
+      deleteDocsByField(db, "contacts", "created_by_id", uid),
+    ]);
+
+  const userDocIds = new Set([uid]);
+  if (email) {
+    const emailSnap = await db.collection("users").where("email", "==", email).get();
+    emailSnap.docs.forEach((docSnap) => userDocIds.add(docSnap.id));
+  }
+
+  await commitBatchDeletes(
+    db,
+    [...userDocIds].map((id) => db.collection("users").doc(id))
+  );
+
+  try {
+    await getAuth().deleteUser(uid);
+  } catch (err) {
+    if (err?.code !== "auth/user-not-found") throw err;
+  }
+
+  return {
+    success: true,
+    channelsUpdated,
+    voiceMessages,
+    pttSignals,
+    audioChunks: audioChunksBySender + audioChunksByCreator,
+    contacts,
+    userDocsDeleted: userDocIds.size,
+  };
+}
+
+exports.deleteUserAccount = onCall(
+  { ...CALLABLE_OPTIONS, timeoutSeconds: 300, memory: "512MiB" },
+  async (request) => {
+    if (!request.auth) {
+      throw new HttpsError("unauthenticated", "Sign in required");
+    }
+
+    try {
+      return await deleteUserAccount(request.auth.uid);
+    } catch (err) {
+      console.error("deleteUserAccount failed:", err);
+      throw new HttpsError("internal", "Failed to delete account");
+    }
+  }
+);
 
 exports.transcribeOnVoiceMessage = onDocumentCreated(
   { document: "voiceMessages/{messageId}" },
@@ -226,7 +423,7 @@ exports.transcribeOnVoiceMessage = onDocumentCreated(
   }
 );
 
-exports.transcribeAudio = onCall({ invoker: "public" }, async (request) => {
+exports.transcribeAudio = onCall(CALLABLE_OPTIONS, async (request) => {
   if (!request.auth) {
     throw new HttpsError("unauthenticated", "Sign in required");
   }
@@ -252,7 +449,7 @@ function agoraUidFromFirebaseId(firebaseUid) {
 }
 
 exports.getAgoraToken = onCall(
-  { secrets: [agoraAppId, agoraAppCertificate] },
+  { ...CALLABLE_OPTIONS, secrets: [agoraAppId, agoraAppCertificate] },
   async (request) => {
     if (!request.auth) {
       throw new HttpsError("unauthenticated", "Sign in required");

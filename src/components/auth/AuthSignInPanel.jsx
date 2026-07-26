@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { Fingerprint } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -8,6 +8,7 @@ import { Separator } from "@/components/ui/separator";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useAuth } from "@/lib/AuthContext";
 import { getAuthErrorMessage } from "@/api/client";
+import ReCaptcha from "@/components/auth/ReCaptcha";
 import {
   getBiometricLabel,
   hasBiometricSignIn,
@@ -30,6 +31,13 @@ export default function AuthSignInPanel({ googleButtonLabel = "Sign in with Goog
   const [biometricLabel, setBiometricLabel] = useState("Biometric");
   const [showBiometricSignIn, setShowBiometricSignIn] = useState(false);
   const [enableBiometricNextTime, setEnableBiometricNextTime] = useState(true);
+  const [captchaToken, setCaptchaToken] = useState(null);
+  const captchaRef = useRef(null);
+
+  const resetCaptcha = () => {
+    setCaptchaToken(null);
+    captchaRef.current?.reset();
+  };
 
   useEffect(() => {
     if (!isBiometricPlatform()) return;
@@ -48,20 +56,25 @@ export default function AuthSignInPanel({ googleButtonLabel = "Sign in with Goog
 
   const handleEmailSubmit = async (e) => {
     e.preventDefault();
+    if (!captchaToken) {
+      setError('Please complete the "I\'m not a robot" check.');
+      return;
+    }
     setSubmitting(true);
     setError(null);
     try {
       if (mode === "sign-in") {
-        await signInWithEmail(email, password);
+        await signInWithEmail(email, password, captchaToken);
         if (biometricAvailable && enableBiometricNextTime) {
           await saveBiometricCredentials(email, password);
           setShowBiometricSignIn(true);
         }
       } else {
-        await signUpWithEmail(email, password);
+        await signUpWithEmail(email, password, captchaToken);
       }
     } catch (err) {
       setError(getAuthErrorMessage(err));
+      resetCaptcha();
     } finally {
       setSubmitting(false);
     }
@@ -85,17 +98,23 @@ export default function AuthSignInPanel({ googleButtonLabel = "Sign in with Goog
   };
 
   const handleGoogleSignIn = async () => {
+    if (!captchaToken) {
+      setError('Please complete the "I\'m not a robot" check.');
+      return;
+    }
     setGoogleSigningIn(true);
     setError(null);
     try {
-      await navigateToLogin();
+      await navigateToLogin(captchaToken);
     } catch (err) {
       setError(getAuthErrorMessage(err));
+      resetCaptcha();
     } finally {
       setGoogleSigningIn(false);
     }
   };
 
+  const captchaComplete = Boolean(captchaToken);
   const busy = submitting || googleSigningIn || biometricSigningIn;
 
   return (
@@ -128,6 +147,7 @@ export default function AuthSignInPanel({ googleButtonLabel = "Sign in with Goog
         onValueChange={(value) => {
           setMode(value);
           setError(null);
+          resetCaptcha();
         }}
         className="w-full"
       >
@@ -180,7 +200,17 @@ export default function AuthSignInPanel({ googleButtonLabel = "Sign in with Goog
             disabled={busy}
           />
         </div>
-        <Button type="submit" className="w-full" size="lg" disabled={busy}>
+        <ReCaptcha
+          ref={captchaRef}
+          onChange={setCaptchaToken}
+          onExpired={resetCaptcha}
+        />
+        <Button
+          type="submit"
+          className="w-full"
+          size="lg"
+          disabled={busy || !captchaComplete}
+        >
           {submitting
             ? mode === "sign-in"
               ? "Signing in..."
@@ -218,7 +248,7 @@ export default function AuthSignInPanel({ googleButtonLabel = "Sign in with Goog
         className="w-full"
         size="lg"
         onClick={handleGoogleSignIn}
-        disabled={busy}
+        disabled={busy || !captchaComplete}
       >
         {googleSigningIn ? "Signing in..." : googleButtonLabel}
       </Button>

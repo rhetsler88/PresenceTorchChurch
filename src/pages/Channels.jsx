@@ -118,7 +118,7 @@ export default function Channels() {
   return (
     <div className="min-h-screen safe-top">
       <div className="px-4 pt-4 pb-3 sm:px-5 sm:pt-6">
-        <div className={`flex items-center justify-between mb-3 ${canManageProtection ? "pr-12" : ""}`}>
+        <div className={`flex items-center justify-between mb-3 max-sm:pr-12 ${canManageProtection ? "sm:pr-48" : ""}`}>
           <div>
             <h1 className="text-xl font-bold text-foreground">Channels</h1>
             <p className="text-xs text-muted-foreground mt-0.5">{channels.length} channels</p>

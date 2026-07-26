@@ -1,6 +1,5 @@
 #env
 .env
-.env.*
 
 # Logs
 /logs
@@ -28,9 +27,7 @@ dist-ssr
 *.sln
 *.sw?
 
-.env
 .vite
 base44/.app.jsonc
 scripts/serviceAccountKey.json
 .vercel
-.env*

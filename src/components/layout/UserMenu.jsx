@@ -7,15 +7,17 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { UserCog, LogOut, Shield } from "lucide-react";
+import { UserCog, LogOut, Shield, UserX } from "lucide-react";
 import { useAuth } from "@/lib/AuthContext";
 import { getDisplayName, getInitials } from "@/lib/userUtils";
 import { ADMIN_APP_URL } from "@/lib/appLinks";
 import EditProfileDialog from "@/components/profile/EditProfileDialog";
+import DeleteAccountDialog from "@/components/profile/DeleteAccountDialog";
 
 export default function UserMenu() {
   const { user, logout } = useAuth();
   const [showEditProfile, setShowEditProfile] = useState(false);
+  const [showDeleteAccount, setShowDeleteAccount] = useState(false);
 
   if (!user) return null;
 
@@ -54,6 +56,13 @@ export default function UserMenu() {
             <UserCog className="w-4 h-4" />
             Change name
           </DropdownMenuItem>
+          <DropdownMenuItem
+            className="text-destructive focus:text-destructive"
+            onClick={() => setShowDeleteAccount(true)}
+          >
+            <UserX className="w-4 h-4" />
+            Delete account
+          </DropdownMenuItem>
           {isPlatformAdmin && (
             <DropdownMenuItem asChild>
               <a href={ADMIN_APP_URL}>
@@ -74,6 +83,7 @@ export default function UserMenu() {
       </DropdownMenu>
 
       <EditProfileDialog open={showEditProfile} onOpenChange={setShowEditProfile} />
+      <DeleteAccountDialog open={showDeleteAccount} onOpenChange={setShowDeleteAccount} />
     </>
   );
 }

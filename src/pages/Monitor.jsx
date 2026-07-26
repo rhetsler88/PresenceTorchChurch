@@ -3,18 +3,17 @@ import { api } from "@/api/client";
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from "@tanstack/react-query";
 import { motion, AnimatePresence } from "framer-motion";
 import { DragDropContext, Droppable, Draggable } from "@hello-pangea/dnd";
-import { Radio, Volume2, VolumeX, Activity, Eye, Play, Pause, Wifi, WifiOff } from "lucide-react";
+import { Radio, Volume2, Activity, Eye, Play, Pause, Wifi, WifiOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Switch } from "@/components/ui/switch";
-import { Label } from "@/components/ui/label";
 import { etzTime } from "@/lib/etz";
 import { deviceDayKey, deviceDayLabel } from "@/lib/deviceDate";
-import { getDisplayName, getMonitorChannels, getReadableVoiceChannels } from "@/lib/userUtils";
+import { getDisplayName, getMonitorChannels, getReadableVoiceChannels, canSendOnChannelForChannel } from "@/lib/userUtils";
 import { playClearTone, playBusyTone } from "@/lib/pttTones";
-import { cleanupStalePTTSignals } from "@/lib/pttSignals";
+import { cleanupStalePTTSignals, claimPttChannels, releasePttSignals } from "@/lib/pttSignals";
 import { playAudioUrl, stopAudio } from "@/lib/audioPlayer";
 import usePttBroadcast from "../hooks/usePttBroadcast";
 import usePttReceiver from "../hooks/usePttReceiver";
+import useAgoraMultiListen from "../hooks/useAgoraMultiListen";
 import { isAgoraEnabled } from "@/lib/agora";
 import MonitorPTTBar from "../components/monitor/MonitorPTTBar";
 import useExternalPTT from "../hooks/useExternalPTT";
@@ -22,7 +21,7 @@ import ProtectionLevelControl from "../components/monitor/ProtectionLevelControl
 import SetAllProtectionLevel from "../components/monitor/SetAllProtectionLevel";
 import { toast } from "sonner";
 
-function ChannelMonitorCard({ channel, messages, isAutoPlay, onPlayMessage, playingId, onSetProtectionLevel, userMap }) {
+function ChannelMonitorCard({ channel, messages, onPlayMessage, playingId, onSetProtectionLevel, userMap }) {
   const lastMsg = messages[0];
   const hasActivity = messages.length > 0;
 
@@ -130,7 +129,6 @@ function ChannelMonitorCard({ channel, messages, isAutoPlay, onPlayMessage, play
 }
 
 export default function Monitor() {
-  const [autoPlay, setAutoPlay] = useState(true);
   const [playingId, setPlayingId] = useState(null);
   const [playingChannel, setPlayingChannel] = useState(null);
   const [activityLog, setActivityLog] = useState([]);
@@ -144,14 +142,16 @@ export default function Monitor() {
   const [isChannelBusy, setIsChannelBusy] = useState(false);
   const [busyChannelIds, setBusyChannelIds] = useState(() => new Set());
 
-  const autoPlayQueueRef = useRef([]);
   const isPlayingRef = useRef(false);
   const pttSignalRefs = useRef([]);
-  const channelBusyTimeoutRef = useRef(null);
+  const pttStartInFlightRef = useRef(false);
+  const channelBusyTimeoutRef = useRef(new Map());
+  const heardBroadcastsRef = useRef(new Set());
   const broadcastAllRef = useRef(broadcastAll);
   broadcastAllRef.current = broadcastAll;
   const targetChannelIdRef = useRef(targetChannelId);
   targetChannelIdRef.current = targetChannelId;
+  const sendableChannelIdsRef = useRef([]);
   const queryClient = useQueryClient();
 
   // Persist channel order to localStorage
@@ -175,6 +175,15 @@ export default function Monitor() {
     () => getMonitorChannels(user, channels),
     [user, channels]
   );
+  const sendableMonitorChannels = useMemo(
+    () => monitorChannels.filter((c) => canSendOnChannelForChannel(user, c)),
+    [monitorChannels, user]
+  );
+  const sendableChannelIds = useMemo(
+    () => sendableMonitorChannels.map((c) => c.id).filter(Boolean),
+    [sendableMonitorChannels]
+  );
+  sendableChannelIdsRef.current = sendableChannelIds;
   const readableMonitorChannels = useMemo(
     () => getReadableVoiceChannels(user, monitorChannels),
     [monitorChannels, user]
@@ -246,29 +255,34 @@ export default function Monitor() {
     [monitorChannels]
   );
 
-  const agoraListenActive = Boolean(targetChannelId && !isPTTPressed);
+  const agoraEnabled = isAgoraEnabled();
 
   const {
     startRecording,
     stopRecording,
     stopLiveTransmit,
-    isLiveReceiving: targetLiveReceiving,
     heardBroadcastsRef: pttHeardRef,
   } = usePttBroadcast({
     channelId: targetChannelId,
     userId: user?.id,
     userName: user ? getDisplayName(user) : "",
-    listenActive: agoraListenActive,
+    listenActive: false,
+    receiveEnabled: false,
+  });
+
+  const { isReceiving: agoraMultiReceiving } = useAgoraMultiListen({
+    userId: user?.id,
+    channelIds: agoraEnabled ? monitorRelayChannelIds : [],
+    onRemoteTalkStart: (_channelId, _uid) => {},
   });
 
   const { isReceiving: multiLiveReceiving, heardBroadcastsRef: multiHeardRef } = usePttReceiver({
     channelIds: monitorRelayChannelIds,
     userId: user?.id,
-    enabled: !isAgoraEnabled(),
+    enabled: !agoraEnabled,
   });
 
-  const isLiveReceiving = targetLiveReceiving || multiLiveReceiving;
-  const heardBroadcastsRef = pttHeardRef;
+  const isLiveReceiving = agoraEnabled ? agoraMultiReceiving : multiLiveReceiving;
 
   // Per-channel PTT subscriptions — collection-wide queries fail Firestore rules for partial access
   useEffect(() => {
@@ -280,25 +294,35 @@ export default function Monitor() {
 
         const channelId = event.data.channel_id;
         if (event.type === "create") {
+          if (event.data?.broadcast_id) {
+            heardBroadcastsRef.current.add(event.data.broadcast_id);
+          }
           playClearTone();
           setBusyChannelIds((prev) => new Set(prev).add(channelId));
           setIsChannelBusy(true);
-          if (channelBusyTimeoutRef.current) clearTimeout(channelBusyTimeoutRef.current);
-          channelBusyTimeoutRef.current = setTimeout(() => {
-            setBusyChannelIds(new Set());
-            setIsChannelBusy(false);
-          }, 15000);
+          const prevTimeout = channelBusyTimeoutRef.current.get(channelId);
+          if (prevTimeout) clearTimeout(prevTimeout);
+          channelBusyTimeoutRef.current.set(channelId, setTimeout(() => {
+            channelBusyTimeoutRef.current.delete(channelId);
+            setBusyChannelIds((prev) => {
+              const next = new Set(prev);
+              next.delete(channelId);
+              setIsChannelBusy(next.size > 0);
+              return next;
+            });
+          }, 15000));
         } else if (event.type === "delete") {
+          const prevTimeout = channelBusyTimeoutRef.current.get(channelId);
+          if (prevTimeout) {
+            clearTimeout(prevTimeout);
+            channelBusyTimeoutRef.current.delete(channelId);
+          }
           setBusyChannelIds((prev) => {
             const next = new Set(prev);
             next.delete(channelId);
             setIsChannelBusy(next.size > 0);
             return next;
           });
-          if (channelBusyTimeoutRef.current) {
-            clearTimeout(channelBusyTimeoutRef.current);
-            channelBusyTimeoutRef.current = null;
-          }
         }
       },
       monitorChannelIds.map((channelId) => ({ channel_id: channelId }))
@@ -333,9 +357,10 @@ export default function Monitor() {
     return () => {
       window.removeEventListener("pagehide", handlePageExit);
       deleteOwnSignals();
-      if (channelBusyTimeoutRef.current) {
-        clearTimeout(channelBusyTimeoutRef.current);
+      for (const timeout of channelBusyTimeoutRef.current.values()) {
+        clearTimeout(timeout);
       }
+      channelBusyTimeoutRef.current.clear();
     };
   }, []);
 
@@ -371,39 +396,6 @@ export default function Monitor() {
     }
   });
 
-  // Auto-play queue processor (resolves private gs:// URLs like Talk page)
-  const processQueue = useCallback(() => {
-    if (isPlayingRef.current || autoPlayQueueRef.current.length === 0) return;
-    const next = autoPlayQueueRef.current.shift();
-    if (!next?.audio_url) {
-      processQueue();
-      return;
-    }
-    isPlayingRef.current = true;
-    setPlayingId(next.id);
-    setPlayingChannel(next.channel_id);
-
-    playAudioUrl(next.audio_url, {
-      onEnded: () => {
-        setPlayingId(null);
-        setPlayingChannel(null);
-        isPlayingRef.current = false;
-        setTimeout(processQueue, 300);
-      },
-      onError: () => {
-        setPlayingId(null);
-        setPlayingChannel(null);
-        isPlayingRef.current = false;
-        setTimeout(processQueue, 300);
-      },
-    }).catch(() => {
-      setPlayingId(null);
-      setPlayingChannel(null);
-      isPlayingRef.current = false;
-      setTimeout(processQueue, 300);
-    });
-  }, []);
-
   // Real-time subscription scoped to monitor channels
   useEffect(() => {
     if (!user?.id || monitorChannelIds.length === 0) return;
@@ -415,8 +407,12 @@ export default function Monitor() {
 
       if (event.type !== "create") return;
 
-      // Skip auto-play if already heard via live relay
-      if (event.data?.broadcast_id && heardBroadcastsRef.current.has(event.data.broadcast_id)) {
+      // Skip activity if already heard via live Agora/relay
+      if (event.data?.broadcast_id && (
+        heardBroadcastsRef.current.has(event.data.broadcast_id)
+        || pttHeardRef.current.has(event.data.broadcast_id)
+        || multiHeardRef.current.has(event.data.broadcast_id)
+      )) {
         return;
       }
 
@@ -428,11 +424,6 @@ export default function Monitor() {
           channelColor: channel?.color || "#f59e0b",
           ts: new Date(),
         }, ...prev].slice(0, 20));
-
-        if (autoPlay) {
-          autoPlayQueueRef.current.push(event.data);
-          processQueue();
-        }
       }
     };
 
@@ -441,7 +432,7 @@ export default function Monitor() {
       monitorChannelIds.map((channelId) => ({ channel_id: channelId }))
     );
     return unsub;
-  }, [monitorChannelIds, monitorChannels, autoPlay, user, queryClient, processQueue, heardBroadcastsRef]);
+  }, [monitorChannelIds, monitorChannels, user, queryClient, heardBroadcastsRef, pttHeardRef, multiHeardRef]);
 
   const handlePlayMessage = (msg) => {
     if (!msg.audio_url) return;
@@ -453,7 +444,6 @@ export default function Monitor() {
       return;
     }
     stopAudio();
-    autoPlayQueueRef.current = [];
     isPlayingRef.current = true;
     setPlayingId(msg.id);
     setPlayingChannel(msg.channel_id);
@@ -516,8 +506,8 @@ export default function Monitor() {
       const targetId = targetChannelIdRef.current;
 
       const targetIds = isBroadcastAll
-        ? monitorChannels.map(c => c.id)
-        : [targetId].filter(Boolean);
+        ? sendableChannelIdsRef.current
+        : [targetId].filter((id) => sendableChannelIdsRef.current.includes(id));
 
       const created = await Promise.all(targetIds.map(cid =>
         api.entities.VoiceMessage.create({
@@ -529,7 +519,7 @@ export default function Monitor() {
           is_transcribed: false,
           device_time: deviceTime,
           device_date: deviceDate,
-          broadcast_id: cid === targetId ? broadcast_id : undefined,
+          ...(cid === targetId && broadcast_id ? { broadcast_id } : {}),
         })
       ));
 
@@ -569,47 +559,84 @@ export default function Monitor() {
   });
 
   const isTargetChannelBusy = broadcastAll
-    ? busyChannelIds.size > 0
+    ? sendableChannelIds.some((id) => busyChannelIds.has(id))
     : Boolean(targetChannelId && busyChannelIds.has(targetChannelId));
 
   const handlePTTStart = useCallback(async () => {
-    if (isPTTPressed || !user?.id) return;
+    if (isPTTPressed || !user?.id || pttStartInFlightRef.current) return;
     if (isLiveReceiving || isTargetChannelBusy || isPlayingRef.current) {
       playBusyTone();
       return;
     }
-    playClearTone();
-    setIsPTTPressed(true);
+
+    const primaryChannelId = sendableChannelIds.includes(targetChannelIdRef.current)
+      ? targetChannelIdRef.current
+      : sendableChannelIds[0];
 
     const targetIds = broadcastAllRef.current
-      ? monitorChannels.map((c) => c.id)
-      : [targetChannelIdRef.current].filter(Boolean);
+      ? sendableChannelIds
+      : [primaryChannelId].filter(Boolean);
 
-    try {
-      const signals = await Promise.all(targetIds.map((cid) =>
-        api.entities.PTTSignal.create({
-          channel_id: cid,
-          sender_id: user.id,
-          sender_name: getDisplayName(user),
-        })
-      ));
-      pttSignalRefs.current = signals.map((s) => s.id);
-    } catch (e) {
-      console.error("PTT signal create failed:", e);
-      setIsPTTPressed(false);
-      toast.error("Could not claim channel — try again");
+    if (targetIds.length === 0) {
+      toast.error("No channels available to respond on");
       return;
     }
 
-    const started = await startRecording();
-    if (!started) {
-      setIsPTTPressed(false);
-      const ids = [...pttSignalRefs.current];
+    pttStartInFlightRef.current = true;
+    playClearTone();
+    setIsPTTPressed(true);
+
+    try {
+      if (pttSignalRefs.current.length) {
+        await releasePttSignals(pttSignalRefs.current);
+        pttSignalRefs.current = [];
+      }
+
+      await cleanupStalePTTSignals({
+        channelIds: targetIds,
+        excludeSenderId: user.id,
+      }).catch(() => {});
+
+      const broadcastId = crypto.randomUUID();
+      const started = await startRecording({ broadcastId, publishChannelIds: targetIds });
+      if (!started) {
+        setIsPTTPressed(false);
+        toast.error("Microphone access denied");
+        return;
+      }
+
+      const { signalIds } = await claimPttChannels({
+        channelIds: targetIds,
+        senderId: user.id,
+        senderName: getDisplayName(user),
+        broadcastId,
+        primaryChannelId,
+      });
+      pttSignalRefs.current = signalIds;
+      heardBroadcastsRef.current.add(broadcastId);
+    } catch (e) {
+      console.error("PTT signal create failed:", e);
+      await releasePttSignals(pttSignalRefs.current);
       pttSignalRefs.current = [];
-      ids.forEach((id) => api.entities.PTTSignal.delete(id).catch(() => {}));
-      toast.error("Microphone access denied");
+      setIsPTTPressed(false);
+      await stopRecording().catch(() => {});
+      toast.error(
+        e?.code === "permission-denied"
+          ? "Permission denied — cannot respond on one or more channels"
+          : "Could not claim channel — try again"
+      );
+    } finally {
+      pttStartInFlightRef.current = false;
     }
-  }, [isPTTPressed, isLiveReceiving, isTargetChannelBusy, startRecording, monitorChannels, user]);
+  }, [
+    isPTTPressed,
+    isLiveReceiving,
+    isTargetChannelBusy,
+    startRecording,
+    stopRecording,
+    sendableChannelIds,
+    user,
+  ]);
 
   const handlePTTStop = useCallback(() => {
     if (!isPTTPressed) return;
@@ -632,13 +659,13 @@ export default function Monitor() {
 
   const totalMessages = allMessages.length;
   const activeChannelCount = Object.values(messagesByChannel).filter(msgs => msgs.length > 0).length;
-  const showReceiving = (isLiveReceiving || !!playingId) && !isPTTPressed;
+  const showReceiving = isLiveReceiving && !isPTTPressed;
 
   return (
     <div className="min-h-screen safe-top">
       {/* Header */}
       <div className="px-4 pt-4 pb-4 border-b border-border sm:px-5 sm:pt-6">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-4">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-4 sm:pr-48">
           <div>
             <div className="flex items-center gap-2">
               <Eye className="w-5 h-5 text-primary" />
@@ -648,27 +675,6 @@ export default function Monitor() {
           </div>
           <div className="flex items-center gap-2 flex-wrap">
             <SetAllProtectionLevel onApply={handleSetAllProtectionLevel} />
-            <div className="flex items-center gap-2 bg-muted/50 rounded-xl px-3 py-2">
-              <Switch
-                id="autoplay"
-                aria-label="Toggle auto-play of incoming voice messages"
-                checked={autoPlay}
-                onCheckedChange={(v) => {
-                  setAutoPlay(v);
-                  if (!v) {
-                    stopAudio();
-                    setPlayingId(null);
-                    setPlayingChannel(null);
-                    isPlayingRef.current = false;
-                    autoPlayQueueRef.current = [];
-                  }
-                }}
-              />
-              <Label htmlFor="autoplay" className="text-xs font-medium cursor-pointer flex items-center gap-1">
-                {autoPlay ? <Volume2 className="w-3.5 h-3.5 text-primary" /> : <VolumeX className="w-3.5 h-3.5" />}
-                <span>Auto-play live audio</span>
-              </Label>
-            </div>
           </div>
         </div>
 
@@ -737,7 +743,6 @@ export default function Monitor() {
                           <ChannelMonitorCard
                             channel={channel}
                             messages={messagesByChannel[channel.id] || []}
-                            isAutoPlay={autoPlay}
                             onPlayMessage={handlePlayMessage}
                             playingId={playingId}
                             onSetProtectionLevel={handleSetProtectionLevel}

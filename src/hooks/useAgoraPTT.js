@@ -15,7 +15,7 @@ configureAgoraSdk();
 const RETRY_DELAYS_MS = [1000, 3000, 8000];
 const IDLE_LEAVE_MS = 30000;
 /** Debounce live-listen joins so rapid PTT on/off does not open/close Agora WS mid-handshake. */
-const JOIN_DEBOUNCE_MS = 1200;
+const JOIN_DEBOUNCE_MS = 400;
 
 function isExpectedJoinCancel(err) {
   const code = String(err?.code || "");
@@ -36,7 +36,7 @@ function markRemoteSpeaker(remoteSpeakerCountRef, setIsReceiving) {
 }
 
 function attachRemoteHandlers(client, joinGen, joinGenRef, uid, remoteSpeakerCountRef, setIsReceiving, onRemoteActivity) {
-  client.on("user-published", async (remoteUser, mediaType) => {
+  const onPublished = async (remoteUser, mediaType) => {
     if (joinGen !== joinGenRef.current) return;
     if (mediaType !== "audio") return;
     if (isSameAgoraUid(remoteUser.uid, uid)) return;
@@ -49,18 +49,23 @@ function attachRemoteHandlers(client, joinGen, joinGenRef, uid, remoteSpeakerCou
     } catch (err) {
       console.error("Agora subscribe failed:", err);
     }
-  });
+  };
 
-  client.on("user-unpublished", (_remoteUser, mediaType) => {
+  const onUnpublished = (_remoteUser, mediaType) => {
     if (mediaType !== "audio") return;
     remoteSpeakerCountRef.current = Math.max(0, remoteSpeakerCountRef.current - 1);
     if (remoteSpeakerCountRef.current === 0) setIsReceiving(false);
-  });
+  };
+
+  client.on("user-published", onPublished);
+  client.on("user-unpublished", onUnpublished);
+  return { onPublished, onUnpublished };
 }
 
-function detachRemoteHandlers(client) {
-  client.removeAllListeners("user-published");
-  client.removeAllListeners("user-unpublished");
+function detachRemoteHandlers(client, handlers) {
+  if (!client || !handlers) return;
+  client.off("user-published", handlers.onPublished);
+  client.off("user-unpublished", handlers.onUnpublished);
 }
 
 /**
@@ -72,6 +77,8 @@ export default function useAgoraPTT({
   channelId,
   userId,
   listenActive = false,
+  /** When false, only publish — remote audio is handled elsewhere (e.g. useAgoraMultiListen). */
+  receiveEnabled = listenActive,
 }) {
   const [isRecording, setIsRecording] = useState(false);
   const [isReceiving, setIsReceiving] = useState(false);
@@ -90,9 +97,12 @@ export default function useAgoraPTT({
   const joinPromiseRef = useRef(null);
   const idleLeaveTimerRef = useRef(null);
   const listenActiveRef = useRef(listenActive);
+  const receiveEnabledRef = useRef(receiveEnabled);
   const releaseConnectionRef = useRef(null);
+  const remoteHandlersRef = useRef(null);
 
   listenActiveRef.current = listenActive;
+  receiveEnabledRef.current = receiveEnabled;
 
   const paramsRef = useRef({ channelId, userId });
   paramsRef.current = { channelId, userId };
@@ -146,7 +156,10 @@ export default function useAgoraPTT({
 
     const client = clientRef.current;
     const key = sessionKeyRef.current;
-    if (client) detachRemoteHandlers(client);
+    if (client) {
+      detachRemoteHandlers(client, remoteHandlersRef.current);
+      remoteHandlersRef.current = null;
+    }
     clientRef.current = null;
     sessionKeyRef.current = null;
 
@@ -183,35 +196,40 @@ export default function useAgoraPTT({
         joinPromiseRef.current = null;
 
         if (joinGen !== joinGenRef.current) {
-          detachRemoteHandlers(client);
+          detachRemoteHandlers(client, remoteHandlersRef.current);
+          remoteHandlersRef.current = null;
           await releaseAgoraClient(key);
           sessionKeyRef.current = null;
           return null;
         }
 
-        attachRemoteHandlers(
-          client,
-          joinGen,
-          joinGenRef,
-          agoraUid,
-          remoteSpeakerCountRef,
-          setIsReceiving,
-          bumpRemoteActivity
-        );
+        if (receiveEnabledRef.current) {
+          remoteHandlersRef.current = attachRemoteHandlers(
+            client,
+            joinGen,
+            joinGenRef,
+            agoraUid,
+            remoteSpeakerCountRef,
+            setIsReceiving,
+            bumpRemoteActivity
+          );
+
+          await subscribeExistingRemoteUsers(client, agoraUid, () => {
+            markRemoteSpeaker(remoteSpeakerCountRef, setIsReceiving);
+            bumpRemoteActivity();
+          });
+
+          if (joinGen !== joinGenRef.current) {
+            detachRemoteHandlers(client, remoteHandlersRef.current);
+            remoteHandlersRef.current = null;
+            clientRef.current = null;
+            await releaseAgoraClient(key);
+            sessionKeyRef.current = null;
+            return null;
+          }
+        }
+
         clientRef.current = client;
-
-        await subscribeExistingRemoteUsers(client, agoraUid, () => {
-          markRemoteSpeaker(remoteSpeakerCountRef, setIsReceiving);
-          bumpRemoteActivity();
-        });
-
-        if (joinGen !== joinGenRef.current) {
-          detachRemoteHandlers(client);
-          clientRef.current = null;
-          await releaseAgoraClient(key);
-          sessionKeyRef.current = null;
-          return null;
-        }
 
         setIsChannelReady(true);
         scheduleIdleLeave();

@@ -2,6 +2,7 @@
 
 interface ImportMetaEnv {
   readonly VITE_AGORA_APP_ID?: string;
+  readonly VITE_RECAPTCHA_SITE_KEY?: string;
   readonly VITE_WEB_APP_URL?: string;
   readonly VITE_ADMIN_APP_URL?: string;
   readonly [key: string]: string | undefined;

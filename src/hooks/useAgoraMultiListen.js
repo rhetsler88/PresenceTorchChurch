@@ -23,9 +23,10 @@ function isExpectedJoinCancel(err) {
   );
 }
 
-function detachRemoteHandlers(client) {
-  client.removeAllListeners("user-published");
-  client.removeAllListeners("user-unpublished");
+function detachRemoteHandlers(client, handlers) {
+  if (!client || !handlers) return;
+  client.off("user-published", handlers.onPublished);
+  client.off("user-unpublished", handlers.onUnpublished);
 }
 
 /**
@@ -51,7 +52,7 @@ export default function useAgoraMultiListen({
 
     let cancelled = false;
     let effectGen = 0;
-    /** @type {Map<string, { client: import('agora-rtc-sdk-ng').IAgoraRTCClient, key: string }>} */
+    /** @type {Map<string, { client: import('agora-rtc-sdk-ng').IAgoraRTCClient, key: string, handlers: { onPublished: Function, onUnpublished: Function } }>} */
     const activeClients = new Map();
     /** @type {Map<string, { promise: Promise<import('agora-rtc-sdk-ng').IAgoraRTCClient>, key: string | null }>} */
     const pendingJoins = new Map();
@@ -62,7 +63,7 @@ export default function useAgoraMultiListen({
     };
 
     const attachRemoteHandlers = (client, channelId, uid) => {
-      client.on("user-published", async (remoteUser, mediaType) => {
+      const onPublished = async (remoteUser, mediaType) => {
         if (cancelled || !activeClients.has(channelId)) return;
         if (mediaType !== "audio") return;
         if (isSameAgoraUid(remoteUser.uid, uid)) return;
@@ -77,13 +78,17 @@ export default function useAgoraMultiListen({
         } catch (err) {
           console.error(`Agora subscribe failed for channel ${channelId}:`, err);
         }
-      });
+      };
 
-      client.on("user-unpublished", (_remoteUser, mediaType) => {
+      const onUnpublished = (_remoteUser, mediaType) => {
         if (mediaType !== "audio") return;
         remoteCountRef.current = Math.max(0, remoteCountRef.current - 1);
         syncRemoteReceiving();
-      });
+      };
+
+      client.on("user-published", onPublished);
+      client.on("user-unpublished", onUnpublished);
+      return { onPublished, onUnpublished };
     };
 
     const joinChannel = async (channelId, gen) => {
@@ -107,8 +112,8 @@ export default function useAgoraMultiListen({
           return;
         }
 
-        attachRemoteHandlers(client, channelId, uid);
-        activeClients.set(channelId, { client, key });
+        const handlers = attachRemoteHandlers(client, channelId, uid);
+        activeClients.set(channelId, { client, key, handlers });
         clientsRef.current = new Map([...activeClients].map(([id, entry]) => [id, entry.client]));
 
         await subscribeExistingRemoteUsers(client, uid, () => {
@@ -120,7 +125,7 @@ export default function useAgoraMultiListen({
         });
 
         if (cancelled || gen !== effectGen) {
-          detachRemoteHandlers(client);
+          detachRemoteHandlers(client, handlers);
           activeClients.delete(channelId);
           await releaseAgoraClient(key);
           return;
@@ -129,7 +134,8 @@ export default function useAgoraMultiListen({
         const pending = pendingJoins.get(channelId);
         pendingJoins.delete(channelId);
         if (client && key) {
-          detachRemoteHandlers(client);
+          const handlers = activeClients.get(channelId)?.handlers;
+          detachRemoteHandlers(client, handlers);
           await releaseAgoraClient(key).catch(() => {});
         } else if (pending?.key) {
           try {
@@ -163,7 +169,7 @@ export default function useAgoraMultiListen({
       const active = activeClients.get(channelId);
       if (active) {
         activeClients.delete(channelId);
-        detachRemoteHandlers(active.client);
+        detachRemoteHandlers(active.client, active.handlers);
         await releaseAgoraClient(active.key);
       }
     };
@@ -212,8 +218,8 @@ export default function useAgoraMultiListen({
         pendingJoins.clear();
 
         const leaveTasks = [];
-        for (const { client, key } of activeClients.values()) {
-          detachRemoteHandlers(client);
+        for (const { client, key, handlers } of activeClients.values()) {
+          detachRemoteHandlers(client, handlers);
           leaveTasks.push(releaseAgoraClient(key));
         }
         activeClients.clear();

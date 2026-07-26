@@ -11,7 +11,7 @@ import usePttReceiver from "../hooks/usePttReceiver";
 import { isAgoraEnabled } from "@/lib/agora";
 import useExternalPTT from "../hooks/useExternalPTT";
 import { playClearTone, playBusyTone, unlockAudioForPTT } from "@/lib/pttTones";
-import { cleanupStalePTTSignals } from "@/lib/pttSignals";
+import { cleanupStalePTTSignals, claimPttChannels, releasePttSignals } from "@/lib/pttSignals";
 import { playAudioUrl, stopAudio } from "@/lib/audioPlayer";
 import { deviceDayKey } from "@/lib/deviceDate";
 import {
@@ -51,6 +51,7 @@ export default function Talk() {
   const pttSessionUserRef = useRef(null);
   const channelBusyTimeoutRef = useRef(null);
   const receivingTimeoutRef = useRef(null);
+  const liveHeardBroadcastsRef = useRef(new Set());
 
   const urlParams = new URLSearchParams(window.location.search);
   const channelParam = urlParams.get("channel");
@@ -271,6 +272,7 @@ export default function Talk() {
           if (event.data?.broadcast_id && (
             heardBroadcastsRef.current.has(event.data.broadcast_id)
             || relayHeardRef.current.has(event.data.broadcast_id)
+            || liveHeardBroadcastsRef.current.has(event.data.broadcast_id)
           )) return;
           setPlayingId(event.data.id);
           setIsReceiving(true);
@@ -310,6 +312,10 @@ export default function Talk() {
       if (event.data?.sender_id === user.id) return;
 
       if (event.type === "create") {
+        if (event.data?.broadcast_id) {
+          liveHeardBroadcastsRef.current.add(event.data.broadcast_id);
+          heardBroadcastsRef.current.add(event.data.broadcast_id);
+        }
         playClearTone();
         setIsChannelBusy(true);
         if (channelBusyTimeoutRef.current) clearTimeout(channelBusyTimeoutRef.current);
@@ -569,7 +575,7 @@ export default function Talk() {
     ) {
       return;
     }
-    if (isReceiving || isLiveReceiving || isChannelBusy) {
+    if (isLiveReceiving || isChannelBusy) {
       playBusyTone();
       return;
     }
@@ -585,30 +591,41 @@ export default function Talk() {
 
     const startSequence = (async () => {
       let signalId = null;
+      const broadcastId = crypto.randomUUID();
       try {
-        const recordingPromise = startRecording();
-        const signalPromise = api.entities.PTTSignal.create({
-          channel_id: effectiveChannelId,
-          sender_id: user.id,
-          sender_name: getDisplayName(user),
-        });
-
-        const [started, signal] = await Promise.all([recordingPromise, signalPromise]);
-        signalId = signal.id;
-        pttSignalRef.current = signalId;
+        const started = await startRecording({ broadcastId });
 
         if (pttStopPendingRef.current) {
           if (started) {
             pttRecordingActiveRef.current = true;
-            return { pendingSend: true, signalId };
+            return { pendingSend: true, signalId: null };
           }
-          releasePttSignal(signalId);
           return { aborted: true };
         }
 
         if (!started) {
-          releasePttSignal(signalId);
           return { micDenied: true };
+        }
+
+        await cleanupStalePTTSignals({
+          channelId: effectiveChannelId,
+          excludeSenderId: user.id,
+        }).catch(() => {});
+
+        const { signalIds } = await claimPttChannels({
+          channelIds: [effectiveChannelId],
+          senderId: user.id,
+          senderName: getDisplayName(user),
+          broadcastId,
+          primaryChannelId: effectiveChannelId,
+        });
+        signalId = signalIds[0] ?? null;
+        pttSignalRef.current = signalId;
+        liveHeardBroadcastsRef.current.add(broadcastId);
+
+        if (pttStopPendingRef.current) {
+          pttRecordingActiveRef.current = true;
+          return { pendingSend: true, signalId };
         }
 
         pttRecordingActiveRef.current = true;
@@ -639,6 +656,7 @@ export default function Talk() {
 
     if (result.claimFailed) {
       console.error("PTT signal create failed:", result.error);
+      await releasePttSignals(result.signalId ? [result.signalId] : []);
       releasePttSignal(result.signalId);
       await stopRecording().catch(() => {});
       setIsPTTPressed(false);
@@ -649,6 +667,7 @@ export default function Talk() {
     }
 
     if (result.micDenied) {
+      await stopRecording().catch(() => {});
       setIsPTTPressed(false);
       toast.error("Microphone access denied — check browser permissions");
       return;
@@ -656,7 +675,6 @@ export default function Talk() {
   }, [
     activeChannel,
     isPTTPressed,
-    isReceiving,
     isLiveReceiving,
     isChannelBusy,
     startRecording,

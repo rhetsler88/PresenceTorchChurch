@@ -36,8 +36,29 @@ import seedData from "../../scripts/seed-data.json";
 import { isDefaultSetupComplete } from "@/lib/defaultSeed";
 import { markOAuthRedirectPending } from "@/lib/logoutOnClose";
 import { addUserChannelMembership } from "@/lib/channelMembership";
+import { clearDailyCodeSession } from "@/lib/dailyCode";
+import { clearBiometricCredentials } from "@/lib/biometricAuth";
 
 const functions = getFunctions(app, "us-east5");
+
+async function verifyRecaptchaToken(token) {
+  if (!token) {
+    throw Object.assign(new Error("Please complete the reCAPTCHA."), {
+      code: "auth/recaptcha-required",
+    });
+  }
+
+  const callable = httpsCallable(functions, "verifyRecaptcha");
+  try {
+    await callable({ token });
+  } catch (err) {
+    const message =
+      err?.message?.includes("reCAPTCHA")
+        ? err.message
+        : "reCAPTCHA verification failed. Please try again.";
+    throw Object.assign(new Error(message), { code: "auth/recaptcha-failed" });
+  }
+}
 
 /** Ensure Firestore requests run with a fresh auth token attached. */
 async function waitForFirestoreAuth({ forceRefresh = false } = {}) {
@@ -56,14 +77,34 @@ async function requireAuthUid({ forceRefresh = true } = {}) {
   return firebaseUser.uid;
 }
 
-async function addDocWithAuthRetry(collectionName, payload) {
-  try {
-    return await addDoc(collection(db, collectionName), payload);
-  } catch (err) {
-    if (err?.code !== "permission-denied") throw err;
-    await requireAuthUid({ forceRefresh: true });
-    return addDoc(collection(db, collectionName), payload);
+async function addDocWithAuthRetry(collectionName, payload, maxAttempts = 4) {
+  let lastErr;
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    try {
+      return await addDoc(collection(db, collectionName), payload);
+    } catch (err) {
+      lastErr = err;
+      const code = err?.code || "";
+      const retryable =
+        code === "permission-denied"
+        || code === "unavailable"
+        || code === "deadline-exceeded"
+        || code === "resource-exhausted"
+        || code === "aborted";
+      if (!retryable || attempt >= maxAttempts - 1) throw err;
+      if (code === "permission-denied") {
+        await requireAuthUid({ forceRefresh: true });
+      }
+      await new Promise((resolve) => setTimeout(resolve, 150 * (attempt + 1)));
+    }
   }
+  throw lastErr;
+}
+
+function omitUndefinedFields(data) {
+  return Object.fromEntries(
+    Object.entries(data).filter(([, value]) => value !== undefined)
+  );
 }
 
 export function formatAuthError(err) {
@@ -90,6 +131,10 @@ export function formatAuthError(err) {
       return "Pop-up was blocked. Allow pop-ups for this site, or try again.";
     case "auth/popup-closed-by-user":
       return "Sign-in was cancelled.";
+    case "auth/recaptcha-required":
+      return "Please complete the \"I'm not a robot\" check.";
+    case "auth/recaptcha-failed":
+      return "reCAPTCHA verification failed. Please try again.";
     default:
       return err?.message || "Something went wrong. Please try again.";
   }
@@ -222,7 +267,7 @@ function createEntityApi(collectionName) {
     async create(data) {
       const uid = await requireAuthUid();
       const payload = {
-        ...data,
+        ...omitUndefinedFields(data),
         created_by_id: uid,
         created_date: serverTimestamp(),
       };
@@ -464,6 +509,10 @@ export function getAuthErrorMessage(err) {
       return "Too many failed attempts. Please try again later.";
     case "auth/unauthorized-domain":
       return "This site is not authorized for sign-in yet. Add presencetorchchurch.vercel.app to Firebase Authentication → Settings → Authorized domains.";
+    case "auth/recaptcha-required":
+      return "Please complete the \"I'm not a robot\" check.";
+    case "auth/recaptcha-failed":
+      return "reCAPTCHA verification failed. Please try again.";
     default:
       return err?.message || "Sign-in failed. Please try again.";
   }
@@ -495,7 +544,24 @@ export const authApi = {
     }
   },
 
-  async redirectToLogin() {
+  async deleteAccount() {
+    await waitForFirestoreAuth({ forceRefresh: true });
+    const callable = httpsCallable(functions, "deleteUserAccount");
+    await callable({});
+    localStorage.removeItem("presence_login_time");
+    clearDailyCodeSession();
+    await clearBiometricCredentials();
+    try {
+      await signOut(auth);
+    } catch {
+      /* auth user may already be removed server-side */
+    }
+    window.location.href = "/";
+  },
+
+  async redirectToLogin(captchaToken) {
+    await verifyRecaptchaToken(captchaToken);
+
     if (Capacitor.isNativePlatform()) {
       const result = await FirebaseAuthentication.signInWithGoogle();
       const idToken = result.credential?.idToken;
@@ -527,11 +593,13 @@ export const authApi = {
     await signInWithRedirect(auth, provider);
   },
 
-  async signInWithEmail(email, password) {
+  async signInWithEmail(email, password, captchaToken) {
+    await verifyRecaptchaToken(captchaToken);
     await signInWithEmailAndPassword(auth, email.trim(), password);
   },
 
-  async signUpWithEmail(email, password) {
+  async signUpWithEmail(email, password, captchaToken) {
+    await verifyRecaptchaToken(captchaToken);
     await createUserWithEmailAndPassword(auth, email.trim(), password);
   },
 

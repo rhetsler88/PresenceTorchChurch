@@ -1,7 +1,12 @@
-import { initializeApp } from "firebase/app";
-import { getAuth } from "firebase/auth";
+import { initializeApp, getApp, getApps } from "firebase/app";
+import {
+  getAuth,
+  initializeAuth,
+  browserLocalPersistence,
+} from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
 import { getStorage } from "firebase/storage";
+import { Capacitor } from "@capacitor/core";
 
 const firebaseConfig = {
   apiKey: "AIzaSyCfhAWoGKj8E7Kx0hzqsuOLrExxnmal-Ws",
@@ -13,7 +18,21 @@ const firebaseConfig = {
   measurementId: "G-QNHVG4NRR7",
 };
 
-export const app = initializeApp(firebaseConfig);
-export const auth = getAuth(app);
+export const app = getApps().length ? getApp() : initializeApp(firebaseConfig);
+
+function createAuth() {
+  if (Capacitor.isNativePlatform()) {
+    try {
+      return initializeAuth(app, {
+        persistence: browserLocalPersistence,
+      });
+    } catch {
+      return getAuth(app);
+    }
+  }
+  return getAuth(app);
+}
+
+export const auth = createAuth();
 export const db = getFirestore(app);
 export const storage = getStorage(app);

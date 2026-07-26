@@ -2,6 +2,8 @@ package church.presencetorch.app;
 
 import android.os.Bundle;
 import android.view.KeyEvent;
+import android.webkit.CookieManager;
+import android.webkit.WebView;
 import com.getcapacitor.BridgeActivity;
 import com.getcapacitor.PluginHandle;
 
@@ -11,6 +13,31 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(BluetoothPermissionsPlugin.class);
         registerPlugin(HeadsetPTTPlugin.class);
         super.onCreate(savedInstanceState);
+        if (getBridge() != null && getBridge().getWebView() != null) {
+            getBridge().getWebView().post(this::enableWebViewForRecaptcha);
+        }
+    }
+
+    @Override
+    public void onResume() {
+        super.onResume();
+        if (getBridge() != null && getBridge().getWebView() != null) {
+            enableWebViewForRecaptcha();
+        }
+    }
+
+    private void enableWebViewForRecaptcha() {
+        WebView webView = getBridge().getWebView();
+        if (webView == null) {
+            return;
+        }
+
+        CookieManager cookieManager = CookieManager.getInstance();
+        cookieManager.setAcceptCookie(true);
+        cookieManager.setAcceptThirdPartyCookies(webView, true);
+
+        webView.getSettings().setJavaScriptEnabled(true);
+        webView.getSettings().setDomStorageEnabled(true);
     }
 
     @Override

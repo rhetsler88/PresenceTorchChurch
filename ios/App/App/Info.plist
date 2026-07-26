@@ -53,5 +53,16 @@
 	<string>Presence Torch uses Bluetooth to connect external push-to-talk buttons.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Presence Torch uses the microphone for push-to-talk and wired headset buttons.</string>
+	<key>NSFaceIDUsageDescription</key>
+	<string>Presence Torch uses Face ID for faster sign-in.</string>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>com.googleusercontent.apps.956501692008-v842mpcnv1r10gs8nj3r4j3h1lnmngop</string>
+			</array>
+		</dict>
+	</array>
 </dict>
 </plist>

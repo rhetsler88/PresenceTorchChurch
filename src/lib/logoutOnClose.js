@@ -1,4 +1,5 @@
 import { clearDailyCodeSession } from "@/lib/dailyCode";
+import { Capacitor } from "@capacitor/core";
 
 export const LOGIN_TIME_KEY = "presence_login_time";
 const CLOSE_LOGOUT_FLAG = "presence_logout_on_next_start";
@@ -53,6 +54,8 @@ export function consumeCloseLogoutFlag() {
  * Marks the tab session alive for the next navigation check.
  */
 export function shouldLogoutAfterClose() {
+  if (Capacitor.isNativePlatform()) return false;
+
   const isReload = isSameTabReload();
   markTabSessionAlive();
   if (isReload) {
@@ -69,6 +72,8 @@ export function shouldLogoutAfterClose() {
  * (Firebase signOut during pagehide breaks refresh persistence).
  */
 export function installCloseLogoutHandler() {
+  if (Capacitor.isNativePlatform()) return () => {};
+
   const handlePageHide = (event) => {
     // persisted = page entered back/forward cache; user may return without reopening
     if (event.persisted) return;

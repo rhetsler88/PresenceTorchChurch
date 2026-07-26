@@ -39,6 +39,9 @@ export default function AuthSignInPanel({ googleButtonLabel = "Sign in with Goog
     captchaRef.current?.reset();
   };
 
+  const isCaptchaError = (err) =>
+    err?.code === "auth/recaptcha-failed" || err?.code === "auth/recaptcha-required";
+
   useEffect(() => {
     if (!isBiometricPlatform()) return;
 
@@ -74,25 +77,29 @@ export default function AuthSignInPanel({ googleButtonLabel = "Sign in with Goog
       }
     } catch (err) {
       setError(getAuthErrorMessage(err));
-      resetCaptcha();
-    } finally {
+      if (isCaptchaError(err)) {
+        resetCaptcha();
+      }
       setSubmitting(false);
     }
   };
 
   const handleBiometricSignIn = async () => {
+    if (!captchaToken) {
+      setError('Please complete the "I\'m not a robot" check.');
+      return;
+    }
     setBiometricSigningIn(true);
     setError(null);
     try {
       const { email: savedEmail, password: savedPassword } = await signInWithBiometric();
-      await signInWithEmail(savedEmail, savedPassword);
+      await signInWithEmail(savedEmail, savedPassword, captchaToken);
     } catch (err) {
       if (err?.message?.includes("cancel") || err?.code === 10 || err?.code === 13) {
         setError(null);
       } else {
         setError(getAuthErrorMessage(err) || "Biometric sign-in failed.");
       }
-    } finally {
       setBiometricSigningIn(false);
     }
   };
@@ -108,17 +115,26 @@ export default function AuthSignInPanel({ googleButtonLabel = "Sign in with Goog
       await navigateToLogin(captchaToken);
     } catch (err) {
       setError(getAuthErrorMessage(err));
-      resetCaptcha();
-    } finally {
+      if (isCaptchaError(err)) {
+        resetCaptcha();
+      }
       setGoogleSigningIn(false);
     }
   };
 
-  const captchaComplete = Boolean(captchaToken);
   const busy = submitting || googleSigningIn || biometricSigningIn;
+  const canSubmit = !busy && Boolean(captchaToken);
 
   return (
-    <div className="space-y-4">
+    <div className="relative space-y-4">
+      {busy && (
+        <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 rounded-2xl bg-background/90 backdrop-blur-sm">
+          <div className="w-8 h-8 border-4 border-primary/20 border-t-primary rounded-full animate-spin" />
+          <p className="text-sm text-muted-foreground font-medium">
+            {googleSigningIn ? "Signing in with Google..." : "Signing in..."}
+          </p>
+        </div>
+      )}
       {showBiometricSignIn && (
         <>
           <Button
@@ -127,7 +143,7 @@ export default function AuthSignInPanel({ googleButtonLabel = "Sign in with Goog
             className="w-full"
             size="lg"
             onClick={handleBiometricSignIn}
-            disabled={busy}
+            disabled={!canSubmit}
           >
             <Fingerprint className="w-5 h-5 mr-2" />
             {biometricSigningIn ? "Signing in..." : `Sign in with ${biometricLabel}`}
@@ -181,7 +197,10 @@ export default function AuthSignInPanel({ googleButtonLabel = "Sign in with Goog
             autoComplete="email"
             placeholder="you@example.com"
             value={email}
-            onChange={(e) => setEmail(e.target.value)}
+            onChange={(e) => {
+              setEmail(e.target.value);
+              if (error) setError(null);
+            }}
             required
             disabled={busy}
           />
@@ -194,7 +213,10 @@ export default function AuthSignInPanel({ googleButtonLabel = "Sign in with Goog
             autoComplete={mode === "sign-in" ? "current-password" : "new-password"}
             placeholder={mode === "sign-in" ? "Your password" : "At least 6 characters"}
             value={password}
-            onChange={(e) => setPassword(e.target.value)}
+            onChange={(e) => {
+              setPassword(e.target.value);
+              if (error) setError(null);
+            }}
             required
             minLength={6}
             disabled={busy}
@@ -209,7 +231,7 @@ export default function AuthSignInPanel({ googleButtonLabel = "Sign in with Goog
           type="submit"
           className="w-full"
           size="lg"
-          disabled={busy || !captchaComplete}
+          disabled={!canSubmit}
         >
           {submitting
             ? mode === "sign-in"
@@ -248,7 +270,7 @@ export default function AuthSignInPanel({ googleButtonLabel = "Sign in with Goog
         className="w-full"
         size="lg"
         onClick={handleGoogleSignIn}
-        disabled={busy || !captchaComplete}
+        disabled={!canSubmit}
       >
         {googleSigningIn ? "Signing in..." : googleButtonLabel}
       </Button>

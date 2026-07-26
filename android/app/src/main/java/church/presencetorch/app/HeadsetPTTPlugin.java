@@ -2,7 +2,7 @@ package church.presencetorch.app;
 
 import android.content.Context;
 import android.media.AudioManager;
-import androidx.media.session.MediaSessionCompat;
+import android.support.v4.media.session.MediaSessionCompat;
 import android.view.KeyEvent;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;

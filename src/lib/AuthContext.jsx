@@ -1,5 +1,6 @@
 import React, { createContext, useState, useContext, useEffect, useRef, useCallback } from "react";
 import { onAuthStateChanged, getRedirectResult } from "firebase/auth";
+import { Capacitor } from "@capacitor/core";
 import { doc, getDoc, setDoc, collection, query, where, limit, getDocs } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase";
 import { authApi } from "@/api/client";
@@ -284,33 +285,29 @@ export const AuthProvider = ({ children }) => {
   useEffect(() => {
     let unsub = () => {};
     let cancelled = false;
+    let pendingCloseLogout = shouldLogoutAfterClose();
+    let authInitSettled = false;
+    let authHandling = false;
+    let listenerHasFired = false;
 
-    const initAuth = async () => {
-      setIsLoadingAuth(true);
-      let pendingCloseLogout = shouldLogoutAfterClose();
+    const settleAuthInit = () => {
+      authInitSettled = true;
+    };
+
+    const finishSignedOut = () => {
+      applySignedOut();
+      settleAuthInit();
+    };
+
+    const handleAuthUser = async (firebaseUser) => {
+      if (cancelled || authHandling) return;
+      authHandling = true;
 
       try {
-        const redirectResult = await getRedirectResult(auth);
-        if (redirectResult?.user) {
-          pendingCloseLogout = false;
+        if (firebaseUser) {
+          setIsLoadingAuth(true);
         }
-      } catch (error) {
-        console.error("Redirect sign-in failed:", error);
-        if (!cancelled) {
-          setAuthError({
-            type: "unknown",
-            message: formatAuthError(error),
-          });
-          setIsLoadingAuth(false);
-          setAuthChecked(true);
-        }
-      } finally {
-        clearOAuthRedirectPending();
-      }
 
-      if (cancelled) return;
-
-      unsub = onAuthStateChanged(auth, async (firebaseUser) => {
         if (pendingCloseLogout) {
           pendingCloseLogout = false;
           if (firebaseUser) {
@@ -319,52 +316,108 @@ export const AuthProvider = ({ children }) => {
             localStorage.removeItem(LOGIN_TIME_KEY);
             clearDailyCodeSession();
           }
-          applySignedOut();
+          finishSignedOut();
           return;
         }
 
         if (!firebaseUser) {
-          await teardownPushNotifications();
-          applySignedOut();
+          void teardownPushNotifications();
+          finishSignedOut();
           return;
         }
 
-        try {
-          if (isSessionExpired()) {
-            await expireSession();
-            applySignedOut();
-            setAuthError({ type: "auth_required", message: "Session expired" });
-            return;
-          }
-
-          const currentUser = await hydrateUserWithMembership(
-            firebaseUser,
-            await loadOrCreateUser(firebaseUser)
-          );
-
-          const loginTime = localStorage.getItem(LOGIN_TIME_KEY);
-          if (!loginTime) {
-            localStorage.setItem(LOGIN_TIME_KEY, Date.now().toString());
-          }
-
-          applyAuthenticatedUser(currentUser);
-          await refreshAuthCustomClaims(firebaseUser);
-          initPushNotifications(firebaseUser.uid, currentUser).catch((err) => {
-            console.error("Push notification init failed:", err);
-          });
-        } catch (error) {
-          console.error("Auth state error:", error);
-          setAuthError({ type: "unknown", message: error.message });
-          setIsLoadingAuth(false);
-          setAuthChecked(true);
+        if (isSessionExpired()) {
+          await expireSession();
+          applySignedOut();
+          setAuthError({ type: "auth_required", message: "Session expired" });
+          return;
         }
+
+        const currentUser = await hydrateUserWithMembership(
+          firebaseUser,
+          await loadOrCreateUser(firebaseUser)
+        );
+
+        const loginTime = localStorage.getItem(LOGIN_TIME_KEY);
+        if (!loginTime) {
+          localStorage.setItem(LOGIN_TIME_KEY, Date.now().toString());
+        }
+
+        applyAuthenticatedUser(currentUser);
+        void refreshAuthCustomClaims(firebaseUser);
+        void initPushNotifications(firebaseUser.uid, currentUser).catch((err) => {
+          console.error("Push notification init failed:", err);
+        });
+      } catch (error) {
+        console.error("Auth state error:", error);
+        setAuthError({ type: "unknown", message: error.message });
+        setIsLoadingAuth(false);
+        setAuthChecked(true);
+      } finally {
+        authHandling = false;
+        if (!authInitSettled) settleAuthInit();
+      }
+    };
+
+    const initAuth = async () => {
+      setIsLoadingAuth(true);
+
+      unsub = onAuthStateChanged(auth, (firebaseUser) => {
+        listenerHasFired = true;
+        void handleAuthUser(firebaseUser);
       });
+
+      if (!Capacitor.isNativePlatform()) {
+        try {
+          const redirectResult = await getRedirectResult(auth);
+          if (redirectResult?.user) {
+            pendingCloseLogout = false;
+          }
+        } catch (error) {
+          console.error("Redirect sign-in failed:", error);
+          if (!cancelled && !authInitSettled) {
+            setAuthError({
+              type: "unknown",
+              message: formatAuthError(error),
+            });
+            setIsLoadingAuth(false);
+            setAuthChecked(true);
+            settleAuthInit();
+          }
+        } finally {
+          clearOAuthRedirectPending();
+        }
+      } else {
+        clearOAuthRedirectPending();
+      }
+
+      // Fallback if Firebase never emits an initial auth state (shouldn't happen normally).
+      if (!cancelled && !listenerHasFired && !authInitSettled) {
+        try {
+          await Promise.race([
+            auth.authStateReady(),
+            new Promise((resolve) => setTimeout(resolve, 8000)),
+          ]);
+        } catch (error) {
+          console.warn("[Auth] authStateReady failed:", error);
+        }
+        if (!cancelled && !listenerHasFired && !authInitSettled) {
+          await handleAuthUser(auth.currentUser);
+        }
+      }
     };
 
     initAuth();
 
+    const timeoutId = window.setTimeout(() => {
+      if (cancelled || authInitSettled || authHandling || listenerHasFired) return;
+      console.warn("[Auth] Initialization timed out; showing sign-in.");
+      finishSignedOut();
+    }, 12000);
+
     return () => {
       cancelled = true;
+      window.clearTimeout(timeoutId);
       unsub();
     };
   }, []);

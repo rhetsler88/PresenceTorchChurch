@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CLIENT_ID</key>
+	<string>956501692008-v842mpcnv1r10gs8nj3r4j3h1lnmngop.apps.googleusercontent.com</string>
+	<key>REVERSED_CLIENT_ID</key>
+	<string>com.googleusercontent.apps.956501692008-v842mpcnv1r10gs8nj3r4j3h1lnmngop</string>
+	<key>ANDROID_CLIENT_ID</key>
+	<string>956501692008-fh42708a3a3papt7qc8r17qin01odqt1.apps.googleusercontent.com</string>
+	<key>API_KEY</key>
+	<string>AIzaSyCJ1nuf1nZkIJ9ggPL7T8qNT6tl26K-naI</string>
+	<key>GCM_SENDER_ID</key>
+	<string>956501692008</string>
+	<key>PLIST_VERSION</key>
+	<string>1</string>
+	<key>BUNDLE_ID</key>
+	<string>church.presencetorch.app</string>
+	<key>PROJECT_ID</key>
+	<string>presence-torch-church</string>
+	<key>STORAGE_BUCKET</key>
+	<string>presence-torch-church.firebasestorage.app</string>
+	<key>IS_ADS_ENABLED</key>
+	<false></false>
+	<key>IS_ANALYTICS_ENABLED</key>
+	<false></false>
+	<key>IS_APPINVITE_ENABLED</key>
+	<true></true>
+	<key>IS_GCM_ENABLED</key>
+	<true></true>
+	<key>IS_SIGNIN_ENABLED</key>
+	<true></true>
+	<key>GOOGLE_APP_ID</key>
+	<string>1:956501692008:ios:4f97dd786dc805afe335dd</string>
+</dict>
+</plist>

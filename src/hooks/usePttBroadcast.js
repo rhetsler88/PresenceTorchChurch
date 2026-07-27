@@ -11,9 +11,15 @@ import useAgoraMultiPublish from "./useAgoraMultiPublish";
  * Pass publishChannelIds with length > 1 to publish live audio on every channel (broadcast-all).
  */
 export default function usePttBroadcast(options) {
-  const { listenActive = false, receiveEnabled = listenActive, channelId, userId, userName } = options;
+  const {
+    listenActive = false,
+    receiveEnabled = listenActive,
+    channelId,
+    userId,
+    userName,
+    onRemoteLiveAudio,
+  } = options;
   const agoraEnabled = isAgoraEnabled();
-  const agora = useAgoraPTT({ channelId, userId, listenActive, receiveEnabled });
   const agoraMulti = useAgoraMultiPublish({ userId });
   const relay = useRelayBroadcast({ channelId, userId, userName });
   const usingAgoraRef = useRef(false);
@@ -42,6 +48,14 @@ export default function usePttBroadcast(options) {
     return archiveOk;
   }, [relay.startRecording]);
 
+  const agora = useAgoraPTT({
+    channelId,
+    userId,
+    listenActive,
+    receiveEnabled,
+    onRemoteLiveAudio,
+  });
+
   const startRecording = useCallback(async ({ broadcastId: externalBroadcastId, publishChannelIds } = {}) => {
     const publishIds = publishChannelIds?.filter(Boolean)
       ?? (channelId ? [channelId] : []);
@@ -49,23 +63,30 @@ export default function usePttBroadcast(options) {
 
     if (agoraEnabled && publishIds.length > 0) {
       let ok = false;
-      let stream = null;
 
       if (publishIds.length > 1) {
-        ok = await agoraMulti.startRecording({ broadcastId, channelIds: publishIds });
+        ok = await agoraMulti.startRecording({
+          broadcastId,
+          channelIds: publishIds,
+          onStreamReady: (readyStream) => {
+            void startArchiveRecording(readyStream, broadcastId);
+          },
+        });
         usingMultiPublishRef.current = ok;
-        stream = agoraMulti.getMediaStream();
       } else {
-        ok = await agora.startRecording({ broadcastId });
+        ok = await agora.startRecording({
+          broadcastId,
+          onStreamReady: (readyStream) => {
+            void startArchiveRecording(readyStream, broadcastId);
+          },
+        });
         usingMultiPublishRef.current = false;
-        stream = agora.getMediaStream();
       }
 
       if (ok) {
         usingAgoraRef.current = true;
         liveActiveRef.current = true;
         setIsTransmitting(true);
-        await startArchiveRecording(stream, broadcastId);
         return true;
       }
     }

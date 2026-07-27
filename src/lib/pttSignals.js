@@ -88,13 +88,18 @@ export async function claimPttChannels({
   const signals = [];
 
   try {
-    for (const channelId of ids) {
-      const signal = await createPttSignalWithRetry({
-        channel_id: channelId,
-        sender_id: senderId,
-        sender_name: senderName || "",
-        ...(channelId === primaryId && broadcastId ? { broadcast_id: broadcastId } : {}),
-      });
+    const results = await Promise.all(
+      ids.map(async (channelId) => {
+        const signal = await createPttSignalWithRetry({
+          channel_id: channelId,
+          sender_id: senderId,
+          sender_name: senderName || "",
+          ...(broadcastId ? { broadcast_id: broadcastId } : {}),
+        });
+        return { channelId, signal };
+      })
+    );
+    for (const { signal } of results) {
       createdIds.push(signal.id);
       signals.push(signal);
     }

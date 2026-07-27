@@ -35,7 +35,16 @@ function markRemoteSpeaker(remoteSpeakerCountRef, setIsReceiving) {
   playClearTone();
 }
 
-function attachRemoteHandlers(client, joinGen, joinGenRef, uid, remoteSpeakerCountRef, setIsReceiving, onRemoteActivity) {
+function attachRemoteHandlers(
+  client,
+  joinGen,
+  joinGenRef,
+  uid,
+  remoteSpeakerCountRef,
+  setIsReceiving,
+  onRemoteActivity,
+  onRemoteAudioStart,
+) {
   const onPublished = async (remoteUser, mediaType) => {
     if (joinGen !== joinGenRef.current) return;
     if (mediaType !== "audio") return;
@@ -45,6 +54,7 @@ function attachRemoteHandlers(client, joinGen, joinGenRef, uid, remoteSpeakerCou
       if (subscribed && joinGen === joinGenRef.current) {
         markRemoteSpeaker(remoteSpeakerCountRef, setIsReceiving);
         onRemoteActivity?.();
+        onRemoteAudioStart?.();
       }
     } catch (err) {
       console.error("Agora subscribe failed:", err);
@@ -79,6 +89,8 @@ export default function useAgoraPTT({
   listenActive = false,
   /** When false, only publish — remote audio is handled elsewhere (e.g. useAgoraMultiListen). */
   receiveEnabled = listenActive,
+  /** Called when remote live audio starts (used to mark broadcast heard for auto-play skip). */
+  onRemoteLiveAudio,
 }) {
   const [isRecording, setIsRecording] = useState(false);
   const [isReceiving, setIsReceiving] = useState(false);
@@ -98,11 +110,13 @@ export default function useAgoraPTT({
   const idleLeaveTimerRef = useRef(null);
   const listenActiveRef = useRef(listenActive);
   const receiveEnabledRef = useRef(receiveEnabled);
+  const onRemoteLiveAudioRef = useRef(onRemoteLiveAudio);
   const releaseConnectionRef = useRef(null);
   const remoteHandlersRef = useRef(null);
 
   listenActiveRef.current = listenActive;
   receiveEnabledRef.current = receiveEnabled;
+  onRemoteLiveAudioRef.current = onRemoteLiveAudio;
 
   const paramsRef = useRef({ channelId, userId });
   paramsRef.current = { channelId, userId };
@@ -127,6 +141,10 @@ export default function useAgoraPTT({
     clearIdleLeaveTimer();
     scheduleIdleLeave();
   }, [clearIdleLeaveTimer, scheduleIdleLeave]);
+
+  const notifyRemoteLiveAudio = useCallback(() => {
+    onRemoteLiveAudioRef.current?.();
+  }, []);
 
   const releaseConnection = useCallback(async () => {
     clearIdleLeaveTimer();
@@ -211,12 +229,14 @@ export default function useAgoraPTT({
             agoraUid,
             remoteSpeakerCountRef,
             setIsReceiving,
-            bumpRemoteActivity
+            bumpRemoteActivity,
+            notifyRemoteLiveAudio,
           );
 
           await subscribeExistingRemoteUsers(client, agoraUid, () => {
             markRemoteSpeaker(remoteSpeakerCountRef, setIsReceiving);
             bumpRemoteActivity();
+            notifyRemoteLiveAudio();
           });
 
           if (joinGen !== joinGenRef.current) {
@@ -262,7 +282,7 @@ export default function useAgoraPTT({
     const joinTask = attemptJoin(retryIndex);
     joinPromiseRef.current = joinTask;
     return joinTask;
-  }, [bumpRemoteActivity, clearIdleLeaveTimer, scheduleIdleLeave]);
+  }, [bumpRemoteActivity, clearIdleLeaveTimer, notifyRemoteLiveAudio, scheduleIdleLeave]);
 
   useEffect(() => {
     if (!channelId || !userId) {
@@ -295,22 +315,11 @@ export default function useAgoraPTT({
     clearIdleLeaveTimer();
   }, [clearIdleLeaveTimer]);
 
-  const startRecording = useCallback(async ({ broadcastId } = {}) => {
+  const startRecording = useCallback(async ({ broadcastId, onStreamReady } = {}) => {
     const { channelId: cid, userId: uid } = paramsRef.current;
     if (!cid || !uid || activeRef.current) return Boolean(activeRef.current);
 
     clearIdleLeaveTimer();
-    let client = clientRef.current;
-    if (!client) {
-      client = await ensureJoined();
-    }
-    if (!client && joinPromiseRef.current) {
-      client = await joinPromiseRef.current;
-    }
-    if (!client) {
-      console.error("Agora client not ready — join failed or still connecting");
-      return false;
-    }
 
     try {
       broadcastIdRef.current = broadcastId || crypto.randomUUID();
@@ -325,6 +334,21 @@ export default function useAgoraPTT({
         },
       });
       streamRef.current = stream;
+      onStreamReady?.(stream);
+
+      let client = clientRef.current;
+      if (!client) {
+        client = await ensureJoined();
+      }
+      if (!client && joinPromiseRef.current) {
+        client = await joinPromiseRef.current;
+      }
+      if (!client) {
+        console.error("Agora client not ready — join failed or still connecting");
+        stream.getTracks().forEach((track) => track.stop());
+        streamRef.current = null;
+        return false;
+      }
 
       const localTrack = await AgoraRTC.createCustomAudioTrack({
         mediaStreamTrack: stream.getAudioTracks()[0],
@@ -338,8 +362,9 @@ export default function useAgoraPTT({
       return true;
     } catch (err) {
       console.error("Agora publish failed:", err);
+      const client = clientRef.current;
       if (localAudioTrackRef.current) {
-        await client.unpublish([localAudioTrackRef.current]).catch(() => {});
+        await client?.unpublish([localAudioTrackRef.current]).catch(() => {});
         localAudioTrackRef.current.stop();
         localAudioTrackRef.current.close();
         localAudioTrackRef.current = null;

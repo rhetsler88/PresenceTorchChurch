@@ -519,7 +519,7 @@ export default function Monitor() {
           is_transcribed: false,
           device_time: deviceTime,
           device_date: deviceDate,
-          ...(cid === targetId && broadcast_id ? { broadcast_id } : {}),
+          ...(broadcast_id ? { broadcast_id } : {}),
         })
       ));
 
@@ -598,6 +598,7 @@ export default function Monitor() {
       }).catch(() => {});
 
       const broadcastId = crypto.randomUUID();
+
       const started = await startRecording({ broadcastId, publishChannelIds: targetIds });
       if (!started) {
         setIsPTTPressed(false);
@@ -605,26 +606,35 @@ export default function Monitor() {
         return;
       }
 
-      const { signalIds } = await claimPttChannels({
-        channelIds: targetIds,
-        senderId: user.id,
-        senderName: getDisplayName(user),
-        broadcastId,
-        primaryChannelId,
-      });
-      pttSignalRefs.current = signalIds;
       heardBroadcastsRef.current.add(broadcastId);
+
+      // Claim channels after live mic is open — do not block transmission on Firestore writes.
+      try {
+        const { signalIds } = await claimPttChannels({
+          channelIds: targetIds,
+          senderId: user.id,
+          senderName: getDisplayName(user),
+          broadcastId,
+          primaryChannelId,
+        });
+        pttSignalRefs.current = signalIds;
+      } catch (e) {
+        console.error("PTT signal create failed:", e);
+        await releasePttSignals(pttSignalRefs.current);
+        pttSignalRefs.current = [];
+        setIsPTTPressed(false);
+        await stopRecording().catch(() => {});
+        toast.error(
+          e?.code === "permission-denied"
+            ? "Permission denied — cannot respond on one or more channels"
+            : "Could not claim channel — try again"
+        );
+      }
     } catch (e) {
-      console.error("PTT signal create failed:", e);
-      await releasePttSignals(pttSignalRefs.current);
-      pttSignalRefs.current = [];
+      console.error("PTT start failed:", e);
       setIsPTTPressed(false);
       await stopRecording().catch(() => {});
-      toast.error(
-        e?.code === "permission-denied"
-          ? "Permission denied — cannot respond on one or more channels"
-          : "Could not claim channel — try again"
-      );
+      toast.error("Could not start broadcast");
     } finally {
       pttStartInFlightRef.current = false;
     }

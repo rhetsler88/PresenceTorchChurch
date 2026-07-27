@@ -1,3 +1,10 @@
+/**
+ * Session policy (web):
+ * - Auto sign-out 48 hours after login (SESSION_MAX_MS).
+ * - Sign out when the browser tab/window is closed (next launch only).
+ * - Tab refresh keeps the session; switching tabs or backgrounding does not sign out.
+ * - Native apps skip tab-close logout; 48-hour limit still applies.
+ */
 import { clearDailyCodeSession } from "@/lib/dailyCode";
 import { Capacitor } from "@capacitor/core";
 
@@ -5,6 +12,36 @@ export const LOGIN_TIME_KEY = "presence_login_time";
 const CLOSE_LOGOUT_FLAG = "presence_logout_on_next_start";
 const OAUTH_REDIRECT_KEY = "presence_oauth_redirect";
 const TAB_SESSION_KEY = "ptc_tab_session";
+
+/** Maximum session length from login (48 hours). */
+export const SESSION_MAX_MS = 48 * 60 * 60 * 1000;
+
+export function recordLoginTime() {
+  localStorage.setItem(LOGIN_TIME_KEY, Date.now().toString());
+}
+
+export function clearLoginTime() {
+  localStorage.removeItem(LOGIN_TIME_KEY);
+}
+
+export function getLoginTime() {
+  const raw = localStorage.getItem(LOGIN_TIME_KEY);
+  if (!raw) return null;
+  const ts = parseInt(raw, 10);
+  return Number.isFinite(ts) ? ts : null;
+}
+
+export function isSessionExpired() {
+  const loginTime = getLoginTime();
+  if (!loginTime) return false;
+  return Date.now() - loginTime >= SESSION_MAX_MS;
+}
+
+export function getSessionRemainingMs() {
+  const loginTime = getLoginTime();
+  if (!loginTime) return null;
+  return SESSION_MAX_MS - (Date.now() - loginTime);
+}
 
 /** Set before signInWithRedirect navigates away so pagehide does not force sign-out. */
 export function markOAuthRedirectPending() {
@@ -38,7 +75,7 @@ export function markTabSessionAlive() {
 
 /** Sync markers so the next app launch forces sign-out even if async logout is cut off. */
 export function markLogoutOnClose() {
-  localStorage.removeItem(LOGIN_TIME_KEY);
+  clearLoginTime();
   clearDailyCodeSession();
   localStorage.setItem(CLOSE_LOGOUT_FLAG, "1");
 }

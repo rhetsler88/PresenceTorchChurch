@@ -7,19 +7,20 @@ import { authApi } from "@/api/client";
 import { initPushNotifications, teardownPushNotifications } from "@/lib/pushNotifications";
 import { clearDailyCodeSession } from "@/lib/dailyCode";
 import {
-  LOGIN_TIME_KEY,
   clearOAuthRedirectPending,
   installCloseLogoutHandler,
   shouldLogoutAfterClose,
+  isSessionExpired,
+  recordLoginTime,
+  clearLoginTime,
+  getLoginTime,
+  SESSION_MAX_MS,
 } from "@/lib/logoutOnClose";
 import { formatAuthError } from "@/api/client";
 import { syncUserChannelMembership } from "@/lib/channelMembership";
 
 const AuthContext = createContext(null);
 
-const AUTO_LOGOUT_MS = 88 * 60 * 60 * 1000;
-
-/** Trigger syncUserAuthClaims (Cloud Function on users/{uid} writes) and refresh token. */
 async function refreshAuthCustomClaims(firebaseUser) {
   try {
     await setDoc(
@@ -52,14 +53,8 @@ async function hydrateUserWithMembership(firebaseUser, currentUser) {
   }
 }
 
-function isSessionExpired() {
-  const loginTime = localStorage.getItem(LOGIN_TIME_KEY);
-  if (!loginTime) return false;
-  return Date.now() - parseInt(loginTime, 10) >= AUTO_LOGOUT_MS;
-}
-
 async function expireSession() {
-  localStorage.removeItem(LOGIN_TIME_KEY);
+  clearLoginTime();
   clearDailyCodeSession();
   await authApi.logout();
 }
@@ -221,7 +216,7 @@ export const AuthProvider = ({ children }) => {
         return;
       }
 
-      const loginTime = localStorage.getItem(LOGIN_TIME_KEY);
+      const loginTime = getLoginTime();
       if (loginTime) {
         if (isSessionExpired()) {
           await expireSession();
@@ -230,7 +225,7 @@ export const AuthProvider = ({ children }) => {
           return;
         }
       } else {
-        localStorage.setItem(LOGIN_TIME_KEY, Date.now().toString());
+        recordLoginTime();
       }
 
       const profile = await loadOrCreateUser(firebaseUser);
@@ -313,7 +308,7 @@ export const AuthProvider = ({ children }) => {
           if (firebaseUser) {
             await expireSession();
           } else {
-            localStorage.removeItem(LOGIN_TIME_KEY);
+            clearLoginTime();
             clearDailyCodeSession();
           }
           finishSignedOut();
@@ -338,9 +333,8 @@ export const AuthProvider = ({ children }) => {
           await loadOrCreateUser(firebaseUser)
         );
 
-        const loginTime = localStorage.getItem(LOGIN_TIME_KEY);
-        if (!loginTime) {
-          localStorage.setItem(LOGIN_TIME_KEY, Date.now().toString());
+        if (!getLoginTime()) {
+          recordLoginTime();
         }
 
         applyAuthenticatedUser(currentUser);
@@ -372,6 +366,7 @@ export const AuthProvider = ({ children }) => {
           const redirectResult = await getRedirectResult(auth);
           if (redirectResult?.user) {
             pendingCloseLogout = false;
+            recordLoginTime();
           }
         } catch (error) {
           console.error("Redirect sign-in failed:", error);
@@ -423,10 +418,10 @@ export const AuthProvider = ({ children }) => {
   }, []);
 
   useEffect(() => {
-    const loginTime = localStorage.getItem(LOGIN_TIME_KEY);
+    const loginTime = getLoginTime();
     if (!loginTime || !isAuthenticated) return;
 
-    const remaining = AUTO_LOGOUT_MS - (Date.now() - parseInt(loginTime, 10));
+    const remaining = SESSION_MAX_MS - (Date.now() - loginTime);
     if (remaining <= 0) {
       expireSession().then(() => {
         applySignedOut();
@@ -439,7 +434,6 @@ export const AuthProvider = ({ children }) => {
       expireSession().then(() => {
         applySignedOut();
         setAuthError({ type: "auth_required", message: "Session expired" });
-        window.location.href = "/";
       });
     }, remaining);
 
@@ -454,7 +448,7 @@ export const AuthProvider = ({ children }) => {
   const logout = async (shouldRedirect = true) => {
     setUser(null);
     setIsAuthenticated(false);
-    localStorage.removeItem(LOGIN_TIME_KEY);
+    clearLoginTime();
     clearDailyCodeSession();
     await authApi.logout(shouldRedirect ? window.location.href : undefined);
   };

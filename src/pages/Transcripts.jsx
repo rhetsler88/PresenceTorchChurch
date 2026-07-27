@@ -7,24 +7,24 @@ import { Button } from "@/components/ui/button";
 import { etzDayKey, etzFullTimestamp, etzMediumTimestamp } from "@/lib/etz";
 
 const ETZ = 'America/New_York';
-import { getDisplayName, getReadableVoiceChannels } from "@/lib/userUtils";
+import { getDisplayName, getReadableVoiceChannels, isPlatformAdmin } from "@/lib/userUtils";
 import { toast } from "sonner";
 import DayGroup from "@/components/transcripts/DayGroup";
 
 export default function Transcripts() {
   const [search, setSearch] = useState("");
-  const [canExport, setCanExport] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const queryClient = useQueryClient();
-
-  useEffect(() => {
-    api.auth.me().then(u => setCanExport(u?.role === "admin" || u?.role === "director")).catch(() => {});
-  }, []);
 
   const { data: user } = useQuery({
     queryKey: ["me"],
     queryFn: () => api.auth.me(),
   });
+
+  const canExport = useMemo(
+    () => Boolean(user && (isPlatformAdmin(user) || user.role === "director")),
+    [user]
+  );
 
   const { data: channels = [] } = useQuery({
     queryKey: ["channels"],
@@ -162,12 +162,11 @@ export default function Transcripts() {
             <Button
               size="sm"
               onClick={handleExportToGoogleDoc}
-              className="gap-1.5"
+              className="gap-1.5 sm:mr-48 mr-12"
               disabled={filtered.length === 0 || isExporting}
             >
               <FileUp className="w-4 h-4" />
-              <span className="hidden sm:inline">{isExporting ? "Preparing..." : "Export to Google Doc"}</span>
-              <span className="sm:hidden">{isExporting ? "..." : "Export"}</span>
+              <span>{isExporting ? "Preparing..." : "Export to Google Doc"}</span>
             </Button>
           )}
         </div>

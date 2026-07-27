@@ -34,7 +34,7 @@ import { uploadPublicAudio, uploadPrivateAudio } from "@/api/storage";
 import { getDownloadURL, ref } from "firebase/storage";
 import seedData from "../../scripts/seed-data.json";
 import { isDefaultSetupComplete } from "@/lib/defaultSeed";
-import { markOAuthRedirectPending } from "@/lib/logoutOnClose";
+import { markOAuthRedirectPending, recordLoginTime, clearLoginTime } from "@/lib/logoutOnClose";
 import { addUserChannelMembership } from "@/lib/channelMembership";
 import { clearDailyCodeSession } from "@/lib/dailyCode";
 import { clearBiometricCredentials } from "@/lib/biometricAuth";
@@ -537,7 +537,7 @@ export const authApi = {
   },
 
   async logout(redirectUrl) {
-    localStorage.removeItem("presence_login_time");
+    clearLoginTime();
     await signOut(auth);
     if (redirectUrl) {
       window.location.href = "/";
@@ -548,7 +548,7 @@ export const authApi = {
     await waitForFirestoreAuth({ forceRefresh: true });
     const callable = httpsCallable(functions, "deleteUserAccount");
     await callable({});
-    localStorage.removeItem("presence_login_time");
+    clearLoginTime();
     clearDailyCodeSession();
     await clearBiometricCredentials();
     try {
@@ -573,6 +573,7 @@ export const authApi = {
         result.credential?.accessToken ?? undefined,
       );
       await signInWithCredential(auth, credential);
+      recordLoginTime();
       return;
     }
 
@@ -580,6 +581,7 @@ export const authApi = {
 
     try {
       await signInWithPopup(auth, provider);
+      recordLoginTime();
       return;
     } catch (err) {
       const useRedirect =
@@ -596,11 +598,13 @@ export const authApi = {
   async signInWithEmail(email, password, captchaToken) {
     await verifyRecaptchaToken(captchaToken);
     await signInWithEmailAndPassword(auth, email.trim(), password);
+    recordLoginTime();
   },
 
   async signUpWithEmail(email, password, captchaToken) {
     await verifyRecaptchaToken(captchaToken);
     await createUserWithEmailAndPassword(auth, email.trim(), password);
+    recordLoginTime();
   },
 
   async registerWithEmail({ email, password, firstName = "", lastName = "" }) {
@@ -631,6 +635,7 @@ export const authApi = {
       { merge: true }
     );
 
+    recordLoginTime();
     return cred.user;
   },
 

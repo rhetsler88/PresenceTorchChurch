@@ -45,7 +45,40 @@ export default function useAgoraMultiPublish({ userId }) {
     }
   }, []);
 
-  const startRecording = useCallback(async ({ broadcastId, channelIds = [] } = {}) => {
+  const publishToChannel = useCallback(async (channelId, stream, cloneStream) => {
+    const uid = paramsRef.current.userId;
+    const { appId, token, channelName, uid: agoraUid } = await fetchAgoraCredentials(channelId, uid);
+    if (!appId || !token) throw new Error("Missing Agora credentials");
+
+    const key = sessionKey(channelName, agoraUid);
+    const client = await acquireAgoraClient(key, async (pendingClient) => {
+      await pendingClient.join(appId, channelName, token, agoraUid);
+    });
+
+    let publishStream = stream;
+    if (cloneStream) {
+      try {
+        publishStream = stream.clone();
+      } catch {
+        publishStream = stream;
+      }
+    }
+
+    const localTrack = await AgoraRTC.createCustomAudioTrack({
+      mediaStreamTrack: publishStream.getAudioTracks()[0],
+      encoderConfig: "speech_standard",
+    });
+
+    await client.publish([localTrack]);
+    sessionsRef.current.set(channelId, {
+      key,
+      client,
+      track: localTrack,
+      publishStream: publishStream !== stream ? publishStream : null,
+    });
+  }, []);
+
+  const startRecording = useCallback(async ({ broadcastId, channelIds = [], onStreamReady } = {}) => {
     const uid = paramsRef.current.userId;
     const ids = [...new Set(channelIds.filter(Boolean))];
     if (!uid || ids.length === 0 || activeRef.current) return Boolean(activeRef.current);
@@ -62,42 +95,19 @@ export default function useAgoraMultiPublish({ userId }) {
         },
       });
       streamRef.current = stream;
-
-      for (let i = 0; i < ids.length; i++) {
-        const channelId = ids[i];
-        const { appId, token, channelName, uid: agoraUid } = await fetchAgoraCredentials(channelId, uid);
-        if (!appId || !token) throw new Error("Missing Agora credentials");
-
-        const key = sessionKey(channelName, agoraUid);
-        const client = await acquireAgoraClient(key, async (pendingClient) => {
-          await pendingClient.join(appId, channelName, token, agoraUid);
-        });
-
-        let publishStream = stream;
-        if (i > 0) {
-          try {
-            publishStream = stream.clone();
-          } catch {
-            publishStream = stream;
-          }
-        }
-
-        const localTrack = await AgoraRTC.createCustomAudioTrack({
-          mediaStreamTrack: publishStream.getAudioTracks()[0],
-          encoderConfig: "speech_standard",
-        });
-
-        await client.publish([localTrack]);
-        sessionsRef.current.set(channelId, {
-          key,
-          client,
-          track: localTrack,
-          publishStream: publishStream !== stream ? publishStream : null,
-        });
-      }
-
       activeRef.current = true;
       setIsRecording(true);
+      onStreamReady?.(stream);
+
+      void Promise.all(
+        ids.map((channelId, index) => publishToChannel(channelId, stream, index > 0))
+      ).catch(async (err) => {
+        console.error("Agora multi-publish failed:", err);
+        activeRef.current = false;
+        setIsRecording(false);
+        await teardownSessions({ stopStream: true });
+      });
+
       return true;
     } catch (err) {
       console.error("Agora multi-publish failed:", err);
@@ -106,7 +116,7 @@ export default function useAgoraMultiPublish({ userId }) {
       await teardownSessions({ stopStream: true });
       return false;
     }
-  }, [teardownSessions]);
+  }, [publishToChannel, teardownSessions]);
 
   const stopRecording = useCallback(async ({ stopStream = true } = {}) => {
     if (!activeRef.current && sessionsRef.current.size === 0) return;

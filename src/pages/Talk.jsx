@@ -52,6 +52,10 @@ export default function Talk() {
   const channelBusyTimeoutRef = useRef(null);
   const receivingTimeoutRef = useRef(null);
   const liveHeardBroadcastsRef = useRef(new Set());
+  /** Active monitor/PTT broadcast on this channel (from PTT signal, not yet heard). */
+  const activeLiveBroadcastRef = useRef(null);
+  const lastLiveAudioAtRef = useRef(0);
+  const activeBroadcastClearTimerRef = useRef(null);
 
   const urlParams = new URLSearchParams(window.location.search);
   const channelParam = urlParams.get("channel");
@@ -134,17 +138,35 @@ export default function Talk() {
   // Agora: stay joined on the active channel for instant live PTT (skip while self-transmitting).
   const agoraListenActive = Boolean(effectiveChannelId && !isPTTPressed);
 
+  const onRemoteLiveAudio = useCallback(() => {
+    lastLiveAudioAtRef.current = Date.now();
+    const bId = activeLiveBroadcastRef.current;
+    if (bId) {
+      liveHeardBroadcastsRef.current.add(bId);
+      return;
+    }
+    if (!effectiveChannelId || !user?.id) return;
+    void cleanupStalePTTSignals({ channelId: effectiveChannelId, excludeSenderId: user.id, limit: 5 })
+      .then((active) => {
+        const match = active.find((signal) => signal.broadcast_id);
+        if (!match?.broadcast_id) return;
+        activeLiveBroadcastRef.current = match.broadcast_id;
+        liveHeardBroadcastsRef.current.add(match.broadcast_id);
+      })
+      .catch(() => {});
+  }, [effectiveChannelId, user?.id]);
+
   const {
     startRecording,
     stopRecording,
     stopLiveTransmit,
     isLiveReceiving: agoraLiveReceiving,
-    heardBroadcastsRef,
   } = usePttBroadcast({
     channelId: effectiveChannelId,
     userId: user?.id,
     userName: user ? getDisplayName(user) : "",
     listenActive: agoraListenActive,
+    onRemoteLiveAudio,
   });
 
   const agoraLive = isAgoraEnabled();
@@ -155,6 +177,33 @@ export default function Talk() {
   });
 
   const isLiveReceiving = agoraLive ? agoraLiveReceiving : storageLiveReceiving;
+
+  const shouldSkipBroadcastAutoPlay = useCallback((broadcastId) => {
+    if (!broadcastId) return false;
+    if (liveHeardBroadcastsRef.current.has(broadcastId)) return true;
+    if (relayHeardRef.current.has(broadcastId)) return true;
+    if (
+      activeLiveBroadcastRef.current === broadcastId
+      && Date.now() - lastLiveAudioAtRef.current < 20000
+    ) {
+      liveHeardBroadcastsRef.current.add(broadcastId);
+      return true;
+    }
+    return false;
+  }, [relayHeardRef]);
+
+  useEffect(() => {
+    if (isLiveReceiving) lastLiveAudioAtRef.current = Date.now();
+  }, [isLiveReceiving]);
+
+  // Reset live-broadcast tracking when switching channels
+  useEffect(() => {
+    activeLiveBroadcastRef.current = null;
+    if (activeBroadcastClearTimerRef.current) {
+      clearTimeout(activeBroadcastClearTimerRef.current);
+      activeBroadcastClearTimerRef.current = null;
+    }
+  }, [effectiveChannelId]);
 
   // Auto-select channel from URL param, last selected, or first approved channel
   useEffect(() => {
@@ -268,12 +317,7 @@ export default function Talk() {
 
         // Auto-play incoming voice messages from other users
         if (event.type === "create" && event.data?.audio_url && event.data?.created_by_id !== user.id) {
-          // Skip auto-play if already heard via live relay
-          if (event.data?.broadcast_id && (
-            heardBroadcastsRef.current.has(event.data.broadcast_id)
-            || relayHeardRef.current.has(event.data.broadcast_id)
-            || liveHeardBroadcastsRef.current.has(event.data.broadcast_id)
-          )) return;
+          if (shouldSkipBroadcastAutoPlay(event.data?.broadcast_id)) return;
           setPlayingId(event.data.id);
           setIsReceiving(true);
           if (receivingTimeoutRef.current) clearTimeout(receivingTimeoutRef.current);
@@ -302,7 +346,7 @@ export default function Talk() {
       { channel_id: effectiveChannelId }
     );
     return unsub;
-  }, [effectiveChannelId, canReadMessages, canQueryFirestore, queryClient, user, heardBroadcastsRef, relayHeardRef, mergeChannelMessage]);
+  }, [effectiveChannelId, canReadMessages, canQueryFirestore, queryClient, user, mergeChannelMessage, shouldSkipBroadcastAutoPlay]);
 
   // Subscribe to PTT signals — broadcast beeps to all channel members
   useEffect(() => {
@@ -313,8 +357,11 @@ export default function Talk() {
 
       if (event.type === "create") {
         if (event.data?.broadcast_id) {
-          liveHeardBroadcastsRef.current.add(event.data.broadcast_id);
-          heardBroadcastsRef.current.add(event.data.broadcast_id);
+          activeLiveBroadcastRef.current = event.data.broadcast_id;
+          if (activeBroadcastClearTimerRef.current) {
+            clearTimeout(activeBroadcastClearTimerRef.current);
+            activeBroadcastClearTimerRef.current = null;
+          }
         }
         playClearTone();
         setIsChannelBusy(true);
@@ -323,6 +370,18 @@ export default function Talk() {
           setIsChannelBusy(false);
         }, 15000);
       } else if (event.type === "delete") {
+        if (event.data?.broadcast_id) {
+          const deletedId = event.data.broadcast_id;
+          if (activeBroadcastClearTimerRef.current) {
+            clearTimeout(activeBroadcastClearTimerRef.current);
+          }
+          activeBroadcastClearTimerRef.current = setTimeout(() => {
+            if (activeLiveBroadcastRef.current === deletedId) {
+              activeLiveBroadcastRef.current = null;
+            }
+            activeBroadcastClearTimerRef.current = null;
+          }, 20000);
+        }
         if (channelBusyTimeoutRef.current) {
           clearTimeout(channelBusyTimeoutRef.current);
           channelBusyTimeoutRef.current = null;
@@ -340,6 +399,10 @@ export default function Talk() {
     cleanupStalePTTSignals({ channelId: effectiveChannelId, excludeSenderId: user.id })
       .then((active) => {
         if (active.length > 0) {
+          const activeSignal = active.find((signal) => signal.broadcast_id);
+          if (activeSignal?.broadcast_id) {
+            activeLiveBroadcastRef.current = activeSignal.broadcast_id;
+          }
           setIsChannelBusy(true);
           playClearTone();
         }
@@ -607,32 +670,34 @@ export default function Talk() {
           return { micDenied: true };
         }
 
-        await cleanupStalePTTSignals({
+        pttRecordingActiveRef.current = true;
+        activeLiveBroadcastRef.current = broadcastId;
+
+        void cleanupStalePTTSignals({
           channelId: effectiveChannelId,
           excludeSenderId: user.id,
         }).catch(() => {});
 
-        const { signalIds } = await claimPttChannels({
+        claimPttChannels({
           channelIds: [effectiveChannelId],
           senderId: user.id,
           senderName: getDisplayName(user),
           broadcastId,
           primaryChannelId: effectiveChannelId,
+        }).then(({ signalIds }) => {
+          pttSignalRef.current = signalIds[0] ?? null;
+        }).catch((err) => {
+          console.warn("PTT signal create failed:", err);
         });
-        signalId = signalIds[0] ?? null;
-        pttSignalRef.current = signalId;
-        liveHeardBroadcastsRef.current.add(broadcastId);
 
         if (pttStopPendingRef.current) {
-          pttRecordingActiveRef.current = true;
-          return { pendingSend: true, signalId };
+          return { pendingSend: true, signalId: null };
         }
 
-        pttRecordingActiveRef.current = true;
         playClearTone();
         return { ok: true };
       } catch (e) {
-        return { claimFailed: true, error: e, signalId };
+        return { startFailed: true, error: e };
       }
     })();
 
@@ -651,6 +716,14 @@ export default function Talk() {
 
     if (result.aborted || cancelled) {
       setIsPTTPressed(false);
+      return;
+    }
+
+    if (result.startFailed) {
+      console.error("PTT start failed:", result.error);
+      await stopRecording().catch(() => {});
+      setIsPTTPressed(false);
+      toast.error("Could not start transmission");
       return;
     }
 

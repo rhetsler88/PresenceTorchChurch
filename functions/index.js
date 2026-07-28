@@ -9,6 +9,7 @@ const { getFirestore, FieldValue } = require("firebase-admin/firestore");
 const { getMessaging } = require("firebase-admin/messaging");
 const { getStorage } = require("firebase-admin/storage");
 const speech = require("@google-cloud/speech");
+const { google } = require("googleapis");
 const { RtcTokenBuilder, RtcRole } = require("agora-access-token");
 const {
   buildRedAlertTokenSets,
@@ -26,7 +27,7 @@ const agoraAppCertificate = defineSecret("AGORA_APP_CERTIFICATE");
 const recaptchaSecretKey = defineSecret("RECAPTCHA_SECRET_KEY");
 
 const THROTTLE_MS = 15000;
-const VOICE_MESSAGE_RETENTION_DAYS = 20;
+const VOICE_MESSAGE_RETENTION_DAYS = 15;
 const CLEANUP_BATCH_SIZE = 500;
 
 function toGcsUri(audioUrl) {
@@ -603,3 +604,99 @@ exports.cleanupOldVoiceMessages = onSchedule(
     await cleanupOldVoiceMessages();
   }
 );
+
+async function assertCanExportTranscripts(uid) {
+  const snap = await getFirestore().collection("users").doc(uid).get();
+  if (!snap.exists) {
+    throw new HttpsError("permission-denied", "Not allowed");
+  }
+  const role = snap.data()?.role;
+  if (role !== "admin" && role !== "super_admin" && role !== "director") {
+    throw new HttpsError("permission-denied", "Export requires admin or director role");
+  }
+}
+
+exports.exportTranscriptsToGoogleDoc = onCall(CALLABLE_OPTIONS, async (request) => {
+  if (!request.auth) {
+    throw new HttpsError("unauthenticated", "Sign in required");
+  }
+  await assertCanExportTranscripts(request.auth.uid);
+
+  const { title, content, shareEmail } = request.data || {};
+  if (!content || typeof content !== "string") {
+    throw new HttpsError("invalid-argument", "content is required");
+  }
+  if (content.length > 500000) {
+    throw new HttpsError("invalid-argument", "Export is too large");
+  }
+
+  const email = (shareEmail || request.auth.token.email || "").trim();
+  if (!email) {
+    throw new HttpsError("invalid-argument", "No email address to share the document with");
+  }
+
+  try {
+    const auth = new google.auth.GoogleAuth({
+      scopes: [
+        "https://www.googleapis.com/auth/documents",
+        "https://www.googleapis.com/auth/drive",
+      ],
+    });
+    const authClient = await auth.getClient();
+    const docs = google.docs({ version: "v1", auth: authClient });
+    const drive = google.drive({ version: "v3", auth: authClient });
+
+    const docTitle =
+      typeof title === "string" && title.trim()
+        ? title.trim().slice(0, 200)
+        : `Presence Torch Transcript Log — ${new Date().toISOString().slice(0, 10)}`;
+
+    const created = await docs.documents.create({
+      requestBody: { title: docTitle },
+    });
+    const documentId = created.data.documentId;
+    if (!documentId) {
+      throw new Error("Google Docs did not return a document id");
+    }
+
+    await docs.documents.batchUpdate({
+      documentId,
+      requestBody: {
+        requests: [
+          {
+            insertText: {
+              location: { index: 1 },
+              text: content,
+            },
+          },
+        ],
+      },
+    });
+
+    await drive.permissions.create({
+      fileId: documentId,
+      requestBody: {
+        type: "user",
+        role: "writer",
+        emailAddress: email,
+      },
+      sendNotificationEmail: false,
+    });
+
+    return {
+      documentId,
+      url: `https://docs.google.com/document/d/${documentId}/edit`,
+    };
+  } catch (err) {
+    console.error("exportTranscriptsToGoogleDoc failed:", err);
+    const detail =
+      err?.response?.data?.error?.message
+      || err?.errors?.[0]?.message
+      || err?.message
+      || "Unknown error";
+    throw new HttpsError(
+      "failed-precondition",
+      `Google Doc export failed: ${detail}. Cloud Functions service accounts cannot create Drive files — use in-app export (user Google sign-in) instead.`
+    );
+  }
+});

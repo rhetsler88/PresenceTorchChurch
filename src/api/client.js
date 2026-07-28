@@ -678,6 +678,16 @@ export const functionsApi = {
       return result.data;
     }
 
+    if (name === "exportTranscriptsToGoogleDoc") {
+      const callable = httpsCallable(functions, "exportTranscriptsToGoogleDoc");
+      const result = await callable({
+        title: params.title,
+        content: params.content,
+        shareEmail: params.shareEmail,
+      });
+      return result.data;
+    }
+
     if (name === "getAgoraToken") {
       const callable = httpsCallable(functions, "getAgoraToken");
       const payload = { channel_id: params.channel_id };

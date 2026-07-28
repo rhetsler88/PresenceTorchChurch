@@ -18,6 +18,18 @@ import Monitor from './pages/Monitor';
 import Admin from './pages/Admin';
 import Onboarding from './pages/Onboarding';
 import Login from './pages/Login';
+import PrivacyPolicy from './pages/PrivacyPolicy';
+import TermsOfService from './pages/TermsOfService';
+
+function AppRoutes() {
+  return (
+    <Routes>
+      <Route path="/privacy" element={<PrivacyPolicy />} />
+      <Route path="/terms" element={<TermsOfService />} />
+      <Route path="/*" element={<AuthenticatedApp />} />
+    </Routes>
+  );
+}
 
 const AuthenticatedApp = () => {
   const { isLoadingAuth, isLoadingPublicSettings, authError, user } = useAuth();
@@ -78,7 +90,7 @@ function App() {
     <AuthProvider>
       <QueryClientProvider client={queryClientInstance}>
         <Router future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
-          <AuthenticatedApp />
+          <AppRoutes />
         </Router>
         <Toaster />
         <SonnerToaster richColors closeButton />

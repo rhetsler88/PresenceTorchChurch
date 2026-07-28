@@ -1,4 +1,5 @@
 import React from "react";
+import { Link } from "react-router-dom";
 import AuthSignInPanel from "@/components/auth/AuthSignInPanel";
 
 export default function Login() {
@@ -28,6 +29,16 @@ export default function Login() {
 
           <AuthSignInPanel />
         </div>
+
+        <p className="text-center text-xs text-muted-foreground mt-6">
+          <Link to="/privacy" className="hover:text-foreground underline-offset-2 hover:underline">
+            Privacy Policy
+          </Link>
+          <span className="mx-2">·</span>
+          <Link to="/terms" className="hover:text-foreground underline-offset-2 hover:underline">
+            Terms of Service
+          </Link>
+        </p>
       </div>
     </div>
   );

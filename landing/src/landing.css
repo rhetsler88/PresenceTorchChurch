@@ -1041,8 +1041,9 @@ body::before {
   overflow: hidden;
   padding: 118px 5vw 130px;
   text-align: center;
-  color: var(--ink);
-  background: linear-gradient(135deg, #df8813 0%, var(--signal) 48%, #efb13c 100%);
+  color: var(--paper);
+  background: linear-gradient(180deg, #080a09 0%, var(--ink) 40%, #0e1210 100%);
+  border-top: 1px solid #242a27;
 }
 
 .organization-section::before,
@@ -1052,19 +1053,19 @@ body::before {
   top: 50%;
   width: 500px;
   height: 500px;
-  border: 1px solid rgba(8, 11, 10, 0.12);
+  border: 1px solid rgba(233, 154, 28, 0.12);
   border-radius: 50%;
   transform: translateY(-50%);
 }
 
 .organization-section::before {
   left: -300px;
-  box-shadow: 0 0 0 70px rgba(8, 11, 10, 0.04), 0 0 0 140px rgba(8, 11, 10, 0.025);
+  box-shadow: 0 0 0 70px rgba(233, 154, 28, 0.03), 0 0 0 140px rgba(233, 154, 28, 0.015);
 }
 
 .organization-section::after {
   right: -300px;
-  box-shadow: 0 0 0 70px rgba(8, 11, 10, 0.04), 0 0 0 140px rgba(8, 11, 10, 0.025);
+  box-shadow: 0 0 0 70px rgba(84, 201, 194, 0.03), 0 0 0 140px rgba(84, 201, 194, 0.015);
 }
 
 .organization-inner {
@@ -1075,14 +1076,15 @@ body::before {
 }
 
 .organization-section .section-kicker {
-  color: rgba(8, 11, 10, 0.65);
+  color: var(--signal);
 }
 
-.organization-lockup {
+.organization-logo {
   display: block;
-  width: min(430px, 82vw);
+  width: min(360px, 78vw);
   height: auto;
   margin: 0 auto 38px;
+  filter: drop-shadow(0 8px 24px rgba(0, 0, 0, 0.45));
 }
 
 .organization-section h2 {
@@ -1094,7 +1096,7 @@ body::before {
   margin: 0 auto;
   font-size: 15px;
   line-height: 1.7;
-  color: rgba(8, 11, 10, 0.7);
+  color: #89918b;
 }
 
 .org-actions {
@@ -1106,24 +1108,24 @@ body::before {
 }
 
 .button-light {
-  color: var(--paper);
-  background: var(--ink);
-  box-shadow: 8px 8px rgba(8, 11, 10, 0.18);
+  color: var(--ink);
+  background: var(--signal);
+  box-shadow: 7px 7px rgba(233, 154, 28, 0.2);
 }
 
 .button-light:hover {
-  background: #181d1a;
+  background: var(--signal-bright);
 }
 
 .text-link {
   display: flex;
   align-items: center;
   font-size: 12px;
-  color: rgba(8, 11, 10, 0.72);
+  color: #727b75;
 }
 
 .organization-section .text-link:hover {
-  color: var(--ink);
+  color: var(--aqua);
 }
 
 footer {

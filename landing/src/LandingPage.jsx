@@ -336,8 +336,8 @@ export default function LandingPage() {
       <section className="organization-section" id="organizations">
         <div className="organization-inner">
           <img
-            className="organization-lockup"
-            src="/presence-torch-lockup.webp"
+            className="organization-logo"
+            src="/presence-torch-wordmark.webp"
             alt="Presence Torch Church"
           />
           <p className="section-kicker">READY FOR SUNDAY. READY FOR MORE.</p>

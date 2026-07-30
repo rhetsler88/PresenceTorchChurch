@@ -2,7 +2,7 @@ import React from "react";
 import { Link } from "react-router-dom";
 import LegalPageLayout from "@/components/legal/LegalPageLayout";
 
-const LAST_UPDATED = "July 28, 2026";
+const LAST_UPDATED = "July 30, 2026";
 
 export default function TermsOfService() {
   return (
@@ -122,8 +122,8 @@ export default function TermsOfService() {
 
       <h2>13. Governing law</h2>
       <p>
-        These Terms are governed by the laws of the United States and the State of New York, without
-        regard to conflict-of-law principles, except where prohibited by applicable local law.
+        These Terms are governed by the laws of the State of Ohio, without regard to
+        conflict-of-law principles, except where prohibited by applicable local law.
       </p>
 
       <h2>14. Contact</h2>

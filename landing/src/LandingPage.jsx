@@ -280,9 +280,9 @@ export default function LandingPage() {
             <h3>Give access with intent</h3>
             <p>Assign the right listening and broadcast capabilities to each person.</p>
             <div className="role-row">
-              <span>TEAM MEMBER</span>
-              <span>CHANNEL LEAD</span>
-              <span>COMMAND</span>
+              <span>user</span>
+              <span>director/lead</span>
+              <span>admin</span>
             </div>
           </article>
         </div>

@@ -18,18 +18,40 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
-import { Pencil, Search } from "lucide-react";
+import {
+  AlertDialog,
+  AlertDialogContent,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogAction,
+  AlertDialogCancel,
+} from "@/components/ui/alert-dialog";
+import { AlertTriangle, Pencil, Search, Trash2 } from "lucide-react";
 import { toast } from "sonner";
-import { getDisplayName, isPlatformAdmin } from "@/lib/userUtils";
+import {
+  getDisplayName,
+  isPlatformAdmin,
+  isSuperAdmin,
+} from "@/lib/userUtils";
 import { useAuth } from "@/lib/AuthContext";
 
 const ROLES = ["user", "monitor", "director", "admin", "super_admin"];
+
+function canDeleteUser(currentUser, targetUser) {
+  if (!isPlatformAdmin(currentUser) || !targetUser) return false;
+  if (currentUser.id === targetUser.id) return false;
+  if (targetUser.role === "super_admin" && !isSuperAdmin(currentUser)) return false;
+  return true;
+}
 
 export default function Users() {
   const { user: currentUser } = useAuth();
   const queryClient = useQueryClient();
   const [search, setSearch] = useState("");
   const [editing, setEditing] = useState(null);
+  const [deleting, setDeleting] = useState(null);
   const [form, setForm] = useState({
     first_name: "",
     last_name: "",
@@ -62,6 +84,24 @@ export default function Users() {
       toast.success("User updated");
     },
     onError: () => toast.error("Couldn't update user"),
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (targetUserId) => api.admin.deleteUser(targetUserId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["users"] });
+      setDeleting(null);
+      if (editing?.id === deleting?.id) setEditing(null);
+      toast.success("User deleted");
+    },
+    onError: (err) => {
+      const message =
+        err?.message?.includes("permission-denied") ||
+        err?.code === "functions/permission-denied"
+          ? "You don't have permission to delete this user"
+          : "Couldn't delete user";
+      toast.error(message);
+    },
   });
 
   const filtered = users.filter((u) => {
@@ -140,9 +180,21 @@ export default function Users() {
                     {u.onboarded ? "Yes" : "No"}
                   </td>
                   <td className="px-4 py-3 text-right">
-                    <Button variant="ghost" size="sm" onClick={() => openEdit(u)}>
-                      <Pencil className="w-4 h-4" />
-                    </Button>
+                    <div className="flex justify-end gap-1">
+                      <Button variant="ghost" size="sm" onClick={() => openEdit(u)}>
+                        <Pencil className="w-4 h-4" />
+                      </Button>
+                      {canDeleteUser(currentUser, u) && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="text-destructive hover:text-destructive"
+                          onClick={() => setDeleting(u)}
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </Button>
+                      )}
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -216,13 +268,53 @@ export default function Users() {
               )}
             </div>
           </div>
-          <DialogFooter>
+          <DialogFooter className="flex-col-reverse sm:flex-row sm:justify-between gap-2">
+            {canDeleteUser(currentUser, editing) && (
+              <Button
+                variant="destructive"
+                onClick={() => setDeleting(editing)}
+                disabled={saveMutation.isPending}
+              >
+                Delete user
+              </Button>
+            )}
             <Button onClick={() => saveMutation.mutate()} disabled={saveMutation.isPending}>
               {saveMutation.isPending ? "Saving..." : "Save changes"}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <AlertDialog
+        open={!!deleting}
+        onOpenChange={(open) => !open && !deleteMutation.isPending && setDeleting(null)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2">
+              <AlertTriangle className="w-5 h-5 text-destructive" />
+              Delete {deleting ? getDisplayName(deleting) : "user"}?
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              This permanently deletes their account, profile, messages, and channel
+              memberships. This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleteMutation.isPending}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              disabled={deleteMutation.isPending}
+              onClick={(e) => {
+                e.preventDefault();
+                deleteMutation.mutate(deleting.id);
+              }}
+            >
+              {deleteMutation.isPending ? "Deleting..." : "Delete user"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

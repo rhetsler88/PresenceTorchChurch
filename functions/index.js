@@ -397,6 +397,60 @@ async function deleteUserAccount(uid) {
   };
 }
 
+function normalizeOrg(value) {
+  return (value || "").trim().toLowerCase();
+}
+
+function orgsMatch(adminOrg, targetOrg) {
+  const scoped = normalizeOrg(adminOrg);
+  if (!scoped) return true;
+  const target = normalizeOrg(targetOrg);
+  if (!target) return true;
+  return scoped === target;
+}
+
+async function assertCanAdminDeleteUser(callerUid, targetUid) {
+  if (callerUid === targetUid) {
+    throw new HttpsError("permission-denied", "You cannot delete your own account");
+  }
+
+  const db = getFirestore();
+  const [callerSnap, targetSnap] = await Promise.all([
+    db.collection("users").doc(callerUid).get(),
+    db.collection("users").doc(targetUid).get(),
+  ]);
+
+  if (!callerSnap.exists) {
+    throw new HttpsError("permission-denied", "Not allowed");
+  }
+
+  const callerRole = callerSnap.data()?.role;
+  if (callerRole !== "admin" && callerRole !== "super_admin") {
+    throw new HttpsError("permission-denied", "Admin access required");
+  }
+
+  if (!targetSnap.exists) {
+    throw new HttpsError("not-found", "User not found");
+  }
+
+  const targetData = targetSnap.data();
+  const targetRole = targetData?.role;
+
+  if (callerRole === "super_admin") {
+    return targetData;
+  }
+
+  if (targetRole === "super_admin") {
+    throw new HttpsError("permission-denied", "Cannot delete super admin");
+  }
+
+  if (!orgsMatch(callerSnap.data()?.organization, targetData?.organization)) {
+    throw new HttpsError("permission-denied", "Cannot delete users outside your organization");
+  }
+
+  return targetData;
+}
+
 exports.deleteUserAccount = onCall(
   { ...CALLABLE_OPTIONS, timeoutSeconds: 300, memory: "512MiB" },
   async (request) => {
@@ -409,6 +463,29 @@ exports.deleteUserAccount = onCall(
     } catch (err) {
       console.error("deleteUserAccount failed:", err);
       throw new HttpsError("internal", "Failed to delete account");
+    }
+  }
+);
+
+exports.adminDeleteUser = onCall(
+  { ...CALLABLE_OPTIONS, timeoutSeconds: 300, memory: "512MiB" },
+  async (request) => {
+    if (!request.auth) {
+      throw new HttpsError("unauthenticated", "Sign in required");
+    }
+
+    const targetUserId = request.data?.targetUserId;
+    if (!targetUserId || typeof targetUserId !== "string") {
+      throw new HttpsError("invalid-argument", "targetUserId is required");
+    }
+
+    try {
+      await assertCanAdminDeleteUser(request.auth.uid, targetUserId);
+      return await deleteUserAccount(targetUserId);
+    } catch (err) {
+      if (err instanceof HttpsError) throw err;
+      console.error("adminDeleteUser failed:", err);
+      throw new HttpsError("internal", "Failed to delete user");
     }
   }
 );

@@ -715,6 +715,14 @@ export const integrations = {
   },
 };
 
+export const adminApi = {
+  async deleteUser(targetUserId) {
+    await waitForFirestoreAuth({ forceRefresh: true });
+    const callable = httpsCallable(functions, "adminDeleteUser");
+    return (await callable({ targetUserId })).data;
+  },
+};
+
 export const bootstrapApi = {
   async seedDefaults() {
     const user = await getCurrentUser();
@@ -789,6 +797,7 @@ export const bootstrapApi = {
 export const api = {
   entities,
   auth: authApi,
+  admin: adminApi,
   functions: functionsApi,
   integrations,
   organizations: organizationsApi,

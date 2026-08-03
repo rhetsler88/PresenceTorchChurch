@@ -1,8 +1,8 @@
 @import url("https://fonts.googleapis.com/css2?family=Barlow+Condensed:ital,wght@0,500;0,600;0,700;0,800;1,600&family=DM+Sans:wght@400;500;600&display=swap");
 
 :root {
-  --ink: #0b0d0c;
-  --ink-soft: #111513;
+  --ink: #000000;
+  --ink-soft: #0a0c0b;
   --panel: #171a18;
   --line: #303532;
   --paper: #f0eee8;
@@ -68,6 +68,7 @@ body::before {
   height: 78px;
   margin: auto;
   padding: 0 5vw;
+  background: var(--ink);
   border-bottom: 1px solid rgba(255, 255, 255, 0.1);
 }
 
@@ -1145,6 +1146,7 @@ footer {
   padding: 30px 5vw;
   font-size: 10px;
   color: #626a65;
+  background: var(--ink);
 }
 
 footer .brand-logo {

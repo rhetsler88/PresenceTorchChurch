@@ -16,6 +16,7 @@ import {
 
 const APP_URL = "https://presencetorchchurch.vercel.app";
 const STRIPE_URL = "https://buy.stripe.com/";
+const LOGO_SRC = "/presence-torch-logo.png";
 
 const CHANNELS = [
   { name: "Main Worship", members: 7, level: "elevated", active: true },
@@ -38,7 +39,7 @@ export default function LandingPage() {
     <main>
       <header className="site-header">
         <a className="brand" href="#top" aria-label="Presence Torch Church home">
-          <img src="/presence-torch-wordmark.webp" alt="Presence Torch Church" />
+          <img className="brand-logo" src={LOGO_SRC} alt="Presence Torch Church" />
         </a>
         <nav className="nav-links" aria-label="Main navigation">
           <a href="#capabilities">Capabilities</a>
@@ -363,7 +364,7 @@ export default function LandingPage() {
 
       <footer>
         <a className="brand" href="#top" aria-label="Presence Torch Church home">
-          <img src="/presence-torch-wordmark.webp" alt="Presence Torch Church" />
+          <img className="brand-logo" src={LOGO_SRC} alt="Presence Torch Church" />
         </a>
         <p>Purpose-built communication for church safety teams.</p>
         <div className="footer-meta">

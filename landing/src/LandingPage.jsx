@@ -369,11 +369,11 @@ export default function LandingPage() {
         <p>Purpose-built communication for church safety teams.</p>
         <div className="footer-meta">
           <nav className="footer-links" aria-label="Legal">
-            <a href={`${APP_URL}/terms`} target="_blank" rel="noreferrer">
-              Terms of Service
-            </a>
             <a href={`${APP_URL}/privacy`} target="_blank" rel="noreferrer">
               Privacy Policy
+            </a>
+            <a href={`${APP_URL}/terms`} target="_blank" rel="noreferrer">
+              Terms of Service
             </a>
           </nav>
           <span>© {new Date().getFullYear()} Presence Torch Church</span>

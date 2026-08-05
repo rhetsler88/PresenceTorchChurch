@@ -34,7 +34,10 @@ export default function AppLayout() {
       <DailyCodeGate user={user} onUserUpdate={checkUserAuth}>
       <RedAlertBanner channelName={alertChannel} onDismiss={dismissAlert} />
       <UserMenu />
-      <div className="flex-1 overflow-auto" style={{ paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 5rem)' }}>
+      <div
+        className="flex-1 overflow-auto [scrollbar-gutter:stable]"
+        style={{ paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 5rem)" }}
+      >
         <Outlet />
       </div>
       <nav className="fixed bottom-0 left-0 right-0 bg-card border-t border-border z-50 safe-bottom">

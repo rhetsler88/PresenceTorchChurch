@@ -30,7 +30,7 @@ export default function UserMenu() {
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <button
-            className="fixed right-3 z-40 flex items-center gap-2 pl-1 pr-2.5 py-1 rounded-full bg-card border border-border shadow-sm hover:border-primary/40 transition-colors active:scale-95"
+            className="fixed z-40 flex items-center gap-2 pl-1 pr-2.5 py-1 rounded-full bg-card border border-border shadow-sm hover:border-primary/40 transition-colors active:scale-95 right-[calc(1.75rem+env(safe-area-inset-right,0px))]"
             style={{ top: "calc(env(safe-area-inset-top, 0px) + 0.75rem)" }}
             title="Account menu"
           >

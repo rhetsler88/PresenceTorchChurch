@@ -9,6 +9,7 @@ import {
   LockKeyhole,
   Radio,
   RadioTower,
+  Search,
   ShieldCheck,
   Users,
   Volume2,
@@ -298,22 +299,58 @@ export default function LandingPage() {
               and administrators can export selected logs to Google Docs&trade; when needed for later safety
               incident reports.
             </p>
-            <div className="transcript-log">
-              {[
-                { channel: "Main Worship", detail: "Voice message · transcribed", status: "Logged" },
-                { channel: "North Entrance", detail: "Channel activity · archived", status: "Logged" },
-                { channel: "Incident review", detail: "Selected logs · Google Docs™ export", status: "Ready" },
-              ].map((item) => (
-                <div key={item.channel}>
-                  <div className="transcript-entry">
-                    <span>
-                      <FileText size={13} /> {item.channel}
-                    </span>
-                    <small>{item.detail}</small>
-                  </div>
-                  <small className="transcript-status">{item.status}</small>
+            <div className="transcript-console" aria-label="Transcript log preview">
+              <div className="transcript-console-top">
+                <div>
+                  <h4>Transcript Log</h4>
+                  <small>17 recordings &amp; transcripts · last 15 days</small>
                 </div>
-              ))}
+                <div className="transcript-console-actions">
+                  <button type="button" className="transcript-export-btn">
+                    <FileText size={13} />
+                    Export to Google Doc
+                  </button>
+                  <div className="transcript-user">
+                    <span className="transcript-avatar">JD</span>
+                    <span>John Doe</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="transcript-export-panel">
+                <div className="transcript-export-head">
+                  <span>Select dates to export</span>
+                  <span className="transcript-export-controls">
+                    <button type="button">Select all</button>
+                    <button type="button">Clear</button>
+                  </span>
+                </div>
+                <div className="transcript-date-pills">
+                  <span className="active">Sunday, Jul 26, 2026</span>
+                  <span>Friday, Jul 24, 2026</span>
+                </div>
+                <small>13 entries selected</small>
+              </div>
+
+              <div className="transcript-search">
+                <Search size={14} />
+                <span>Search transcripts...</span>
+              </div>
+
+              <div className="transcript-day-list">
+                <div className="transcript-day active">
+                  <span className="transcript-check checked">
+                    <Check size={11} strokeWidth={3} />
+                  </span>
+                  <span className="transcript-day-label">Sunday, Jul 26, 2026 (13)</span>
+                  <ChevronRight size={14} />
+                </div>
+                <div className="transcript-day">
+                  <span className="transcript-check" />
+                  <span className="transcript-day-label muted">Friday, Jul 24, 2026 (4)</span>
+                  <ChevronRight size={14} />
+                </div>
+              </div>
             </div>
           </article>
         </div>

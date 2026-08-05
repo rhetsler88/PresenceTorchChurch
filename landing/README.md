@@ -38,5 +38,5 @@ Connect the GitHub repo and set:
 
 In `LandingPage.jsx`:
 
-- `APP_URL` — points to the live app (`https://presencetorchchurch.vercel.app`)
+- `APP_URL` — points to the live app (`https://app.presencetorch.net`)
 - `STRIPE_URL` — organization signup Stripe payment link

@@ -14,7 +14,7 @@ import {
   Waves,
 } from "lucide-react";
 
-const APP_URL = "https://presencetorchchurch.vercel.app";
+const APP_URL = "https://app.presencetorch.net";
 const STRIPE_URL = "https://buy.stripe.com/";
 const LOGO_SRC = "/presence-torch-logo.png";
 

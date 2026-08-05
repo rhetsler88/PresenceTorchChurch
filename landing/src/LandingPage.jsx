@@ -4,6 +4,7 @@ import {
   BellRing,
   Check,
   ChevronRight,
+  FileText,
   Headphones,
   LockKeyhole,
   Radio,
@@ -285,6 +286,36 @@ export default function LandingPage() {
               <span>Admin</span>
             </div>
           </article>
+
+          <article className="feature feature-wide feature-full">
+            <div className="feature-number">05</div>
+            <div className="feature-icon">
+              <FileText />
+            </div>
+            <h3>Transcripts and incident logs</h3>
+            <p>
+              Voice messages are automatically transcribed. All channel communications are logged,
+              and administrators can export selected logs to Google Docs&trade; when needed for later safety
+              incident reports.
+            </p>
+            <div className="transcript-log">
+              {[
+                { channel: "Main Worship", detail: "Voice message · transcribed", status: "Logged" },
+                { channel: "North Entrance", detail: "Channel activity · archived", status: "Logged" },
+                { channel: "Incident review", detail: "Selected logs · Google Docs™ export", status: "Ready" },
+              ].map((item) => (
+                <div key={item.channel}>
+                  <div className="transcript-entry">
+                    <span>
+                      <FileText size={13} /> {item.channel}
+                    </span>
+                    <small>{item.detail}</small>
+                  </div>
+                  <small className="transcript-status">{item.status}</small>
+                </div>
+              ))}
+            </div>
+          </article>
         </div>
       </section>
 
@@ -363,21 +394,26 @@ export default function LandingPage() {
       </section>
 
       <footer>
-        <a className="brand" href="#top" aria-label="Presence Torch Church home">
-          <img className="brand-logo" src={LOGO_SRC} alt="Presence Torch Church" />
-        </a>
-        <p>Purpose-built communication for church safety teams.</p>
-        <div className="footer-meta">
-          <nav className="footer-links" aria-label="Legal">
-            <a href={`${APP_URL}/privacy`} target="_blank" rel="noreferrer">
-              Privacy Policy
-            </a>
-            <a href={`${APP_URL}/terms`} target="_blank" rel="noreferrer">
-              Terms of Service
-            </a>
-          </nav>
-          <span>© {new Date().getFullYear()} Presence Torch Church</span>
+        <div className="footer-main">
+          <a className="brand" href="#top" aria-label="Presence Torch Church home">
+            <img className="brand-logo" src={LOGO_SRC} alt="Presence Torch Church" />
+          </a>
+          <p>Purpose-built communication for church safety teams.</p>
+          <div className="footer-meta">
+            <nav className="footer-links" aria-label="Legal">
+              <a href={`${APP_URL}/privacy`} target="_blank" rel="noreferrer">
+                Privacy Policy
+              </a>
+              <a href={`${APP_URL}/terms`} target="_blank" rel="noreferrer">
+                Terms of Service
+              </a>
+            </nav>
+            <span>© {new Date().getFullYear()} Presence Torch Church</span>
+          </div>
         </div>
+        <p className="footer-disclaimer">
+          Google Docs&trade; is a trademark of Google LLC.
+        </p>
       </footer>
     </main>
   );

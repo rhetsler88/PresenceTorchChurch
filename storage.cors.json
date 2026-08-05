@@ -1,6 +1,9 @@
 [
   {
     "origin": [
+      "https://app.presencetorch.net",
+      "https://presencetorch.net",
+      "https://www.presencetorch.net",
       "https://presencetorchchurch.vercel.app",
       "https://presencetorchchurch-admin.vercel.app",
       "https://*.vercel.app",

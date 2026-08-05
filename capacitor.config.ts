@@ -5,7 +5,7 @@ const config: CapacitorConfig = {
   appName: 'Presence Torch',
   webDir: 'dist',
   server: {
-    url: 'https://presencetorchchurch.vercel.app',
+    url: 'https://app.presencetorch.net',
     androidScheme: 'https',
     iosScheme: 'https',
     allowNavigation: [

@@ -508,7 +508,7 @@ export function getAuthErrorMessage(err) {
     case "auth/too-many-requests":
       return "Too many failed attempts. Please try again later.";
     case "auth/unauthorized-domain":
-      return "This site is not authorized for sign-in yet. Add presencetorchchurch.vercel.app to Firebase Authentication → Settings → Authorized domains.";
+      return "This site is not authorized for sign-in yet. Add app.presencetorch.net to Firebase Authentication → Settings → Authorized domains.";
     case "auth/recaptcha-required":
       return "Please complete the \"I'm not a robot\" check.";
     case "auth/recaptcha-failed":

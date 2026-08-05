@@ -14,6 +14,9 @@ const keyPath = join(__dirname, "serviceAccountKey.json");
 const PROJECT_ID = "presence-torch-church";
 
 const DOMAINS_TO_ADD = [
+  "app.presencetorch.net",
+  "presencetorch.net",
+  "www.presencetorch.net",
   "presencetorchchurch.vercel.app",
   "presencetorchchurch-65128pib9-presence-torch-church.vercel.app",
   "presencetorchchurch-admin.vercel.app",

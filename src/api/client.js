@@ -642,6 +642,12 @@ export const authApi = {
   async resetPassword(email) {
     await sendPasswordResetEmail(auth, email.trim());
   },
+
+  async syncMyChannelAccess() {
+    await waitForFirestoreAuth({ forceRefresh: true });
+    const callable = httpsCallable(functions, "syncMyChannelAccess");
+    return (await callable()).data;
+  },
 };
 
 export const dailyCodeApi = {
@@ -747,6 +753,12 @@ export const adminApi = {
   async repairUserAccess(email) {
     await waitForFirestoreAuth({ forceRefresh: true });
     const callable = httpsCallable(functions, "repairUserAccess");
+    return (await callable({ email })).data;
+  },
+
+  async diagnoseUserAccess(email) {
+    await waitForFirestoreAuth({ forceRefresh: true });
+    const callable = httpsCallable(functions, "diagnoseUserAccess");
     return (await callable({ email })).data;
   },
 };

@@ -37,19 +37,31 @@ async function refreshAuthCustomClaims(firebaseUser) {
 
 async function hydrateUserWithMembership(firebaseUser, currentUser) {
   try {
-    const channelIds = await syncUserChannelMembership(
-      firebaseUser.uid,
-      firebaseUser.email || currentUser.email
-    );
+    const access = await authApi.syncMyChannelAccess();
     return {
       ...currentUser,
-      member_of_channels: channelIds.length
-        ? channelIds
+      email: currentUser.email || firebaseUser.email,
+      member_of_channels: access?.channelIds?.length
+        ? access.channelIds
         : currentUser.member_of_channels || [],
     };
   } catch (err) {
-    console.warn("Channel membership sync failed:", err);
-    return currentUser;
+    console.warn("Server channel membership sync failed, falling back to client:", err);
+    try {
+      const channelIds = await syncUserChannelMembership(
+        firebaseUser.uid,
+        firebaseUser.email || currentUser.email
+      );
+      return {
+        ...currentUser,
+        member_of_channels: channelIds.length
+          ? channelIds
+          : currentUser.member_of_channels || [],
+      };
+    } catch (fallbackErr) {
+      console.warn("Channel membership sync failed:", fallbackErr);
+      return currentUser;
+    }
   }
 }
 
@@ -255,21 +267,38 @@ export const AuthProvider = ({ children }) => {
   const refreshChannelMembership = useCallback(async () => {
     const firebaseUser = auth.currentUser;
     if (!firebaseUser) return [];
-    const channelIds = await syncUserChannelMembership(
-      firebaseUser.uid,
-      firebaseUser.email
-    );
-    setUser((prev) =>
-      prev
-        ? {
-            ...prev,
-            member_of_channels: channelIds.length
-              ? channelIds
-              : prev.member_of_channels || [],
-          }
-        : prev
-    );
-    return channelIds;
+    try {
+      const access = await authApi.syncMyChannelAccess();
+      const channelIds = access?.channelIds || [];
+      setUser((prev) =>
+        prev
+          ? {
+              ...prev,
+              member_of_channels: channelIds.length
+                ? channelIds
+                : prev.member_of_channels || [],
+            }
+          : prev
+      );
+      return channelIds;
+    } catch (err) {
+      console.warn("Server channel membership refresh failed, falling back to client:", err);
+      const channelIds = await syncUserChannelMembership(
+        firebaseUser.uid,
+        firebaseUser.email
+      );
+      setUser((prev) =>
+        prev
+          ? {
+              ...prev,
+              member_of_channels: channelIds.length
+                ? channelIds
+                : prev.member_of_channels || [],
+            }
+          : prev
+      );
+      return channelIds;
+    }
   }, []);
 
   const checkAppState = async () => {

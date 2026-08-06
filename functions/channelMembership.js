@@ -4,20 +4,38 @@ function normalizeMemberEntry(entry) {
   return typeof entry === "string" ? entry.trim().toLowerCase() : entry;
 }
 
-/** Resolve a channel.members entry (uid or email) to a Firebase Auth uid. */
-async function resolveMemberUid(db, entry) {
+async function allProfileIdsForEmail(db, email) {
+  const normalizedEmail = email?.trim().toLowerCase();
+  if (!normalizedEmail) return [];
+  const snap = await db.collection("users").where("email", "==", normalizedEmail).get();
+  return snap.docs.map((docSnap) => docSnap.id);
+}
+
+async function resolveAuthUid(db, auth, email) {
+  const normalizedEmail = email?.trim().toLowerCase();
+  if (!normalizedEmail) return null;
+  try {
+    return (await auth.getUserByEmail(normalizedEmail)).uid;
+  } catch {
+    const ids = await allProfileIdsForEmail(db, normalizedEmail);
+    return ids[0] || null;
+  }
+}
+
+/** Map a channel.members entry (uid or email) to the canonical Firebase Auth uid. */
+async function resolveMemberUid(db, auth, entry) {
   if (!entry || typeof entry !== "string") return null;
   const trimmed = entry.trim();
-  if (!trimmed.includes("@")) return trimmed;
+  if (trimmed.includes("@")) {
+    return resolveAuthUid(db, auth, trimmed);
+  }
 
-  const email = trimmed.toLowerCase();
-  const snap = await db
-    .collection("users")
-    .where("email", "==", email)
-    .limit(1)
-    .get();
-  if (snap.empty) return null;
-  return snap.docs[0].id;
+  const profileSnap = await db.collection("users").doc(trimmed).get();
+  const email = profileSnap.exists ? profileSnap.data()?.email : null;
+  if (email) {
+    return resolveAuthUid(db, auth, email);
+  }
+  return trimmed;
 }
 
 function memberListIncludes(members, uid, email) {
@@ -28,6 +46,14 @@ function memberListIncludes(members, uid, email) {
   return list.some(
     (entry) => typeof entry === "string" && entry.trim().toLowerCase() === normalizedEmail
   );
+}
+
+function memberListIncludesAny(members, ids = [], email) {
+  const list = members || [];
+  for (const id of ids) {
+    if (id && list.includes(id)) return true;
+  }
+  return memberListIncludes(list, null, email);
 }
 
 async function addChannelToUserProfile(db, uid, channelId) {
@@ -48,8 +74,35 @@ async function removeChannelFromUserProfile(db, uid, channelId) {
   return true;
 }
 
+function normalizeChannelMemberLists({ members = [], pending = [], authUid, email, orphanIds = [] }) {
+  const normalizedEmail = email?.trim().toLowerCase() || "";
+  const drop = new Set([authUid, ...orphanIds]);
+  if (normalizedEmail) drop.add(normalizedEmail);
+
+  const normalizedMembers = members
+    .filter((entry) => {
+      if (typeof entry !== "string") return false;
+      if (drop.has(entry)) return false;
+      if (normalizedEmail && entry.trim().toLowerCase() === normalizedEmail) return false;
+      return !orphanIds.includes(entry);
+    })
+    .concat(authUid ? [authUid] : []);
+
+  const normalizedPending = pending.filter((entry) => {
+    if (typeof entry !== "string") return true;
+    if (drop.has(entry)) return false;
+    if (normalizedEmail && entry.trim().toLowerCase() === normalizedEmail) return false;
+    return !orphanIds.includes(entry);
+  });
+
+  return {
+    members: [...new Set(normalizedMembers)],
+    pending_members: normalizedPending,
+  };
+}
+
 /** Sync users/{uid}.member_of_channels when channel.members changes. */
-async function syncMemberProfilesForChannel(db, channelId, beforeMembers, afterMembers) {
+async function syncMemberProfilesForChannel(db, auth, channelId, beforeMembers, afterMembers) {
   const before = new Set(beforeMembers || []);
   const after = new Set(afterMembers || []);
 
@@ -59,14 +112,14 @@ async function syncMemberProfilesForChannel(db, channelId, beforeMembers, afterM
   let updated = 0;
 
   for (const entry of added) {
-    const uid = await resolveMemberUid(db, entry);
+    const uid = await resolveMemberUid(db, auth, entry);
     if (uid && (await addChannelToUserProfile(db, uid, channelId))) {
       updated += 1;
     }
   }
 
   for (const entry of removed) {
-    const uid = await resolveMemberUid(db, entry);
+    const uid = await resolveMemberUid(db, auth, entry);
     if (uid && (await removeChannelFromUserProfile(db, uid, channelId))) {
       updated += 1;
     }
@@ -75,8 +128,71 @@ async function syncMemberProfilesForChannel(db, channelId, beforeMembers, afterM
   return updated;
 }
 
+async function syncChannelAccessForAuthUser(db, auth, uid, email) {
+  const normalizedEmail = email?.trim().toLowerCase() || "";
+  const authUid = uid || (normalizedEmail ? await resolveAuthUid(db, auth, normalizedEmail) : null);
+  if (!authUid) {
+    const err = new Error("Authenticated user not found");
+    err.code = "not-found";
+    throw err;
+  }
+
+  const profileIds = await allProfileIdsForEmail(db, normalizedEmail);
+  const allIds = [...new Set([authUid, ...profileIds])];
+  const orphanIds = allIds.filter((id) => id !== authUid);
+
+  const channelsSnap = await db.collection("channels").get();
+  const channelIds = [];
+  let channelsNormalized = 0;
+
+  for (const channelDoc of channelsSnap.docs) {
+    const data = channelDoc.data() || {};
+    const members = data.members || [];
+    const pending = data.pending_members || [];
+    const listed =
+      memberListIncludesAny(members, allIds, normalizedEmail)
+      || memberListIncludesAny(pending, allIds, normalizedEmail);
+
+    if (!listed) continue;
+
+    channelIds.push(channelDoc.id);
+
+    const normalized = normalizeChannelMemberLists({
+      members,
+      pending,
+      authUid,
+      email: normalizedEmail,
+      orphanIds,
+    });
+
+    if (
+      JSON.stringify(normalized.members) !== JSON.stringify(members)
+      || JSON.stringify(normalized.pending_members) !== JSON.stringify(pending)
+    ) {
+      await channelDoc.ref.update(normalized);
+      channelsNormalized += 1;
+    }
+  }
+
+  await db.collection("users").doc(authUid).set(
+    {
+      ...(normalizedEmail ? { email: normalizedEmail } : {}),
+      member_of_channels: channelIds,
+    },
+    { merge: true }
+  );
+
+  return {
+    uid: authUid,
+    email: normalizedEmail,
+    channelIds,
+    orphanProfileIds: orphanIds,
+    channelsNormalized,
+  };
+}
+
 /** Backfill member_of_channels for every approved member on every channel. */
-async function backfillAllChannelMemberships(db) {
+async function backfillAllChannelMemberships(db, auth) {
   const channelsSnap = await db.collection("channels").get();
   let profilesUpdated = 0;
   let membersProcessed = 0;
@@ -85,7 +201,7 @@ async function backfillAllChannelMemberships(db) {
     const members = channelDoc.data()?.members || [];
     for (const entry of members) {
       membersProcessed += 1;
-      const uid = await resolveMemberUid(db, entry);
+      const uid = await resolveMemberUid(db, auth, entry);
       if (uid && (await addChannelToUserProfile(db, uid, channelDoc.id))) {
         profilesUpdated += 1;
       }
@@ -95,8 +211,13 @@ async function backfillAllChannelMemberships(db) {
   return { profilesUpdated, membersProcessed, channels: channelsSnap.size };
 }
 
-/** Admin repair: sync profile memberships, normalize channel members to uid, refresh daily code. */
-async function repairUserAccess(db, auth, email, { getCodeDateKey, writeSystemDailyCodeDateKey }) {
+/** Admin repair: sync profile memberships, normalize orphan uids, refresh daily code. */
+async function repairUserAccess(
+  db,
+  auth,
+  email,
+  { getCodeDateKey, writeSystemDailyCodeDateKey, dailyCodeValidityPatch }
+) {
   const normalizedEmail = email.trim().toLowerCase();
   if (!normalizedEmail.includes("@")) {
     const err = new Error("A valid email is required");
@@ -104,9 +225,14 @@ async function repairUserAccess(db, auth, email, { getCodeDateKey, writeSystemDa
     throw err;
   }
 
-  const authUser = await auth.getUserByEmail(normalizedEmail);
-  const uid = authUser.uid;
-  const userRef = db.collection("users").doc(uid);
+  const authUid = await resolveAuthUid(db, auth, normalizedEmail);
+  if (!authUid) {
+    const err = new Error("No Firebase Auth account for that email");
+    err.code = "not-found";
+    throw err;
+  }
+
+  const userRef = db.collection("users").doc(authUid);
   const userSnap = await userRef.get();
   if (!userSnap.exists) {
     const err = new Error("User profile not found");
@@ -119,60 +245,105 @@ async function repairUserAccess(db, auth, email, { getCodeDateKey, writeSystemDa
   await userRef.set(
     {
       email: normalizedEmail,
-      daily_code_verified_date: dateKey,
-      daily_code_failed_attempts: 0,
-      daily_code_locked_until: FieldValue.delete(),
+      ...dailyCodeValidityPatch(dateKey),
     },
     { merge: true }
   );
 
-  const channelsSnap = await db.collection("channels").get();
-  const channelIds = [];
+  const access = await syncChannelAccessForAuthUser(db, auth, authUid, normalizedEmail);
 
+  return {
+    ...access,
+    daily_code_verified_date: dateKey,
+  };
+}
+
+async function diagnoseUserAccess(db, auth, email, { getCodeDateKey }) {
+  const normalizedEmail = email?.trim().toLowerCase();
+  if (!normalizedEmail?.includes("@")) {
+    const err = new Error("A valid email is required");
+    err.code = "invalid-argument";
+    throw err;
+  }
+
+  let authUid = null;
+  let authEmail = null;
+  try {
+    const authUser = await auth.getUserByEmail(normalizedEmail);
+    authUid = authUser.uid;
+    authEmail = authUser.email || null;
+  } catch {
+    authUid = null;
+  }
+
+  const profileSnaps = await db.collection("users").where("email", "==", normalizedEmail).get();
+  const profiles = profileSnaps.docs.map((docSnap) => {
+    const data = docSnap.data() || {};
+    return {
+      id: docSnap.id,
+      matchesAuthUid: docSnap.id === authUid,
+      role: data.role || "user",
+      organization: data.organization || "",
+      member_of_channels: data.member_of_channels || [],
+      daily_code_verified_date: data.daily_code_verified_date || "",
+      daily_code_valid_until: data.daily_code_valid_until?.toDate?.()?.toISOString?.() || null,
+    };
+  });
+
+  const systemSnap = await db.collection("system").doc("dailyCode").get();
+  const allIds = [...new Set([authUid, ...profiles.map((p) => p.id)].filter(Boolean))];
+
+  const channels = [];
+  const channelsSnap = await db.collection("channels").get();
   for (const channelDoc of channelsSnap.docs) {
     const data = channelDoc.data() || {};
     const members = data.members || [];
-    const pending = data.pending_members || [];
-    const listed =
-      memberListIncludes(members, uid, normalizedEmail)
-      || memberListIncludes(pending, uid, normalizedEmail);
-
-    if (!listed) continue;
-
-    channelIds.push(channelDoc.id);
-
-    const normalizedMembers = members
-      .filter((entry) => normalizeMemberEntry(entry) !== normalizedEmail && entry !== uid)
-      .concat(uid);
-    const normalizedPending = pending.filter(
-      (entry) => normalizeMemberEntry(entry) !== normalizedEmail && entry !== uid
+    const matchedBy = members.filter(
+      (entry) => allIds.includes(entry) || normalizeMemberEntry(entry) === normalizedEmail
     );
-
-    if (
-      JSON.stringify(normalizedMembers) !== JSON.stringify(members)
-      || JSON.stringify(normalizedPending) !== JSON.stringify(pending)
-    ) {
-      await channelDoc.ref.update({
-        members: normalizedMembers,
-        pending_members: normalizedPending,
-      });
-    }
+    if (!matchedBy.length) continue;
+    channels.push({
+      id: channelDoc.id,
+      name: data.name || "",
+      members,
+      matchedBy,
+      usesAuthUid: authUid ? members.includes(authUid) : false,
+    });
   }
 
-  await userRef.set({ member_of_channels: channelIds }, { merge: true });
+  const authProfile = profiles.find((p) => p.id === authUid) || null;
 
   return {
-    uid,
     email: normalizedEmail,
-    channelIds,
-    daily_code_verified_date: dateKey,
+    authUid,
+    authEmail,
+    todayDateKey: getCodeDateKey(),
+    systemDailyCode: systemSnap.exists ? systemSnap.data() : null,
+    profiles,
+    channels,
+    issues: [
+      !authUid && "No Firebase Auth user for this email",
+      profiles.length > 1 && "Multiple Firestore profiles share this email",
+      authProfile && !authProfile.member_of_channels?.length && channels.length > 0
+        && "Auth profile is missing member_of_channels despite channel membership",
+      authProfile
+        && authProfile.daily_code_verified_date
+        && systemSnap.exists
+        && authProfile.daily_code_verified_date !== systemSnap.data()?.dateKey
+        && "Daily code date on profile does not match system/dailyCode.dateKey",
+      channels.some((ch) => !ch.usesAuthUid)
+        && "One or more channels list an orphan uid/email instead of the auth uid",
+    ].filter(Boolean),
   };
 }
 
 module.exports = {
   resolveMemberUid,
   memberListIncludes,
+  memberListIncludesAny,
   syncMemberProfilesForChannel,
+  syncChannelAccessForAuthUser,
   backfillAllChannelMemberships,
   repairUserAccess,
+  diagnoseUserAccess,
 };

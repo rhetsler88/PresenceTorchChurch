@@ -19,16 +19,17 @@ const {
   rotateAllDailyCodes,
   verifyDailyAccessCode,
   getDailyAccessCodeForUser,
+  getCodeDateKey,
+  writeSystemDailyCodeDateKey,
+  dailyCodeValidityPatch,
 } = require("./dailyCode");
 const {
   syncMemberProfilesForChannel,
   backfillAllChannelMemberships,
   repairUserAccess,
+  syncChannelAccessForAuthUser,
+  diagnoseUserAccess,
 } = require("./channelMembership");
-const {
-  getCodeDateKey,
-  writeSystemDailyCodeDateKey,
-} = require("./dailyCode");
 
 initializeApp();
 setGlobalOptions({ region: "us-east5" });
@@ -239,6 +240,7 @@ exports.syncChannelMembershipProfiles = onDocumentWritten(
     const db = getFirestore();
     const updated = await syncMemberProfilesForChannel(
       db,
+      getAuth(),
       event.params.channelId,
       beforeMembers,
       afterMembers
@@ -264,7 +266,39 @@ exports.backfillChannelMemberships = onCall(CALLABLE_OPTIONS, async (request) =>
     throw new HttpsError("permission-denied", "Admin access required");
   }
 
-  return backfillAllChannelMemberships(db);
+  return backfillAllChannelMemberships(db, getAuth());
+});
+
+exports.syncMyChannelAccess = onCall(CALLABLE_OPTIONS, async (request) => {
+  if (!request.auth) {
+    throw new HttpsError("unauthenticated", "Sign in required");
+  }
+
+  const db = getFirestore();
+  const userSnap = await db.collection("users").doc(request.auth.uid).get();
+  const email = request.auth.token.email || userSnap.data()?.email || "";
+
+  return syncChannelAccessForAuthUser(db, getAuth(), request.auth.uid, email);
+});
+
+exports.diagnoseUserAccess = onCall(CALLABLE_OPTIONS, async (request) => {
+  if (!request.auth) {
+    throw new HttpsError("unauthenticated", "Sign in required");
+  }
+
+  const email = request.data?.email;
+  if (!email || typeof email !== "string") {
+    throw new HttpsError("invalid-argument", "email is required");
+  }
+
+  const db = getFirestore();
+  const callerSnap = await db.collection("users").doc(request.auth.uid).get();
+  const role = callerSnap.data()?.role || "user";
+  if (role !== "admin" && role !== "super_admin") {
+    throw new HttpsError("permission-denied", "Admin access required");
+  }
+
+  return diagnoseUserAccess(db, getAuth(), email, { getCodeDateKey });
 });
 
 exports.repairUserAccess = onCall(CALLABLE_OPTIONS, async (request) => {
@@ -288,6 +322,7 @@ exports.repairUserAccess = onCall(CALLABLE_OPTIONS, async (request) => {
     return await repairUserAccess(db, getAuth(), email, {
       getCodeDateKey,
       writeSystemDailyCodeDateKey,
+      dailyCodeValidityPatch,
     });
   } catch (err) {
     const code = err?.code;

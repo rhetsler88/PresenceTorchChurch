@@ -1,5 +1,5 @@
 const crypto = require("crypto");
-const { FieldValue } = require("firebase-admin/firestore");
+const { FieldValue, Timestamp } = require("firebase-admin/firestore");
 
 const ETZ = "America/New_York";
 const ROLLOVER_HOUR_ET = 0;
@@ -46,6 +46,54 @@ function getCodeDateKey(date = new Date()) {
     return `${pGet("year")}-${pGet("month")}-${pGet("day")}`;
   }
   return `${y}-${m}-${d}`;
+}
+
+function addDaysToDateKey(dateKey, days = 1) {
+  const [year, month, day] = dateKey.split("-").map(Number);
+  const next = new Date(Date.UTC(year, month - 1, day + days));
+  const y = next.getUTCFullYear();
+  const m = String(next.getUTCMonth() + 1).padStart(2, "0");
+  const d = String(next.getUTCDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
+/** UTC instant when the current daily-code period ends (next 12:01 AM ET). */
+function getDailyCodeValidUntil(from = new Date()) {
+  const endDateKey = addDaysToDateKey(getCodeDateKey(from), 1);
+  const [year, month, day] = endDateKey.split("-").map(Number);
+  const startUtc = Date.UTC(year, month - 1, day, 0, 0, 0);
+  const endUtc = Date.UTC(year, month - 1, day + 1, 12, 0, 0);
+
+  for (let utcMs = startUtc; utcMs <= endUtc; utcMs += 60_000) {
+    const candidate = new Date(utcMs);
+    const parts = new Intl.DateTimeFormat("en-US", {
+      timeZone: ETZ,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    }).formatToParts(candidate);
+    const get = (type) => parts.find((p) => p.type === type).value;
+    const key = `${get("year")}-${get("month")}-${get("day")}`;
+    const hour = parseInt(get("hour"), 10) % 24;
+    const minute = parseInt(get("minute"), 10);
+    if (key === endDateKey && hour === ROLLOVER_HOUR_ET && minute === ROLLOVER_MINUTE_ET) {
+      return candidate;
+    }
+  }
+
+  return new Date(startUtc + 24 * 60 * 60 * 1000);
+}
+
+function dailyCodeValidityPatch(dateKey, from = new Date()) {
+  return {
+    daily_code_verified_date: dateKey,
+    daily_code_valid_until: Timestamp.fromDate(getDailyCodeValidUntil(from)),
+    daily_code_failed_attempts: 0,
+    daily_code_locked_until: FieldValue.delete(),
+  };
 }
 
 function generateDailyCode() {
@@ -158,7 +206,7 @@ async function verifyDailyAccessCode(db, uid, submittedCode) {
   const dateKey = getCodeDateKey();
 
   if (bypassesDailyCode(role)) {
-    await userRef.set({ daily_code_verified_date: dateKey }, { merge: true });
+    await userRef.set(dailyCodeValidityPatch(dateKey), { merge: true });
     return { verified: true, dateKey, bypassed: true };
   }
 
@@ -198,14 +246,7 @@ async function verifyDailyAccessCode(db, uid, submittedCode) {
     throw err;
   }
 
-  await userRef.set(
-    {
-      daily_code_verified_date: dateKey,
-      daily_code_failed_attempts: 0,
-      daily_code_locked_until: FieldValue.delete(),
-    },
-    { merge: true }
-  );
+  await userRef.set(dailyCodeValidityPatch(dateKey), { merge: true });
 
   return { verified: true, dateKey };
 }
@@ -246,6 +287,8 @@ module.exports = {
   VERIFY_LOCKOUT_MS,
   normalizeOrganization,
   getCodeDateKey,
+  getDailyCodeValidUntil,
+  dailyCodeValidityPatch,
   generateDailyCode,
   resolveOrgIdForOrganizationName,
   ensureDailyCodeForOrg,

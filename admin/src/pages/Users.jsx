@@ -139,6 +139,23 @@ export default function Users() {
     },
   });
 
+  const diagnoseAccessMutation = useMutation({
+    mutationFn: (email) => api.admin.diagnoseUserAccess(email),
+    onSuccess: (result) => {
+      console.info("User access diagnosis:", result);
+      const summary = result?.issues?.length
+        ? result.issues.join(" · ")
+        : "No obvious access issues found";
+      toast.message(`Diagnosis for ${result?.email}`, {
+        description: summary,
+        duration: 12000,
+      });
+    },
+    onError: (err) => {
+      toast.error(err?.message || "Couldn't diagnose user access");
+    },
+  });
+
   const filtered = users.filter((u) => {
     const q = search.toLowerCase();
     const name = getDisplayName(u).toLowerCase();
@@ -270,15 +287,26 @@ export default function Users() {
                   <td className="px-4 py-3 text-right">
                     <div className="flex justify-end gap-1">
                       {isPlatformAdmin(currentUser) && u.email && (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          title="Repair channel membership and daily code"
-                          onClick={() => repairAccessMutation.mutate(u.email)}
-                          disabled={repairAccessMutation.isPending}
-                        >
-                          <RefreshCw className={`w-4 h-4 ${repairAccessMutation.isPending ? "animate-spin" : ""}`} />
-                        </Button>
+                        <>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            title="Diagnose access issues"
+                            onClick={() => diagnoseAccessMutation.mutate(u.email)}
+                            disabled={diagnoseAccessMutation.isPending}
+                          >
+                            <Search className="w-4 h-4" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            title="Repair channel membership and daily code"
+                            onClick={() => repairAccessMutation.mutate(u.email)}
+                            disabled={repairAccessMutation.isPending}
+                          >
+                            <RefreshCw className={`w-4 h-4 ${repairAccessMutation.isPending ? "animate-spin" : ""}`} />
+                          </Button>
+                        </>
                       )}
                       <Button variant="ghost" size="sm" onClick={() => openEdit(u)}>
                         <Pencil className="w-4 h-4" />

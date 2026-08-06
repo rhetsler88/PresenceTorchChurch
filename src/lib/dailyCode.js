@@ -83,6 +83,18 @@ export function needsDailyCodeVerification(user) {
 /** True when the user may enter the app (Firestore daily code date matches today). */
 export function isDailyCodeVerified(user) {
   if (!user) return false;
+
+  const validUntilRaw = user.daily_code_valid_until;
+  if (validUntilRaw) {
+    const validUntil = typeof validUntilRaw?.toDate === "function"
+      ? validUntilRaw.toDate()
+      : new Date(validUntilRaw);
+    if (!Number.isNaN(validUntil.getTime()) && validUntil > new Date()) {
+      markDailyCodeSession();
+      return true;
+    }
+  }
+
   if (user.daily_code_verified_date === getCodeDateKey()) {
     markDailyCodeSession();
     return true;

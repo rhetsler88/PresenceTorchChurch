@@ -22,7 +22,7 @@ import {
   canAccessChannelAlertsForChannel,
   canSendOnChannelForChannel,
 } from "@/lib/userUtils";
-import { getCodeDateKey } from "@/lib/dailyCode";
+import { getCodeDateKey, isDailyCodeVerified } from "@/lib/dailyCode";
 import { useAuth } from "@/lib/AuthContext";
 import {
   ensureUserChannelMembership,
@@ -31,6 +31,14 @@ import {
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Clock, Trash2 } from "lucide-react";
+
+function describePermissionFailure(user) {
+  if (!user) return "Sign in again and retry.";
+  if (!isDailyCodeVerified(user)) {
+    return "Enter today's daily access code, then retry.";
+  }
+  return "Channel access may be out of sync — sign out and back in, or ask an admin to repair your account.";
+}
 
 export default function Talk() {
   const { user, refreshChannelMembership } = useAuth();
@@ -103,6 +111,13 @@ export default function Talk() {
   );
 
   // Backfill users/{uid}.member_of_channels when approved on channel but not yet on user doc.
+  useEffect(() => {
+    if (!user?.id) return;
+    refreshChannelMembership().catch((err) => {
+      console.warn("Talk membership refresh failed:", err);
+    });
+  }, [user?.id, refreshChannelMembership]);
+
   useEffect(() => {
     if (!user?.id || !activeChannel || !effectiveChannelId) return;
     if (userHasFirestoreChannelAccess(user, effectiveChannelId, activeChannel)) return;
@@ -537,7 +552,7 @@ export default function Talk() {
         return;
       }
       toast.error(err?.code === "permission-denied" || err?.message?.includes("permission")
-        ? "Permission denied — confirm you are an approved member with today's access code entered"
+        ? `Permission denied — ${describePermissionFailure(user)}`
         : "Could not send voice message");
     },
   });
@@ -568,7 +583,7 @@ export default function Talk() {
     onError: (err) => {
       console.error("Text message send failed:", err);
       toast.error(err?.code === "permission-denied" || err?.message?.includes("permission")
-        ? "Permission denied — confirm you are an approved member with today's access code entered"
+        ? `Permission denied — ${describePermissionFailure(user)}`
         : "Could not send text message");
     },
   });

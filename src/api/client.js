@@ -644,6 +644,22 @@ export const authApi = {
   },
 };
 
+export const dailyCodeApi = {
+  async verify(code) {
+    await waitForFirestoreAuth({ forceRefresh: true });
+    const callable = httpsCallable(functions, "verifyDailyAccessCode");
+    const result = await callable({ code });
+    return result.data;
+  },
+
+  async getForAdmin() {
+    await waitForFirestoreAuth();
+    const callable = httpsCallable(functions, "getDailyAccessCode");
+    const result = await callable({});
+    return result.data;
+  },
+};
+
 export const functionsApi = {
   async invoke(name, params) {
     if (name === "getSecureAudioUrl") {
@@ -798,6 +814,7 @@ export const api = {
   entities,
   auth: authApi,
   admin: adminApi,
+  dailyCode: dailyCodeApi,
   functions: functionsApi,
   integrations,
   organizations: organizationsApi,

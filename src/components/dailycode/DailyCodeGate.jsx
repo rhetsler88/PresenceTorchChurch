@@ -3,14 +3,20 @@ import { api } from "@/api/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Lock, Key, X, Copy, Check, LogOut } from "lucide-react";
-import { getDailyCode, getCodeDateKey, isDailyCodeVerified, markDailyCodeSession } from "@/lib/dailyCode";
+import { getCodeDateKey, isDailyCodeVerified, markDailyCodeSession } from "@/lib/dailyCode";
 import { normalizeOrganization } from "@/lib/userUtils";
 import { getDailyVerse } from "@/lib/dailyVerse";
 import { useAuth } from "@/lib/AuthContext";
+import { useQuery } from "@tanstack/react-query";
 import dailyCodeBanner from "@/assets/logo-daily-code.png";
 
-function DailyCodeBanner({ organization }) {
-  const code = getDailyCode(organization);
+function DailyCodeBanner() {
+  const { data } = useQuery({
+    queryKey: ["dailyAccessCode"],
+    queryFn: () => api.dailyCode.getForAdmin(),
+    staleTime: 60_000,
+  });
+  const code = data?.code;
   const dateKey = getCodeDateKey();
   const storageKey = `daily-code-dismissed-${dateKey}`;
   const [dismissed, setDismissed] = useState(
@@ -64,26 +70,21 @@ function DailyCodeBanner({ organization }) {
 function DailyCodeEntry({ onVerified, organization }) {
   const { logout } = useAuth();
   const [code, setCode] = useState("");
-  const [error, setError] = useState(false);
+  const [error, setError] = useState("");
   const [isVerifying, setIsVerifying] = useState(false);
 
-  const expectedCode = getDailyCode(organization);
   const hasOrganization = Boolean(normalizeOrganization(organization));
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (code.length !== 7 || !expectedCode) return;
+    if (code.length !== 7 || !hasOrganization) return;
     setIsVerifying(true);
+    setError("");
     try {
-      if (code === expectedCode) {
-        await api.auth.updateMe({ daily_code_verified_date: getCodeDateKey() });
-        onVerified();
-      } else {
-        setError(true);
-        setCode("");
-      }
-    } catch {
-      setError(true);
+      await api.dailyCode.verify(code);
+      onVerified();
+    } catch (err) {
+      setError(err?.message || "Incorrect code. Please try again.");
       setCode("");
     }
     setIsVerifying(false);
@@ -94,7 +95,6 @@ function DailyCodeEntry({ onVerified, organization }) {
   return (
     <div className="flex-1 flex flex-col items-center justify-center p-4 min-h-screen">
       <div className="w-full max-w-sm">
-        {/* Social media banner */}
         <div className="rounded-2xl overflow-hidden shadow-lg mb-4">
           <img
             src={dailyCodeBanner}
@@ -103,7 +103,6 @@ function DailyCodeEntry({ onVerified, organization }) {
           />
         </div>
 
-        {/* Daily Bible verse */}
         <div className="bg-primary/5 border border-primary/20 rounded-2xl p-5 mb-4 text-center">
           <p className="text-[10px] font-bold text-primary uppercase tracking-wider mb-2">
             Verse of the Day
@@ -116,7 +115,6 @@ function DailyCodeEntry({ onVerified, organization }) {
           </p>
         </div>
 
-        {/* Organization card */}
         <div className="bg-card border border-border rounded-2xl p-4 mb-4 flex items-center gap-3">
           <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center flex-shrink-0">
             <Lock className="w-5 h-5 text-primary" />
@@ -131,7 +129,6 @@ function DailyCodeEntry({ onVerified, organization }) {
           </div>
         </div>
 
-        {/* Code entry */}
         <div className="bg-card border border-border rounded-2xl p-6">
           <h1 className="text-xl font-bold text-foreground text-center mb-1">Daily Access Code</h1>
           <p className="text-sm text-muted-foreground text-center mb-5">
@@ -151,7 +148,7 @@ function DailyCodeEntry({ onVerified, organization }) {
               value={code}
               onChange={(e) => {
                 setCode(e.target.value.replace(/\D/g, ""));
-                setError(false);
+                setError("");
               }}
               className="text-center text-2xl tracking-[0.4em] font-mono h-14"
               placeholder="•••••••"
@@ -159,7 +156,7 @@ function DailyCodeEntry({ onVerified, organization }) {
             />
             {error && (
               <p className="text-sm text-destructive text-center">
-                Incorrect code. Please try again.
+                {error}
               </p>
             )}
             <Button
@@ -188,7 +185,6 @@ function DailyCodeEntry({ onVerified, organization }) {
 }
 
 export default function DailyCodeGate({ user, onUserUpdate, children, showBanner = false }) {
-  const todayKey = getCodeDateKey();
   const [verified, setVerified] = useState(() => isDailyCodeVerified(user));
 
   useEffect(() => {
@@ -211,7 +207,7 @@ export default function DailyCodeGate({ user, onUserUpdate, children, showBanner
   if (isAdminOrDirector) {
     return (
       <>
-        {showBanner && <DailyCodeBanner organization={user?.organization} />}
+        {showBanner && <DailyCodeBanner />}
         {children}
       </>
     );
@@ -222,10 +218,10 @@ export default function DailyCodeGate({ user, onUserUpdate, children, showBanner
   return (
     <DailyCodeEntry
       organization={user?.organization}
-      onVerified={() => {
+      onVerified={async () => {
         markDailyCodeSession();
         setVerified(true);
-        onUserUpdate?.({ ...user, daily_code_verified_date: todayKey });
+        await onUserUpdate?.({ silent: true });
       }}
     />
   );

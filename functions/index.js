@@ -15,6 +15,11 @@ const {
   buildRedAlertTokenSets,
   removeStaleTokensFromUserData,
 } = require("./alertRecipients");
+const {
+  rotateAllDailyCodes,
+  verifyDailyAccessCode,
+  getDailyAccessCodeForUser,
+} = require("./dailyCode");
 
 initializeApp();
 setGlobalOptions({ region: "us-east5" });
@@ -775,5 +780,57 @@ exports.exportTranscriptsToGoogleDoc = onCall(CALLABLE_OPTIONS, async (request) 
       "failed-precondition",
       `Google Doc export failed: ${detail}. Cloud Functions service accounts cannot create Drive files — use in-app export (user Google sign-in) instead.`
     );
+  }
+});
+
+function mapDailyCodeError(err) {
+  const code = err?.code || "internal";
+  const message = err?.message || "Daily access code request failed";
+  if (code === "permission-denied" || code === "unauthenticated" || code === "invalid-argument"
+    || code === "failed-precondition" || code === "not-found" || code === "resource-exhausted") {
+    throw new HttpsError(code, message);
+  }
+  throw new HttpsError("internal", message);
+}
+
+exports.rotateDailyAccessCodes = onSchedule(
+  {
+    schedule: "1 0 * * *",
+    timeZone: "America/New_York",
+  },
+  async () => {
+    const db = getFirestore();
+    const result = await rotateAllDailyCodes(db);
+    console.log("rotateDailyAccessCodes", result);
+  }
+);
+
+exports.verifyDailyAccessCode = onCall(CALLABLE_OPTIONS, async (request) => {
+  if (!request.auth) {
+    throw new HttpsError("unauthenticated", "Sign in required");
+  }
+
+  try {
+    const db = getFirestore();
+    return await verifyDailyAccessCode(db, request.auth.uid, request.data?.code);
+  } catch (err) {
+    mapDailyCodeError(err);
+  }
+});
+
+exports.getDailyAccessCode = onCall(CALLABLE_OPTIONS, async (request) => {
+  if (!request.auth) {
+    throw new HttpsError("unauthenticated", "Sign in required");
+  }
+
+  try {
+    const db = getFirestore();
+    const userSnap = await db.collection("users").doc(request.auth.uid).get();
+    if (!userSnap.exists) {
+      throw new HttpsError("not-found", "User profile not found");
+    }
+    return await getDailyAccessCodeForUser(db, userSnap.data());
+  } catch (err) {
+    mapDailyCodeError(err);
   }
 });

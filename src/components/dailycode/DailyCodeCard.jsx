@@ -1,13 +1,22 @@
 import React, { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { api } from "@/api/client";
 import { Button } from "@/components/ui/button";
 import { Key, Copy, Check } from "lucide-react";
-import { getDailyCode, getCodeRolloverLabel } from "@/lib/dailyCode";
+import { getCodeRolloverLabel } from "@/lib/dailyCode";
+import { normalizeOrganization } from "@/lib/userUtils";
 
 export default function DailyCodeCard({ organization }) {
-  const code = getDailyCode(organization);
+  const hasOrg = Boolean(normalizeOrganization(organization));
+  const { data, isLoading, isError, error } = useQuery({
+    queryKey: ["dailyAccessCode"],
+    queryFn: () => api.dailyCode.getForAdmin(),
+    enabled: hasOrg,
+    staleTime: 60_000,
+  });
   const [copied, setCopied] = useState(false);
 
-  if (!code) {
+  if (!hasOrg) {
     return (
       <div className="mx-4 mb-4 bg-muted/30 border border-border rounded-2xl p-4">
         <p className="text-sm text-muted-foreground text-center">
@@ -17,8 +26,26 @@ export default function DailyCodeCard({ organization }) {
     );
   }
 
+  if (isLoading) {
+    return (
+      <div className="mx-4 mb-4 bg-primary/5 border border-primary/20 rounded-2xl p-4 flex justify-center">
+        <div className="w-5 h-5 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
+  }
+
+  if (isError || !data?.code) {
+    return (
+      <div className="mx-4 mb-4 bg-muted/30 border border-border rounded-2xl p-4">
+        <p className="text-sm text-muted-foreground text-center">
+          {error?.message || "Couldn't load today's access code."}
+        </p>
+      </div>
+    );
+  }
+
   const copy = () => {
-    navigator.clipboard.writeText(code);
+    navigator.clipboard.writeText(data.code);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
@@ -35,7 +62,7 @@ export default function DailyCodeCard({ organization }) {
               Today's Access Code
             </p>
             <p className="text-2xl font-bold tracking-[0.2em] text-primary font-mono leading-tight">
-              {code}
+              {data.code}
             </p>
             <p className="text-[10px] text-muted-foreground mt-0.5">
               Resets at {getCodeRolloverLabel()}

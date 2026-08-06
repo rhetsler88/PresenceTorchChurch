@@ -177,8 +177,23 @@ service cloud.firestore {
 
     function userSelfUpdateForbiddenKeys() {
       return resource.data.get('onboarded', false) == true
-        ? ['role', 'is_monitor', 'receives_staff_alerts', 'pending_staff_alerts']
-        : ['role', 'is_monitor', 'receives_staff_alerts'];
+        ? [
+            'role',
+            'is_monitor',
+            'receives_staff_alerts',
+            'pending_staff_alerts',
+            'daily_code_verified_date',
+            'daily_code_failed_attempts',
+            'daily_code_locked_until',
+          ]
+        : [
+            'role',
+            'is_monitor',
+            'receives_staff_alerts',
+            'daily_code_verified_date',
+            'daily_code_failed_attempts',
+            'daily_code_locked_until',
+          ];
     }
 
     function isSelfJoinRequest(field) {
@@ -207,6 +222,24 @@ service cloud.firestore {
       return isPlatformAdmin()
         || isPlatformAdminFromToken()
         || isDirectorForChannel(channelId);
+    }
+
+    function systemDailyCodeDateKey() {
+      let dailyCodeDoc = get(/databases/$(database)/documents/system/dailyCode);
+      return dailyCodeDoc.exists ? dailyCodeDoc.data.get('dateKey', '') : '';
+    }
+
+    function bypassesDailyCodeGate() {
+      return isSuperAdmin() || isAdmin() || isDirector();
+    }
+
+    function isDailyCodeVerifiedForSession() {
+      return bypassesDailyCodeGate()
+        || userDoc().data.get('daily_code_verified_date', '') == systemDailyCodeDateKey();
+    }
+
+    function canUsePttWhenDailyCodeRequired() {
+      return isElevatedFromToken() || isDailyCodeVerifiedForSession();
     }
 
     // ── Users ──────────────────────────────────────────────────────────
@@ -252,11 +285,13 @@ service cloud.firestore {
     match /voiceMessages/{messageId} {
       allow read: if isElevatedFromToken();
       allow read: if channelIdOnResource()
-        && isMemberOfChannelId(resource.data.channel_id);
+        && isMemberOfChannelId(resource.data.channel_id)
+        && canUsePttWhenDailyCodeRequired();
 
       allow create: if isSignedIn()
         && channelIdOnRequest()
         && canSendOnChannel(request.resource.data.channel_id)
+        && canUsePttWhenDailyCodeRequired()
         && request.resource.data.get('created_by_id', request.auth.uid) == request.auth.uid;
 
       allow update: if isElevatedFromToken();
@@ -273,11 +308,13 @@ service cloud.firestore {
     match /pttSignals/{signalId} {
       allow read: if isElevatedFromToken();
       allow read: if channelIdOnResource()
-        && isMemberOfChannelId(resource.data.channel_id);
+        && isMemberOfChannelId(resource.data.channel_id)
+        && canUsePttWhenDailyCodeRequired();
 
       allow create: if isSignedIn()
         && channelIdOnRequest()
         && canSendOnChannel(request.resource.data.channel_id)
+        && canUsePttWhenDailyCodeRequired()
         && request.resource.data.sender_id == request.auth.uid;
 
       allow delete: if isSignedIn()
@@ -293,11 +330,13 @@ service cloud.firestore {
     match /audioChunks/{chunkId} {
       allow read: if isElevatedFromToken();
       allow read: if channelIdOnResource()
-        && isMemberOfChannelId(resource.data.channel_id);
+        && isMemberOfChannelId(resource.data.channel_id)
+        && canUsePttWhenDailyCodeRequired();
 
       allow create: if isSignedIn()
         && channelIdOnRequest()
         && canSendOnChannel(request.resource.data.channel_id)
+        && canUsePttWhenDailyCodeRequired()
         && request.resource.data.sender_id == request.auth.uid;
 
       allow delete: if isSignedIn() && isAdminOrDirector();
@@ -317,6 +356,10 @@ service cloud.firestore {
     match /system/{docId} {
       allow read: if isSignedIn();
       allow write: if false;
+    }
+
+    match /dailyCodes/{orgId} {
+      allow read, write: if false;
     }
 
     match /alertLogs/{logId} {

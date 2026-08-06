@@ -1,5 +1,3 @@
-import { normalizeOrganization } from "@/lib/userUtils";
-
 const ETZ = 'America/New_York';
 const ROLLOVER_HOUR_ET = 0;
 const ROLLOVER_MINUTE_ET = 1;
@@ -72,29 +70,4 @@ export function isDailyCodeVerified(user) {
     return true;
   }
   return hasDailyCodeSession();
-}
-
-/**
- * Generates a deterministic 7-digit code for the current code period scoped to one organization.
- * Each organization gets a unique code per day; users in other orgs cannot use it.
- */
-export function getDailyCode(organization, date = new Date()) {
-  const orgKey = normalizeOrganization(organization);
-  if (!orgKey) return null;
-
-  const dateKey = getCodeDateKey(date);
-  const salt = "PP-DailyAccess-2026";
-  const input = `${dateKey}:${orgKey}:${salt}`;
-  let hash = 0;
-  for (let i = 0; i < input.length; i++) {
-    hash = ((hash << 5) - hash) + input.charCodeAt(i);
-    hash = hash & hash;
-  }
-  const code = Math.abs(hash) % 10000000;
-  return code.toString().padStart(7, '0');
-}
-
-/** Convenience wrapper — returns null when the user has no organization. */
-export function getDailyCodeForUser(user, date = new Date()) {
-  return getDailyCode(user?.organization, date);
 }

@@ -11,13 +11,19 @@ async function waitForFirestoreAuth() {
   return firebaseUser;
 }
 
+function memberEntryMatches(userId, email, entry) {
+  if (!entry || typeof entry !== "string") return false;
+  if (userId && entry === userId) return true;
+  const normalizedEmail = email?.trim().toLowerCase();
+  if (!normalizedEmail) return false;
+  return entry.trim().toLowerCase() === normalizedEmail;
+}
+
 function channelIdsForUser(channels, userId, email) {
   return channels
     .filter((channel) => {
       const members = channel.members || [];
-      if (userId && members.includes(userId)) return true;
-      if (email && members.includes(email)) return true;
-      return false;
+      return members.some((entry) => memberEntryMatches(userId, email, entry));
     })
     .map((channel) => channel.id);
 }
@@ -61,21 +67,26 @@ export async function ensureUserChannelMembership(userId, email, channel) {
   if (!userId || !channel?.id) return false;
 
   const members = channel.members || [];
-  const listed =
-    members.includes(userId) || (email && members.includes(email));
+  const listed = members.some((entry) => memberEntryMatches(userId, email, entry));
   if (!listed) return false;
 
   await addUserChannelMembership(userId, channel.id);
   return true;
 }
 
-export function userHasFirestoreChannelAccess(user, channelId) {
+export function userHasFirestoreChannelAccess(user, channelId, channel) {
   if (!user?.id || !channelId) return false;
   if (user.role === "super_admin" || user.role === "admin") return true;
   if (user.role === "director" || user.role === "monitor" || user.is_monitor) {
     return true;
   }
-  return (user.member_of_channels || []).includes(channelId);
+  if ((user.member_of_channels || []).includes(channelId)) return true;
+  if (channel?.id === channelId) {
+    return (channel.members || []).some((entry) =>
+      memberEntryMatches(user.id, user.email, entry)
+    );
+  }
+  return false;
 }
 
 /** Channels where the user appears in channel.members (uid or email). */
@@ -83,7 +94,7 @@ export function getChannelsFromMembershipLists(user, channels) {
   if (!user || !channels?.length) return [];
   return channels.filter((channel) => {
     const members = channel.members || [];
-    return members.includes(user.id) || (user.email && members.includes(user.email));
+    return members.some((entry) => memberEntryMatches(user.id, user.email, entry));
   });
 }
 

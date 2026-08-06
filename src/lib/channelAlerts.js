@@ -2,8 +2,11 @@
 export function isListedOnChannel(userId, email, list = []) {
   if (!list?.length) return false;
   if (userId && list.includes(userId)) return true;
-  if (email && list.includes(email)) return true;
-  return false;
+  const normalizedEmail = email?.trim().toLowerCase();
+  if (!normalizedEmail) return false;
+  return list.some(
+    (entry) => typeof entry === "string" && entry.trim().toLowerCase() === normalizedEmail
+  );
 }
 
 export function isChannelTalkMember(user, channel) {

@@ -23,7 +23,12 @@ const {
 const {
   syncMemberProfilesForChannel,
   backfillAllChannelMemberships,
+  repairUserAccess,
 } = require("./channelMembership");
+const {
+  getCodeDateKey,
+  writeSystemDailyCodeDateKey,
+} = require("./dailyCode");
 
 initializeApp();
 setGlobalOptions({ region: "us-east5" });
@@ -260,6 +265,41 @@ exports.backfillChannelMemberships = onCall(CALLABLE_OPTIONS, async (request) =>
   }
 
   return backfillAllChannelMemberships(db);
+});
+
+exports.repairUserAccess = onCall(CALLABLE_OPTIONS, async (request) => {
+  if (!request.auth) {
+    throw new HttpsError("unauthenticated", "Sign in required");
+  }
+
+  const email = request.data?.email;
+  if (!email || typeof email !== "string") {
+    throw new HttpsError("invalid-argument", "email is required");
+  }
+
+  const db = getFirestore();
+  const callerSnap = await db.collection("users").doc(request.auth.uid).get();
+  const role = callerSnap.data()?.role || "user";
+  if (role !== "admin" && role !== "super_admin") {
+    throw new HttpsError("permission-denied", "Admin access required");
+  }
+
+  try {
+    return await repairUserAccess(db, getAuth(), email, {
+      getCodeDateKey,
+      writeSystemDailyCodeDateKey,
+    });
+  } catch (err) {
+    const code = err?.code;
+    if (code === "invalid-argument" || code === "not-found") {
+      throw new HttpsError(code, err.message);
+    }
+    if (code === "auth/user-not-found") {
+      throw new HttpsError("not-found", "No Firebase Auth account for that email");
+    }
+    console.error("repairUserAccess failed:", err);
+    throw new HttpsError("internal", "Could not repair user access");
+  }
 });
 
 exports.refreshMyAuthClaims = onCall(CALLABLE_OPTIONS, async (request) => {

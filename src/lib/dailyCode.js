@@ -80,12 +80,13 @@ export function needsDailyCodeVerification(user) {
   return false;
 }
 
-/** True when the user may enter the app (Firestore date matches or same browser session). */
+/** True when the user may enter the app (Firestore daily code date matches today). */
 export function isDailyCodeVerified(user) {
   if (!user) return false;
   if (user.daily_code_verified_date === getCodeDateKey()) {
     markDailyCodeSession();
     return true;
   }
-  return hasDailyCodeSession();
+  clearDailyCodeSession();
+  return false;
 }

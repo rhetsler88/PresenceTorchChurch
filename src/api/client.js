@@ -743,6 +743,12 @@ export const adminApi = {
     const callable = httpsCallable(functions, "backfillChannelMemberships");
     return (await callable()).data;
   },
+
+  async repairUserAccess(email) {
+    await waitForFirestoreAuth({ forceRefresh: true });
+    const callable = httpsCallable(functions, "repairUserAccess");
+    return (await callable({ email })).data;
+  },
 };
 
 export const bootstrapApi = {

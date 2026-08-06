@@ -234,8 +234,11 @@ service cloud.firestore {
     }
 
     function isDailyCodeVerifiedForSession() {
+      let userDate = userDoc().data.get('daily_code_verified_date', '');
+      let systemDate = systemDailyCodeDateKey();
       return bypassesDailyCodeGate()
-        || userDoc().data.get('daily_code_verified_date', '') == systemDailyCodeDateKey();
+        || (userDate != '' && userDate == systemDate)
+        || (userDate != '' && systemDate == '');
     }
 
     function canUsePttWhenDailyCodeRequired() {
@@ -285,7 +288,7 @@ service cloud.firestore {
     match /voiceMessages/{messageId} {
       allow read: if isElevatedFromToken();
       allow read: if channelIdOnResource()
-        && isMemberOfChannelId(resource.data.channel_id)
+        && isChannelTalkMember(resource.data.channel_id)
         && canUsePttWhenDailyCodeRequired();
 
       allow create: if isSignedIn()
@@ -296,10 +299,10 @@ service cloud.firestore {
 
       allow update: if isElevatedFromToken();
       allow update: if channelIdOnResource()
-        && isMemberOfChannelId(resource.data.channel_id);
+        && isChannelTalkMember(resource.data.channel_id);
       allow update: if isSignedIn()
         && channelIdOnResource()
-        && isMemberOfChannelId(resource.data.channel_id)
+        && isChannelTalkMember(resource.data.channel_id)
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['transcript', 'is_transcribed']);
 
       allow delete: if isSignedIn() && isAdminOrDirector();
@@ -308,7 +311,7 @@ service cloud.firestore {
     match /pttSignals/{signalId} {
       allow read: if isElevatedFromToken();
       allow read: if channelIdOnResource()
-        && isMemberOfChannelId(resource.data.channel_id)
+        && isChannelTalkMember(resource.data.channel_id)
         && canUsePttWhenDailyCodeRequired();
 
       allow create: if isSignedIn()
@@ -330,7 +333,7 @@ service cloud.firestore {
     match /audioChunks/{chunkId} {
       allow read: if isElevatedFromToken();
       allow read: if channelIdOnResource()
-        && isMemberOfChannelId(resource.data.channel_id)
+        && isChannelTalkMember(resource.data.channel_id)
         && canUsePttWhenDailyCodeRequired();
 
       allow create: if isSignedIn()

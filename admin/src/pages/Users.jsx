@@ -125,6 +125,20 @@ export default function Users() {
     onError: () => toast.error("Couldn't sync channel memberships"),
   });
 
+  const repairAccessMutation = useMutation({
+    mutationFn: (email) => api.admin.repairUserAccess(email),
+    onSuccess: (result) => {
+      queryClient.invalidateQueries({ queryKey: ["users"] });
+      queryClient.invalidateQueries({ queryKey: ["channels"] });
+      toast.success(
+        `Repaired ${result?.email}: ${result?.channelIds?.length ?? 0} channel(s), daily code set for today`
+      );
+    },
+    onError: (err) => {
+      toast.error(err?.message || "Couldn't repair user access");
+    },
+  });
+
   const filtered = users.filter((u) => {
     const q = search.toLowerCase();
     const name = getDisplayName(u).toLowerCase();
@@ -255,6 +269,17 @@ export default function Users() {
                   </td>
                   <td className="px-4 py-3 text-right">
                     <div className="flex justify-end gap-1">
+                      {isPlatformAdmin(currentUser) && u.email && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          title="Repair channel membership and daily code"
+                          onClick={() => repairAccessMutation.mutate(u.email)}
+                          disabled={repairAccessMutation.isPending}
+                        >
+                          <RefreshCw className={`w-4 h-4 ${repairAccessMutation.isPending ? "animate-spin" : ""}`} />
+                        </Button>
+                      )}
                       <Button variant="ghost" size="sm" onClick={() => openEdit(u)}>
                         <Pencil className="w-4 h-4" />
                       </Button>
@@ -377,10 +402,10 @@ export default function Users() {
                       variant="outline"
                       size="sm"
                       className="w-full mt-2"
-                      onClick={() => syncMembershipsMutation.mutate()}
-                      disabled={syncMembershipsMutation.isPending}
+                      onClick={() => repairAccessMutation.mutate(editing.email)}
+                      disabled={repairAccessMutation.isPending || !editing.email}
                     >
-                      Sync memberships for all users
+                      Repair access for this user
                     </Button>
                   )}
                 </div>

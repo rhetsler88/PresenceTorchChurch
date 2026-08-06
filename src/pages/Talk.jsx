@@ -94,7 +94,7 @@ export default function Talk() {
     effectiveChannelId &&
     user &&
     canReadMessages &&
-    userHasFirestoreChannelAccess(user, effectiveChannelId)
+    userHasFirestoreChannelAccess(user, effectiveChannelId, activeChannel)
   );
 
   const messagesQueryKey = useMemo(
@@ -105,7 +105,7 @@ export default function Talk() {
   // Backfill users/{uid}.member_of_channels when approved on channel but not yet on user doc.
   useEffect(() => {
     if (!user?.id || !activeChannel || !effectiveChannelId) return;
-    if (userHasFirestoreChannelAccess(user, effectiveChannelId)) return;
+    if (userHasFirestoreChannelAccess(user, effectiveChannelId, activeChannel)) return;
 
     let cancelled = false;
     (async () => {
@@ -449,7 +449,7 @@ export default function Talk() {
 
   const ensureFirestoreMembership = useCallback(async () => {
     if (!user?.id || !activeChannel || !effectiveChannelId) return;
-    if (userHasFirestoreChannelAccess(user, effectiveChannelId)) return;
+    if (userHasFirestoreChannelAccess(user, effectiveChannelId, activeChannel)) return;
     const added = await ensureUserChannelMembership(
       user.id,
       user.email,

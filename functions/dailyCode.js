@@ -249,6 +249,7 @@ module.exports = {
   generateDailyCode,
   resolveOrgIdForOrganizationName,
   ensureDailyCodeForOrg,
+  writeSystemDailyCodeDateKey,
   rotateAllDailyCodes,
   bypassesDailyCode,
   verifyDailyAccessCode,

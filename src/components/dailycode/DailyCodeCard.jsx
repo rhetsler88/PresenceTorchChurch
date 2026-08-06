@@ -3,9 +3,19 @@ import { Button } from "@/components/ui/button";
 import { Key, Copy, Check } from "lucide-react";
 import { getDailyCode, getCodeRolloverLabel } from "@/lib/dailyCode";
 
-export default function DailyCodeCard() {
-  const code = getDailyCode();
+export default function DailyCodeCard({ organization }) {
+  const code = getDailyCode(organization);
   const [copied, setCopied] = useState(false);
+
+  if (!code) {
+    return (
+      <div className="mx-4 mb-4 bg-muted/30 border border-border rounded-2xl p-4">
+        <p className="text-sm text-muted-foreground text-center">
+          Assign your account to an organization to view its daily access code.
+        </p>
+      </div>
+    );
+  }
 
   const copy = () => {
     navigator.clipboard.writeText(code);

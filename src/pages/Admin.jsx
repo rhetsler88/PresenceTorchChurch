@@ -247,7 +247,7 @@ export default function Admin() {
             Approve members for your assigned channels
           </p>
         </div>
-        <DailyCodeCard />
+        <DailyCodeCard organization={currentUser?.organization} />
         <PendingRequests
           channels={pendingRequests}
           users={users}
@@ -288,7 +288,7 @@ export default function Admin() {
         </div>
       </div>
 
-      <DailyCodeCard />
+      <DailyCodeCard organization={currentUser?.organization} />
 
       <StaffAlertRequests
         users={staffAlertCandidates}

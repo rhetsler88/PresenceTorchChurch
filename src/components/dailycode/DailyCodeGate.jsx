@@ -4,12 +4,13 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Lock, Key, X, Copy, Check, LogOut } from "lucide-react";
 import { getDailyCode, getCodeDateKey, isDailyCodeVerified, markDailyCodeSession } from "@/lib/dailyCode";
+import { normalizeOrganization } from "@/lib/userUtils";
 import { getDailyVerse } from "@/lib/dailyVerse";
 import { useAuth } from "@/lib/AuthContext";
 import dailyCodeBanner from "@/assets/logo-daily-code.png";
 
-function DailyCodeBanner() {
-  const code = getDailyCode();
+function DailyCodeBanner({ organization }) {
+  const code = getDailyCode(organization);
   const dateKey = getCodeDateKey();
   const storageKey = `daily-code-dismissed-${dateKey}`;
   const [dismissed, setDismissed] = useState(
@@ -17,7 +18,7 @@ function DailyCodeBanner() {
   );
   const [copied, setCopied] = useState(false);
 
-  if (dismissed) return null;
+  if (dismissed || !code) return null;
 
   const copy = () => {
     navigator.clipboard.writeText(code);
@@ -66,12 +67,15 @@ function DailyCodeEntry({ onVerified, organization }) {
   const [error, setError] = useState(false);
   const [isVerifying, setIsVerifying] = useState(false);
 
+  const expectedCode = getDailyCode(organization);
+  const hasOrganization = Boolean(normalizeOrganization(organization));
+
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (code.length !== 7) return;
+    if (code.length !== 7 || !expectedCode) return;
     setIsVerifying(true);
     try {
-      if (code === getDailyCode()) {
+      if (code === expectedCode) {
         await api.auth.updateMe({ daily_code_verified_date: getCodeDateKey() });
         onVerified();
       } else {
@@ -133,6 +137,11 @@ function DailyCodeEntry({ onVerified, organization }) {
           <p className="text-sm text-muted-foreground text-center mb-5">
             Enter today's 7-digit code to continue
           </p>
+          {!hasOrganization && (
+            <p className="text-sm text-destructive text-center mb-4">
+              Your account is not assigned to an organization. Contact your administrator.
+            </p>
+          )}
           <form onSubmit={handleSubmit} className="space-y-4">
             <Input
               type="text"
@@ -156,7 +165,7 @@ function DailyCodeEntry({ onVerified, organization }) {
             <Button
               type="submit"
               className="w-full h-11"
-              disabled={code.length !== 7 || isVerifying}
+              disabled={!hasOrganization || code.length !== 7 || isVerifying}
             >
               {isVerifying ? "Verifying..." : "Unlock"}
             </Button>
@@ -202,7 +211,7 @@ export default function DailyCodeGate({ user, onUserUpdate, children, showBanner
   if (isAdminOrDirector) {
     return (
       <>
-        {showBanner && <DailyCodeBanner />}
+        {showBanner && <DailyCodeBanner organization={user?.organization} />}
         {children}
       </>
     );

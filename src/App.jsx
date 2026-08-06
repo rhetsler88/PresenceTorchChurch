@@ -8,6 +8,7 @@ import { BrowserRouter, HashRouter, Route, Routes } from 'react-router-dom';
 const Router = Capacitor.isNativePlatform() ? HashRouter : BrowserRouter;
 import PageNotFound from './lib/PageNotFound';
 import { AuthProvider, useAuth } from '@/lib/AuthContext';
+import { normalizeOrganization } from '@/lib/userUtils';
 import { auth } from '@/lib/firebase';
 import AppLayout from './components/layout/AppLayout';
 import Talk from './pages/Talk';
@@ -62,7 +63,7 @@ const AuthenticatedApp = () => {
     );
   }
 
-  if (user && !user.onboarded) {
+  if (user && (!user.onboarded || !normalizeOrganization(user.organization))) {
     return (
       <Routes>
         <Route path="/*" element={<Onboarding />} />

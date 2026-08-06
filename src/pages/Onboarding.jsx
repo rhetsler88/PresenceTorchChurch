@@ -193,7 +193,7 @@ export default function Onboarding() {
               </p>
             </>
           )}
-          <Button onClick={() => navigate("/")} className="w-full">
+          <Button onClick={() => navigate("/channels")} className="w-full">
             Continue
           </Button>
         </div>

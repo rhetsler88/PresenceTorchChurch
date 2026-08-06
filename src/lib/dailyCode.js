@@ -1,3 +1,5 @@
+import { normalizeOrganization } from "@/lib/userUtils";
+
 const ETZ = 'America/New_York';
 const ROLLOVER_HOUR_ET = 0;
 const ROLLOVER_MINUTE_ET = 1;
@@ -60,6 +62,22 @@ export function clearDailyCodeSession() {
   } catch {
     // ignore
   }
+}
+
+/**
+ * Regular users need a daily code only after they have approved PTT or staff-alert access.
+ * New users selecting an org and requesting channels are not gated.
+ */
+export function needsDailyCodeVerification(user) {
+  if (!user) return false;
+  const role = user.role || "user";
+  if (role === "admin" || role === "super_admin" || role === "director") return false;
+  if (!user.onboarded) return false;
+  if (!normalizeOrganization(user.organization)) return false;
+  if (user.role === "monitor" || user.is_monitor === true) return true;
+  if ((user.member_of_channels || []).length > 0) return true;
+  if (user.receives_staff_alerts) return true;
+  return false;
 }
 
 /** True when the user may enter the app (Firestore date matches or same browser session). */

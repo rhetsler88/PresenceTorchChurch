@@ -3,7 +3,12 @@ import { api } from "@/api/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Lock, Key, X, Copy, Check, LogOut } from "lucide-react";
-import { getCodeDateKey, isDailyCodeVerified, markDailyCodeSession } from "@/lib/dailyCode";
+import {
+  getCodeDateKey,
+  isDailyCodeVerified,
+  markDailyCodeSession,
+  needsDailyCodeVerification,
+} from "@/lib/dailyCode";
 import { normalizeOrganization } from "@/lib/userUtils";
 import { getDailyVerse } from "@/lib/dailyVerse";
 import { useAuth } from "@/lib/AuthContext";
@@ -203,6 +208,10 @@ export default function DailyCodeGate({ user, onUserUpdate, children, showBanner
 
   const isAdminOrDirector =
     user.role === "admin" || user.role === "super_admin" || user.role === "director";
+
+  if (!needsDailyCodeVerification(user)) {
+    return children;
+  }
 
   if (isAdminOrDirector) {
     return (

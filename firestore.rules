@@ -236,9 +236,9 @@ service cloud.firestore {
     function isDailyCodeVerifiedForSession() {
       let userDate = userDoc().data.get('daily_code_verified_date', '');
       let systemDate = systemDailyCodeDateKey();
-      let validUntil = userDoc().data.get('daily_code_valid_until', timestamp);
       return bypassesDailyCodeGate()
-        || (validUntil != null && request.time < validUntil)
+        || (userDoc().data.keys().hasAny(['daily_code_valid_until'])
+            && request.time < userDoc().data.daily_code_valid_until)
         || (userDate != '' && userDate == systemDate)
         || (userDate != '' && systemDate == '');
     }

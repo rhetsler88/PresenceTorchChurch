@@ -28,13 +28,18 @@ import {
   AlertDialogAction,
   AlertDialogCancel,
 } from "@/components/ui/alert-dialog";
-import { AlertTriangle, Pencil, Search, Trash2 } from "lucide-react";
+import { AlertTriangle, Pencil, RefreshCw, Search, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import {
   getDisplayName,
   isPlatformAdmin,
   isSuperAdmin,
 } from "@/lib/userUtils";
+import {
+  getChannelsFromMembershipLists,
+  getChannelsFromProfile,
+  getUnsyncedChannelMemberships,
+} from "@/lib/channelMembership";
 import { useAuth } from "@/lib/AuthContext";
 
 const ROLES = ["user", "monitor", "director", "admin", "super_admin"];
@@ -63,6 +68,11 @@ export default function Users() {
   const { data: users = [], isLoading } = useQuery({
     queryKey: ["users"],
     queryFn: () => api.entities.User.list(),
+  });
+
+  const { data: channels = [] } = useQuery({
+    queryKey: ["channels"],
+    queryFn: () => api.entities.Channel.list("-created_date", 200),
   });
 
   const { data: orgs = [] } = useQuery({
@@ -104,6 +114,17 @@ export default function Users() {
     },
   });
 
+  const syncMembershipsMutation = useMutation({
+    mutationFn: () => api.admin.backfillChannelMemberships(),
+    onSuccess: (result) => {
+      queryClient.invalidateQueries({ queryKey: ["users"] });
+      toast.success(
+        `Synced ${result?.profilesUpdated ?? 0} profile memberships across ${result?.channels ?? 0} channels`
+      );
+    },
+    onError: () => toast.error("Couldn't sync channel memberships"),
+  });
+
   const filtered = users.filter((u) => {
     const q = search.toLowerCase();
     const name = getDisplayName(u).toLowerCase();
@@ -127,12 +148,34 @@ export default function Users() {
 
   const canEditRole = isPlatformAdmin(currentUser);
 
+  const getUserChannelInfo = (user) => {
+    const approved = getChannelsFromMembershipLists(user, channels);
+    const synced = getChannelsFromProfile(user, channels);
+    const unsynced = getUnsyncedChannelMemberships(user, channels);
+    return { approved, synced, unsynced };
+  };
+
   return (
     <div className="p-4 md:p-8 w-full max-w-5xl mx-auto">
-      <h1 className="text-2xl font-bold text-foreground mb-1">Users</h1>
-      <p className="text-sm text-muted-foreground mb-6">
-        Edit user profiles, roles, and organization assignments
-      </p>
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between mb-6">
+        <div>
+          <h1 className="text-2xl font-bold text-foreground mb-1">Users</h1>
+          <p className="text-sm text-muted-foreground">
+            Edit user profiles, roles, organization assignments, and channel access
+          </p>
+        </div>
+        {isPlatformAdmin(currentUser) && (
+          <Button
+            variant="outline"
+            className="gap-2 shrink-0"
+            onClick={() => syncMembershipsMutation.mutate()}
+            disabled={syncMembershipsMutation.isPending}
+          >
+            <RefreshCw className={`w-4 h-4 ${syncMembershipsMutation.isPending ? "animate-spin" : ""}`} />
+            Sync channel memberships
+          </Button>
+        )}
+      </div>
 
       <div className="relative mb-6 max-w-sm w-full">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
@@ -150,19 +193,22 @@ export default function Users() {
         </div>
       ) : (
         <div className="bg-card border border-border rounded-xl overflow-x-auto">
-          <table className="w-full text-sm min-w-[640px]">
+          <table className="w-full text-sm min-w-[860px]">
             <thead>
               <tr className="border-b border-border text-left text-muted-foreground">
                 <th className="px-4 py-3 font-medium">Name</th>
                 <th className="px-4 py-3 font-medium">Email</th>
                 <th className="px-4 py-3 font-medium">Organization</th>
                 <th className="px-4 py-3 font-medium">Role</th>
+                <th className="px-4 py-3 font-medium">Channels</th>
                 <th className="px-4 py-3 font-medium">Onboarded</th>
                 <th className="px-4 py-3 font-medium" />
               </tr>
             </thead>
             <tbody>
-              {filtered.map((u) => (
+              {filtered.map((u) => {
+                const { approved, synced, unsynced } = getUserChannelInfo(u);
+                return (
                 <tr key={u.id} className="border-b border-border/50 last:border-0">
                   <td className="px-4 py-3 font-medium text-foreground">
                     {getDisplayName(u)}
@@ -175,6 +221,34 @@ export default function Users() {
                     <span className="px-2 py-0.5 rounded-md bg-primary/10 text-primary text-xs font-semibold">
                       {u.role || "user"}
                     </span>
+                  </td>
+                  <td className="px-4 py-3">
+                    {approved.length === 0 ? (
+                      <span className="text-muted-foreground">—</span>
+                    ) : (
+                      <div className="space-y-1">
+                        <div className="flex flex-wrap gap-1">
+                          {approved.map((ch) => (
+                            <span
+                              key={ch.id}
+                              className="px-2 py-0.5 rounded-md bg-muted text-foreground text-xs font-medium"
+                              title={
+                                synced.some((s) => s.id === ch.id)
+                                  ? "Synced to user profile"
+                                  : "Approved on channel but not on user profile yet"
+                              }
+                            >
+                              {ch.name}
+                            </span>
+                          ))}
+                        </div>
+                        {unsynced.length > 0 && (
+                          <p className="text-[10px] text-amber-600 dark:text-amber-400 font-medium">
+                            {unsynced.length} not synced to profile
+                          </p>
+                        )}
+                      </div>
+                    )}
                   </td>
                   <td className="px-4 py-3 text-muted-foreground">
                     {u.onboarded ? "Yes" : "No"}
@@ -197,7 +271,8 @@ export default function Users() {
                     </div>
                   </td>
                 </tr>
-              ))}
+              );
+              })}
             </tbody>
           </table>
         </div>
@@ -267,6 +342,50 @@ export default function Users() {
                 </p>
               )}
             </div>
+            {editing && (
+              <div>
+                <Label>Approved channels</Label>
+                <div className="mt-2 rounded-lg border border-border bg-muted/30 p-3 space-y-2">
+                  {(() => {
+                    const { approved, synced, unsynced } = getUserChannelInfo(editing);
+                    if (approved.length === 0) {
+                      return (
+                        <p className="text-sm text-muted-foreground">No approved channels</p>
+                      );
+                    }
+                    return approved.map((ch) => {
+                      const isSynced = synced.some((s) => s.id === ch.id);
+                      return (
+                        <div key={ch.id} className="flex items-center justify-between gap-2 text-sm">
+                          <span className="font-medium text-foreground">{ch.name}</span>
+                          <span
+                            className={`text-xs font-semibold ${
+                              isSynced
+                                ? "text-emerald-600 dark:text-emerald-400"
+                                : "text-amber-600 dark:text-amber-400"
+                            }`}
+                          >
+                            {isSynced ? "On profile" : "Not on profile"}
+                          </span>
+                        </div>
+                      );
+                    });
+                  })()}
+                  {getUserChannelInfo(editing).unsynced.length > 0 && isPlatformAdmin(currentUser) && (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="w-full mt-2"
+                      onClick={() => syncMembershipsMutation.mutate()}
+                      disabled={syncMembershipsMutation.isPending}
+                    >
+                      Sync memberships for all users
+                    </Button>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
           <DialogFooter className="flex-col-reverse sm:flex-row sm:justify-between gap-2">
             {canDeleteUser(currentUser, editing) && (

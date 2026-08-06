@@ -105,6 +105,10 @@ export default function Admin() {
 
       if (memberUid) {
         await addUserChannelMembership(memberUid, channel.id);
+      } else if (memberId.includes("@")) {
+        console.warn(
+          "Approved by email before user profile existed — profile sync runs when they sign in or via channel trigger"
+        );
       }
     },
     onSuccess: () => {

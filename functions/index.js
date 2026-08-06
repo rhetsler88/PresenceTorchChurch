@@ -20,6 +20,10 @@ const {
   verifyDailyAccessCode,
   getDailyAccessCodeForUser,
 } = require("./dailyCode");
+const {
+  syncMemberProfilesForChannel,
+  backfillAllChannelMemberships,
+} = require("./channelMembership");
 
 initializeApp();
 setGlobalOptions({ region: "us-east5" });
@@ -211,6 +215,51 @@ exports.syncUserAuthClaims = onDocumentWritten("users/{userId}", async (event) =
     return;
   }
   await applyAuthClaims(event.params.userId, after.data());
+});
+
+/** Keep users/{uid}.member_of_channels in sync when channel.members changes. */
+exports.syncChannelMembershipProfiles = onDocumentWritten(
+  "channels/{channelId}",
+  async (event) => {
+    const after = event.data?.after;
+    if (!after?.exists) return;
+
+    const beforeMembers = event.data?.before?.exists
+      ? event.data.before.data()?.members || []
+      : [];
+    const afterMembers = after.data()?.members || [];
+
+    if (JSON.stringify(beforeMembers) === JSON.stringify(afterMembers)) return;
+
+    const db = getFirestore();
+    const updated = await syncMemberProfilesForChannel(
+      db,
+      event.params.channelId,
+      beforeMembers,
+      afterMembers
+    );
+    if (updated > 0) {
+      console.log("syncChannelMembershipProfiles", {
+        channelId: event.params.channelId,
+        profilesUpdated: updated,
+      });
+    }
+  }
+);
+
+exports.backfillChannelMemberships = onCall(CALLABLE_OPTIONS, async (request) => {
+  if (!request.auth) {
+    throw new HttpsError("unauthenticated", "Sign in required");
+  }
+
+  const db = getFirestore();
+  const callerSnap = await db.collection("users").doc(request.auth.uid).get();
+  const role = callerSnap.data()?.role || "user";
+  if (role !== "admin" && role !== "super_admin") {
+    throw new HttpsError("permission-denied", "Admin access required");
+  }
+
+  return backfillAllChannelMemberships(db);
 });
 
 exports.refreshMyAuthClaims = onCall(CALLABLE_OPTIONS, async (request) => {

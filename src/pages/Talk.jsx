@@ -537,7 +537,7 @@ export default function Talk() {
         return;
       }
       toast.error(err?.code === "permission-denied" || err?.message?.includes("permission")
-        ? "Permission denied — confirm you are an approved member of this channel"
+        ? "Permission denied — confirm you are an approved member with today's access code entered"
         : "Could not send voice message");
     },
   });
@@ -568,7 +568,7 @@ export default function Talk() {
     onError: (err) => {
       console.error("Text message send failed:", err);
       toast.error(err?.code === "permission-denied" || err?.message?.includes("permission")
-        ? "Permission denied — confirm you are an approved member of this channel"
+        ? "Permission denied — confirm you are an approved member with today's access code entered"
         : "Could not send text message");
     },
   });

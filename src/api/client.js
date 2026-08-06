@@ -737,6 +737,12 @@ export const adminApi = {
     const callable = httpsCallable(functions, "adminDeleteUser");
     return (await callable({ targetUserId })).data;
   },
+
+  async backfillChannelMemberships() {
+    await waitForFirestoreAuth({ forceRefresh: true });
+    const callable = httpsCallable(functions, "backfillChannelMemberships");
+    return (await callable()).data;
+  },
 };
 
 export const bootstrapApi = {

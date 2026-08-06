@@ -77,3 +77,26 @@ export function userHasFirestoreChannelAccess(user, channelId) {
   }
   return (user.member_of_channels || []).includes(channelId);
 }
+
+/** Channels where the user appears in channel.members (uid or email). */
+export function getChannelsFromMembershipLists(user, channels) {
+  if (!user || !channels?.length) return [];
+  return channels.filter((channel) => {
+    const members = channel.members || [];
+    return members.includes(user.id) || (user.email && members.includes(user.email));
+  });
+}
+
+/** Channels stored on users/{uid}.member_of_channels (required for Firestore log queries). */
+export function getChannelsFromProfile(user, channels) {
+  if (!user || !channels?.length) return [];
+  const ids = new Set(user.member_of_channels || []);
+  return channels.filter((channel) => ids.has(channel.id));
+}
+
+/** Approved on channel but member_of_channels not yet written to the user profile. */
+export function getUnsyncedChannelMemberships(user, channels) {
+  const listed = getChannelsFromMembershipLists(user, channels);
+  const syncedIds = new Set((user?.member_of_channels || []));
+  return listed.filter((channel) => !syncedIds.has(channel.id));
+}

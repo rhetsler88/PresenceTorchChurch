@@ -30,7 +30,7 @@ import {
 } from "@/lib/channelMembership";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { Clock, Trash2 } from "lucide-react";
+import { Clock, Trash2, CheckSquare } from "lucide-react";
 
 function describePermissionFailure(user) {
   if (!user) return "Sign in again and retry.";
@@ -298,11 +298,26 @@ export default function Talk() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: messagesQueryKey });
+      queryClient.invalidateQueries({ queryKey: ["all-messages"] });
       setSelectionMode(false);
       setSelectedIds(new Set());
       toast.success("Messages deleted");
     },
+    onError: (err) => {
+      console.error("Delete messages failed:", err);
+      if (err?.code === "permission-denied") {
+        toast.error("Permission denied — confirm your account role is admin or director.");
+        return;
+      }
+      toast.error("Could not delete messages. Please try again.");
+    },
   });
+
+  const handleEnterSelectionMode = useCallback(() => {
+    if (!canDelete) return;
+    setSelectionMode(true);
+    setSelectedIds(new Set());
+  }, [canDelete]);
 
   const mergeChannelMessage = useCallback((message) => {
     if (!message?.id || !effectiveChannelId) return;
@@ -876,6 +891,20 @@ export default function Talk() {
 
       {activeChannel && (
         <ProtectionLevelBadge level={activeChannel.protection_level} />
+      )}
+
+      {canDelete && !selectionMode && activeChannel && (
+        <div className="flex justify-end px-4 pb-1">
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-8 gap-1.5 text-muted-foreground hover:text-foreground"
+            onClick={handleEnterSelectionMode}
+          >
+            <CheckSquare className="w-4 h-4" />
+            Select messages
+          </Button>
+        </div>
       )}
 
       <div className="flex-1 overflow-auto overscroll-contain">

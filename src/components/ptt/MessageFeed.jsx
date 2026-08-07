@@ -9,6 +9,7 @@ function MessageItem({ message, currentUser, onPlay, isPlaying, canDelete, selec
   const isMine = message.created_by_id === currentUser?.id;
   const initials = (message.sender_name || "?").slice(0, 2).toUpperCase();
   const longPressTimer = useRef(null);
+  const longPressTriggered = useRef(false);
   const isTextOnly = !!message.text_content;
   const msgDayKey = message.device_date || deviceDayKey(message.created_date);
   const showDateStamp = msgDayKey !== deviceDayKey();
@@ -23,20 +24,41 @@ function MessageItem({ message, currentUser, onPlay, isPlaying, canDelete, selec
     return Array.from({ length: 12 }, () => 8 + Math.floor(rand() * 12));
   }, [message.id]);
 
-  const startLongPress = () => {
-    if (!canDelete || selectionMode) return;
-    longPressTimer.current = setTimeout(() => onLongPress(message.id), 2000);
-  };
-
-  const cancelLongPress = () => {
+  const clearLongPressTimer = () => {
     if (longPressTimer.current) {
       clearTimeout(longPressTimer.current);
       longPressTimer.current = null;
     }
   };
 
+  const startLongPress = () => {
+    if (!canDelete || selectionMode) return;
+    longPressTriggered.current = false;
+    clearLongPressTimer();
+    longPressTimer.current = setTimeout(() => {
+      longPressTriggered.current = true;
+      onLongPress(message.id);
+    }, 500);
+  };
+
+  const endLongPress = () => {
+    clearLongPressTimer();
+  };
+
   const handleBubbleClick = () => {
-    if (selectionMode) onToggleSelect(message.id);
+    if (longPressTriggered.current) {
+      longPressTriggered.current = false;
+      return;
+    }
+    if (selectionMode) {
+      onToggleSelect(message.id);
+      return;
+    }
+    if (canDelete) onLongPress(message.id);
+  };
+
+  const stopPlayEvent = (event) => {
+    event.stopPropagation();
   };
 
   const bubbleClasses = `rounded-2xl px-4 py-3 transition-all select-none ${
@@ -72,11 +94,10 @@ function MessageItem({ message, currentUser, onPlay, isPlaying, canDelete, selec
         {isTextOnly ? (
           <div
             className={bubbleClasses}
-            onMouseDown={startLongPress}
-            onMouseUp={cancelLongPress}
-            onMouseLeave={cancelLongPress}
-            onTouchStart={startLongPress}
-            onTouchEnd={cancelLongPress}
+            onPointerDown={startLongPress}
+            onPointerUp={endLongPress}
+            onPointerLeave={endLongPress}
+            onPointerCancel={endLongPress}
             onClick={handleBubbleClick}
           >
             <div className="flex items-center gap-1.5 mb-1 opacity-60">
@@ -88,11 +109,10 @@ function MessageItem({ message, currentUser, onPlay, isPlaying, canDelete, selec
         ) : (
           <div
             className={bubbleClasses}
-            onMouseDown={startLongPress}
-            onMouseUp={cancelLongPress}
-            onMouseLeave={cancelLongPress}
-            onTouchStart={startLongPress}
-            onTouchEnd={cancelLongPress}
+            onPointerDown={startLongPress}
+            onPointerUp={endLongPress}
+            onPointerLeave={endLongPress}
+            onPointerCancel={endLongPress}
             onClick={handleBubbleClick}
           >
             <div className="flex items-center gap-3">
@@ -103,7 +123,11 @@ function MessageItem({ message, currentUser, onPlay, isPlaying, canDelete, selec
                   className={`w-8 h-8 rounded-full ${
                     isMine ? "hover:bg-white/20 text-primary-foreground" : "hover:bg-muted"
                   }`}
-                  onClick={() => !selectionMode && onPlay?.(message)}
+                  onPointerDown={stopPlayEvent}
+                  onClick={(event) => {
+                    stopPlayEvent(event);
+                    if (!selectionMode) onPlay?.(message);
+                  }}
                   disabled={selectionMode}
                 >
                   {isPlaying ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5" />}

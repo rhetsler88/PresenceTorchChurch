@@ -7,7 +7,8 @@ import useAgoraMultiPublish from "./useAgoraMultiPublish";
 /**
  * PTT broadcast: Agora WebRTC for live half-duplex audio when configured.
  * Storage relay is the fallback for transmit and always used when Agora is off.
- * With Agora, relay runs archive-only on the same mic stream for chat messages.
+ * With Agora, relay also uploads live chunks on the same mic stream so listeners
+ * still get real-time audio if WebRTC subscribe/play fails.
  * Pass publishChannelIds with length > 1 to publish live audio on every channel (broadcast-all).
  */
 export default function usePttBroadcast(options) {
@@ -40,7 +41,7 @@ export default function usePttBroadcast(options) {
     }
     const archiveOk = await relay.startRecording({
       sharedStream: archiveStream,
-      archiveOnly: true,
+      archiveOnly: false,
       broadcastId,
       ownsStream: archiveStream !== stream,
     });

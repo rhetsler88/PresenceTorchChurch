@@ -41,6 +41,7 @@ async function hydrateUserWithMembership(firebaseUser, currentUser) {
     return {
       ...currentUser,
       email: currentUser.email || firebaseUser.email,
+      role: access?.role || currentUser.role,
       member_of_channels: access?.channelIds?.length
         ? access.channelIds
         : currentUser.member_of_channels || [],
@@ -76,16 +77,54 @@ async function findOrphanProfileByEmail(email, excludeUid) {
   const snap = await getDocs(
     query(collection(db, "users"), where("email", "==", email), limit(5))
   );
+  let best = null;
+  let bestRank = roleRank("user");
   for (const candidate of snap.docs) {
     if (candidate.id === excludeUid) continue;
     const data = candidate.data() || {};
     const role = data.role || "user";
     const hasChannels = (data.member_of_channels || []).length > 0;
-    if (role !== "user" || data.is_monitor || hasChannels) {
-      return { orphanId: candidate.id, ...data };
+    const rank = roleRank(role) + (data.is_monitor ? 0.5 : 0) + (hasChannels ? 0.25 : 0);
+    const isElevated = role !== "user" || data.is_monitor || hasChannels;
+    if (!isElevated) continue;
+    if (rank > bestRank) {
+      bestRank = rank;
+      best = { orphanId: candidate.id, ...data };
     }
   }
-  return null;
+  return best;
+}
+
+function roleRank(role) {
+  const ranks = { user: 0, monitor: 1, director: 2, admin: 3, super_admin: 4 };
+  return ranks[role] ?? 0;
+}
+
+function buildMergedProfile(existing, orphanData, firebaseUser, displayName, firstName, lastName) {
+  const existingRole = existing.role || "user";
+  const orphanRole = orphanData.role || "user";
+  const useOrphanRole = roleRank(orphanRole) > roleRank(existingRole);
+  return {
+    role: useOrphanRole ? orphanRole : existingRole,
+    onboarded: orphanData.onboarded ?? existing.onboarded,
+    directed_channels: orphanData.directed_channels?.length
+      ? orphanData.directed_channels
+      : (existing.directed_channels || []),
+    member_of_channels: [
+      ...new Set([
+        ...(existing.member_of_channels || []),
+        ...(orphanData.member_of_channels || []),
+      ]),
+    ],
+    is_monitor: orphanData.is_monitor ?? existing.is_monitor ?? false,
+    organization: orphanData.organization || existing.organization || "",
+    receives_staff_alerts: orphanData.receives_staff_alerts ?? existing.receives_staff_alerts,
+    pending_staff_alerts: orphanData.pending_staff_alerts ?? existing.pending_staff_alerts,
+    email: firebaseUser.email,
+    first_name: orphanData.first_name || existing.first_name || firstName,
+    last_name: orphanData.last_name || existing.last_name || lastName,
+    full_name: orphanData.full_name || existing.full_name || displayName,
+  };
 }
 
 async function loadOrCreateUser(firebaseUser) {
@@ -104,20 +143,7 @@ async function loadOrCreateUser(firebaseUser) {
         role: orphan.role,
       });
       const { orphanId: _orphanId, ...orphanData } = orphan;
-      const profile = {
-        email: firebaseUser.email,
-        first_name: orphanData.first_name || firstName,
-        last_name: orphanData.last_name || lastName,
-        full_name: orphanData.full_name || displayName,
-        role: orphanData.role || "user",
-        onboarded: orphanData.onboarded ?? false,
-        directed_channels: orphanData.directed_channels || [],
-        member_of_channels: orphanData.member_of_channels || [],
-        is_monitor: orphanData.is_monitor ?? false,
-        organization: orphanData.organization || "",
-        receives_staff_alerts: orphanData.receives_staff_alerts ?? false,
-        pending_staff_alerts: orphanData.pending_staff_alerts ?? false,
-      };
+      const profile = buildMergedProfile({}, orphanData, firebaseUser, displayName, firstName, lastName);
       await setDoc(userRef, profile);
       return { id: firebaseUser.uid, ...profile };
     }
@@ -139,30 +165,25 @@ async function loadOrCreateUser(firebaseUser) {
   }
 
   const existing = userDoc.data() || {};
-  // Auth UID doc exists but is a default user while an older doc holds the real role.
-  if (
-    (existing.role || "user") === "user"
-    && !existing.is_monitor
-    && !(existing.member_of_channels || []).length
-  ) {
-    const orphan = await findOrphanProfileByEmail(firebaseUser.email, firebaseUser.uid);
-    if (orphan && orphan.orphanId !== firebaseUser.uid) {
+  const orphan = await findOrphanProfileByEmail(firebaseUser.email, firebaseUser.uid);
+  if (orphan && orphan.orphanId !== firebaseUser.uid) {
+    const { orphanId: _orphanId, ...orphanData } = orphan;
+    const existingRole = existing.role || "user";
+    const orphanRole = orphanData.role || "user";
+    const shouldMerge =
+      roleRank(orphanRole) > roleRank(existingRole)
+      || (
+        existingRole === "user"
+        && !existing.is_monitor
+        && !(existing.member_of_channels || []).length
+      );
+    if (shouldMerge) {
       console.warn("[Auth] Merging elevated profile into users/{auth.uid}", {
         auth_uid: firebaseUser.uid,
         orphan_doc_id: orphan.orphanId,
-        role: orphan.role,
+        role: orphanRole,
       });
-      const { orphanId: _orphanId, ...orphanData } = orphan;
-      const merged = {
-        role: orphanData.role || existing.role,
-        onboarded: orphanData.onboarded ?? existing.onboarded,
-        directed_channels: orphanData.directed_channels || existing.directed_channels || [],
-        member_of_channels: orphanData.member_of_channels || existing.member_of_channels || [],
-        is_monitor: orphanData.is_monitor ?? existing.is_monitor,
-        organization: orphanData.organization || existing.organization || "",
-        receives_staff_alerts: orphanData.receives_staff_alerts ?? existing.receives_staff_alerts,
-        pending_staff_alerts: orphanData.pending_staff_alerts ?? existing.pending_staff_alerts,
-      };
+      const merged = buildMergedProfile(existing, orphanData, firebaseUser, displayName, firstName, lastName);
       await setDoc(userRef, merged, { merge: true });
       return {
         id: firebaseUser.uid,

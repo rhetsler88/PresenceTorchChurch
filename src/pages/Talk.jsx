@@ -188,10 +188,11 @@ export default function Talk() {
   const { isReceiving: storageLiveReceiving, heardBroadcastsRef: relayHeardRef } = usePttReceiver({
     channelId: effectiveChannelId,
     userId: user?.id,
-    enabled: !agoraLive,
   });
 
-  const isLiveReceiving = agoraLive ? agoraLiveReceiving : storageLiveReceiving;
+  const isLiveReceiving = agoraLive
+    ? (agoraLiveReceiving || storageLiveReceiving)
+    : storageLiveReceiving;
 
   const shouldSkipBroadcastAutoPlay = useCallback((broadcastId) => {
     if (!broadcastId) return false;
@@ -206,10 +207,6 @@ export default function Talk() {
     }
     return false;
   }, [relayHeardRef]);
-
-  useEffect(() => {
-    if (isLiveReceiving) lastLiveAudioAtRef.current = Date.now();
-  }, [isLiveReceiving]);
 
   // Reset live-broadcast tracking when switching channels
   useEffect(() => {
@@ -267,15 +264,23 @@ export default function Talk() {
 
   const sortedMessages = [...messages].reverse();
 
-  const canDelete =
-    user?.role === "admin" ||
-    user?.role === "super_admin" ||
-    user?.role === "director";
+  const canDelete = isPlatformAdmin(user) || user?.role === "director";
 
-  const handleLongPress = useCallback((msgId) => {
+  const handleEnterSelection = useCallback((msgId) => {
     if (!canDelete) return;
+    stopAudio();
+    if (receivingTimeoutRef.current) {
+      clearTimeout(receivingTimeoutRef.current);
+      receivingTimeoutRef.current = null;
+    }
+    setPlayingId(null);
+    setIsReceiving(false);
     setSelectionMode(true);
-    setSelectedIds(new Set([msgId]));
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      next.add(msgId);
+      return next;
+    });
   }, [canDelete]);
 
   const handleToggleSelect = useCallback((msgId) => {
@@ -294,7 +299,7 @@ export default function Talk() {
 
   const deleteMessagesMutation = useMutation({
     mutationFn: async (/** @type {string[]} */ ids) => {
-      await Promise.all(ids.map(id => api.entities.VoiceMessage.delete(id)));
+      await api.entities.VoiceMessage.deleteAsModerator(ids);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: messagesQueryKey });
@@ -315,6 +320,13 @@ export default function Talk() {
 
   const handleEnterSelectionMode = useCallback(() => {
     if (!canDelete) return;
+    stopAudio();
+    if (receivingTimeoutRef.current) {
+      clearTimeout(receivingTimeoutRef.current);
+      receivingTimeoutRef.current = null;
+    }
+    setPlayingId(null);
+    setIsReceiving(false);
     setSelectionMode(true);
     setSelectedIds(new Set());
   }, [canDelete]);
@@ -806,6 +818,7 @@ export default function Talk() {
   });
 
   const handlePlayMessage = (msg) => {
+    if (selectionMode) return;
     if (!msg.audio_url) {
       toast.error("Audio unavailable");
       return;
@@ -917,7 +930,7 @@ export default function Talk() {
           selectionMode={selectionMode}
           selectedIds={selectedIds}
           onToggleSelect={handleToggleSelect}
-          onLongPress={handleLongPress}
+          onEnterSelection={handleEnterSelection}
         />
         <div ref={feedEndRef} />
       </div>
@@ -925,7 +938,7 @@ export default function Talk() {
       {selectionMode ? (
         <div className="flex items-center justify-between gap-3 px-4 py-3 bg-card border-t border-border">
           <span className="text-sm font-medium text-foreground">
-            {selectedIds.size} selected
+            {selectedIds.size} selected · tap messages to add or remove
           </span>
           <div className="flex items-center gap-2">
             <Button variant="ghost" size="sm" onClick={handleCancelSelection}>

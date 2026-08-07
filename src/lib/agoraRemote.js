@@ -35,8 +35,7 @@ export async function subscribeRemoteAudio(client, remoteUser, localUid, mediaTy
   if (mediaType !== "audio" && mediaType !== "all") return false;
 
   await client.subscribe(remoteUser, mediaType);
-  await playAgoraRemoteAudio(remoteUser.audioTrack);
-  return Boolean(remoteUser.audioTrack);
+  return playAgoraRemoteAudio(remoteUser.audioTrack);
 }
 
 /** Subscribe to remote users already publishing when we join mid-transmission. */

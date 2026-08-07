@@ -29,6 +29,7 @@ const {
   repairUserAccess,
   syncChannelAccessForAuthUser,
   diagnoseUserAccess,
+  assertModeratorRole,
 } = require("./channelMembership");
 
 initializeApp();
@@ -347,6 +348,45 @@ exports.refreshMyAuthClaims = onCall(CALLABLE_OPTIONS, async (request) => {
   }
   await applyAuthClaims(request.auth.uid, snap.data());
   return { role: snap.data().role || "user" };
+});
+
+exports.deleteVoiceMessages = onCall(CALLABLE_OPTIONS, async (request) => {
+  if (!request.auth) {
+    throw new HttpsError("unauthenticated", "Sign in required");
+  }
+
+  const messageIds = request.data?.messageIds;
+  if (!Array.isArray(messageIds) || messageIds.length === 0) {
+    throw new HttpsError("invalid-argument", "messageIds is required");
+  }
+  if (messageIds.length > 100) {
+    throw new HttpsError("invalid-argument", "Too many messages");
+  }
+  if (!messageIds.every((id) => typeof id === "string" && id.length > 0)) {
+    throw new HttpsError("invalid-argument", "Invalid message id");
+  }
+
+  const db = getFirestore();
+  const email = request.auth.token.email || "";
+  try {
+    await assertModeratorRole(db, request.auth.uid, email);
+  } catch (err) {
+    if (err?.code === "permission-denied") {
+      throw new HttpsError("permission-denied", err.message);
+    }
+    throw err;
+  }
+
+  const userSnap = await db.collection("users").doc(request.auth.uid).get();
+  await applyAuthClaims(request.auth.uid, userSnap.data());
+
+  const batch = db.batch();
+  for (const messageId of messageIds) {
+    batch.delete(db.collection("voiceMessages").doc(messageId));
+  }
+  await batch.commit();
+
+  return { deleted: messageIds.length };
 });
 
 async function verifyRecaptchaResponse(token, remoteIp) {

@@ -1,5 +1,19 @@
 const { FieldValue } = require("firebase-admin/firestore");
 
+const ROLE_RANK = {
+  user: 0,
+  monitor: 1,
+  director: 2,
+  admin: 3,
+  super_admin: 4,
+};
+
+const MODERATOR_ROLES = new Set(["super_admin", "admin", "director"]);
+
+function roleRank(role) {
+  return ROLE_RANK[role] ?? 0;
+}
+
 function normalizeMemberEntry(entry) {
   return typeof entry === "string" ? entry.trim().toLowerCase() : entry;
 }
@@ -128,6 +142,62 @@ async function syncMemberProfilesForChannel(db, auth, channelId, beforeMembers, 
   return updated;
 }
 
+/** Prefer elevated role from any profile sharing the user's email onto users/{authUid}. */
+async function mergeElevatedProfileRole(db, authUid, email) {
+  const normalizedEmail = email?.trim().toLowerCase() || "";
+  if (!authUid) return "user";
+
+  const authSnap = await db.collection("users").doc(authUid).get();
+  const authData = authSnap.exists ? authSnap.data() || {} : {};
+  let bestRole = authData.role || "user";
+  let bestRank = roleRank(bestRole);
+  let bestProfile = authData;
+
+  if (normalizedEmail) {
+    const emailSnap = await db.collection("users").where("email", "==", normalizedEmail).get();
+    for (const docSnap of emailSnap.docs) {
+      const data = docSnap.data() || {};
+      const role = data.role || "user";
+      const rank = roleRank(role);
+      if (rank > bestRank) {
+        bestRank = rank;
+        bestRole = role;
+        bestProfile = data;
+      }
+    }
+  }
+
+  if (bestRank > roleRank(authData.role || "user")) {
+    await db.collection("users").doc(authUid).set(
+      {
+        ...(normalizedEmail ? { email: normalizedEmail } : {}),
+        role: bestRole,
+        organization: bestProfile.organization || authData.organization || "",
+        directed_channels: bestProfile.directed_channels || authData.directed_channels || [],
+        is_monitor: bestProfile.is_monitor ?? authData.is_monitor ?? false,
+        onboarded: bestProfile.onboarded ?? authData.onboarded ?? false,
+        receives_staff_alerts:
+          bestProfile.receives_staff_alerts ?? authData.receives_staff_alerts ?? false,
+        pending_staff_alerts:
+          bestProfile.pending_staff_alerts ?? authData.pending_staff_alerts ?? false,
+      },
+      { merge: true }
+    );
+  }
+
+  return bestRole;
+}
+
+async function assertModeratorRole(db, authUid, email) {
+  const role = await mergeElevatedProfileRole(db, authUid, email);
+  if (!MODERATOR_ROLES.has(role)) {
+    const err = new Error("Admin or director role required");
+    err.code = "permission-denied";
+    throw err;
+  }
+  return role;
+}
+
 async function syncChannelAccessForAuthUser(db, auth, uid, email) {
   const normalizedEmail = email?.trim().toLowerCase() || "";
   const authUid = uid || (normalizedEmail ? await resolveAuthUid(db, auth, normalizedEmail) : null);
@@ -137,9 +207,14 @@ async function syncChannelAccessForAuthUser(db, auth, uid, email) {
     throw err;
   }
 
+  await mergeElevatedProfileRole(db, authUid, normalizedEmail);
+
   const profileIds = await allProfileIdsForEmail(db, normalizedEmail);
   const allIds = [...new Set([authUid, ...profileIds])];
   const orphanIds = allIds.filter((id) => id !== authUid);
+
+  const authProfileSnap = await db.collection("users").doc(authUid).get();
+  const effectiveRole = authProfileSnap.data()?.role || "user";
 
   const channelsSnap = await db.collection("channels").get();
   const channelIds = [];
@@ -186,6 +261,7 @@ async function syncChannelAccessForAuthUser(db, auth, uid, email) {
     uid: authUid,
     email: normalizedEmail,
     channelIds,
+    role: effectiveRole,
     orphanProfileIds: orphanIds,
     channelsNormalized,
   };
@@ -346,4 +422,6 @@ module.exports = {
   backfillAllChannelMemberships,
   repairUserAccess,
   diagnoseUserAccess,
+  mergeElevatedProfileRole,
+  assertModeratorRole,
 };

@@ -279,10 +279,11 @@ export default function Monitor() {
   const { isReceiving: multiLiveReceiving, heardBroadcastsRef: multiHeardRef } = usePttReceiver({
     channelIds: monitorRelayChannelIds,
     userId: user?.id,
-    enabled: !agoraEnabled,
   });
 
-  const isLiveReceiving = agoraEnabled ? agoraMultiReceiving : multiLiveReceiving;
+  const isLiveReceiving = agoraEnabled
+    ? (agoraMultiReceiving || multiLiveReceiving)
+    : multiLiveReceiving;
 
   // Per-channel PTT subscriptions — collection-wide queries fail Firestore rules for partial access
   useEffect(() => {

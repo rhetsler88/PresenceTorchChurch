@@ -34,6 +34,12 @@ service cloud.firestore {
       return isAdmin() || isDirector() || isSuperAdmin();
     }
 
+    function isAdminOrDirectorFromToken() {
+      return tokenRole() == 'super_admin'
+        || tokenRole() == 'admin'
+        || tokenRole() == 'director';
+    }
+
     function isPlatformAdmin() {
       return isSuperAdmin() || isAdmin();
     }
@@ -307,7 +313,7 @@ service cloud.firestore {
         && isChannelTalkMember(resource.data.channel_id)
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['transcript', 'is_transcribed']);
 
-      allow delete: if isSignedIn() && isAdminOrDirector();
+      allow delete: if isSignedIn() && (isAdminOrDirector() || isAdminOrDirectorFromToken());
     }
 
     match /pttSignals/{signalId} {

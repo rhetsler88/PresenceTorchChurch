@@ -1,11 +1,21 @@
 import React, { useRef, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Play, Pause, FileText, Radio, Check, MessageSquare } from "lucide-react";
+import { Play, Pause, FileText, Radio, Check, MessageSquare, Circle } from "lucide-react";
 import { etzTime } from "@/lib/etz";
 import { deviceDayKey, deviceDayLabel } from "@/lib/deviceDate";
 import { Button } from "@/components/ui/button";
 
-function MessageItem({ message, currentUser, onPlay, isPlaying, canDelete, selectionMode, isSelected, onToggleSelect, onLongPress }) {
+function MessageItem({
+  message,
+  currentUser,
+  onPlay,
+  isPlaying,
+  canDelete,
+  selectionMode,
+  isSelected,
+  onToggleSelect,
+  onEnterSelection,
+}) {
   const isMine = message.created_by_id === currentUser?.id;
   const initials = (message.sender_name || "?").slice(0, 2).toUpperCase();
   const longPressTimer = useRef(null);
@@ -14,7 +24,6 @@ function MessageItem({ message, currentUser, onPlay, isPlaying, canDelete, selec
   const msgDayKey = message.device_date || deviceDayKey(message.created_date);
   const showDateStamp = msgDayKey !== deviceDayKey();
 
-  // Stable random bar heights per message (seeded from message id so they don't bounce on re-render)
   const barHeights = useMemo(() => {
     let seed = (message.id || "").split("").reduce((a, c) => a + c.charCodeAt(0), 0);
     const rand = () => {
@@ -37,7 +46,7 @@ function MessageItem({ message, currentUser, onPlay, isPlaying, canDelete, selec
     clearLongPressTimer();
     longPressTimer.current = setTimeout(() => {
       longPressTriggered.current = true;
-      onLongPress(message.id);
+      onEnterSelection(message.id);
     }, 500);
   };
 
@@ -54,11 +63,13 @@ function MessageItem({ message, currentUser, onPlay, isPlaying, canDelete, selec
       onToggleSelect(message.id);
       return;
     }
-    if (canDelete) onLongPress(message.id);
+    if (canDelete) onEnterSelection(message.id);
   };
 
-  const stopPlayEvent = (event) => {
+  const handlePlayClick = (event) => {
     event.stopPropagation();
+    if (selectionMode || !message.audio_url) return;
+    onPlay?.(message);
   };
 
   const bubbleClasses = `rounded-2xl px-4 py-3 transition-all select-none ${
@@ -66,6 +77,36 @@ function MessageItem({ message, currentUser, onPlay, isPlaying, canDelete, selec
   } ${selectionMode && isSelected ? "ring-2 ring-destructive" : ""} ${
     canDelete ? "cursor-pointer" : ""
   }`;
+
+  const selectionIndicator = (
+    <div
+      className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${
+        isSelected ? "bg-destructive text-white" : "bg-muted text-muted-foreground"
+      }`}
+    >
+      {isSelected ? <Check className="w-4 h-4" /> : <Circle className="w-4 h-4" />}
+    </div>
+  );
+
+  const playControl = selectionMode ? (
+    selectionIndicator
+  ) : message.audio_url ? (
+    <Button
+      size="icon"
+      variant="ghost"
+      className={`w-8 h-8 rounded-full ${
+        isMine ? "hover:bg-white/20 text-primary-foreground" : "hover:bg-muted"
+      }`}
+      onPointerDown={(event) => event.stopPropagation()}
+      onClick={handlePlayClick}
+    >
+      {isPlaying ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5" />}
+    </Button>
+  ) : (
+    <div className="w-8 h-8 rounded-full flex items-center justify-center opacity-40">
+      <Play className="w-3.5 h-3.5" />
+    </div>
+  );
 
   return (
     <motion.div
@@ -116,27 +157,7 @@ function MessageItem({ message, currentUser, onPlay, isPlaying, canDelete, selec
             onClick={handleBubbleClick}
           >
             <div className="flex items-center gap-3">
-              {message.audio_url ? (
-                <Button
-                  size="icon"
-                  variant="ghost"
-                  className={`w-8 h-8 rounded-full ${
-                    isMine ? "hover:bg-white/20 text-primary-foreground" : "hover:bg-muted"
-                  }`}
-                  onPointerDown={stopPlayEvent}
-                  onClick={(event) => {
-                    stopPlayEvent(event);
-                    if (!selectionMode) onPlay?.(message);
-                  }}
-                  disabled={selectionMode}
-                >
-                  {isPlaying ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5" />}
-                </Button>
-              ) : (
-                <div className="w-8 h-8 rounded-full flex items-center justify-center opacity-40">
-                  <Play className="w-3.5 h-3.5" />
-                </div>
-              )}
+              {playControl}
               <div className="flex flex-col">
                 <div className="flex items-center gap-2">
                   <div className="flex gap-0.5 items-center" style={{ height: "20px" }}>
@@ -148,7 +169,7 @@ function MessageItem({ message, currentUser, onPlay, isPlaying, canDelete, selec
                         }`}
                         style={{
                           height: `${h}px`,
-                          animation: isPlaying
+                          animation: isPlaying && !selectionMode
                             ? `ptt-bar-pulse 0.8s ease-in-out ${i * 0.06}s infinite`
                             : "none",
                         }}
@@ -195,7 +216,17 @@ function MessageItem({ message, currentUser, onPlay, isPlaying, canDelete, selec
   );
 }
 
-export default function MessageFeed({ messages, currentUser, onPlayMessage, playingId, canDelete, selectionMode, selectedIds, onToggleSelect, onLongPress }) {
+export default function MessageFeed({
+  messages,
+  currentUser,
+  onPlayMessage,
+  playingId,
+  canDelete,
+  selectionMode,
+  selectedIds,
+  onToggleSelect,
+  onEnterSelection,
+}) {
   return (
     <div className="flex flex-col gap-4 px-4 py-3">
       <AnimatePresence initial={false}>
@@ -210,7 +241,7 @@ export default function MessageFeed({ messages, currentUser, onPlayMessage, play
             selectionMode={selectionMode}
             isSelected={selectedIds?.has(msg.id)}
             onToggleSelect={onToggleSelect}
-            onLongPress={onLongPress}
+            onEnterSelection={onEnterSelection}
           />
         ))}
       </AnimatePresence>

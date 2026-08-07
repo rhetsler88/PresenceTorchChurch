@@ -459,7 +459,14 @@ export const entities = {
       return snap.docs.map(docToObject);
     },
   },
-  VoiceMessage: createEntityApi("voiceMessages"),
+  VoiceMessage: {
+    ...createEntityApi("voiceMessages"),
+    async deleteAsModerator(messageIds) {
+      await waitForFirestoreAuth({ forceRefresh: true });
+      const callable = httpsCallable(functions, "deleteVoiceMessages");
+      return (await callable({ messageIds })).data;
+    },
+  },
   PTTSignal: createEntityApi("pttSignals"),
   AudioChunk: {
     ...createEntityApi("audioChunks"),

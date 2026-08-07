@@ -13,9 +13,10 @@ export default function Login() {
             className="w-full max-w-[220px] h-auto object-contain mb-4"
             draggable={false}
           />
-          <h1 className="text-2xl font-bold text-foreground">Presence Torch</h1>
-          <p className="text-sm text-muted-foreground text-center mt-2">
-            Push-to-talk communication for your team
+          <h1 className="text-2xl font-bold text-foreground">Presence Torch Church</h1>
+          <p className="text-sm text-muted-foreground text-center mt-2 max-w-sm">
+            Push-to-talk communication designed for church safety teams. Coordinate channels,
+            monitor transmissions, and manage organization-wide protection levels.
           </p>
         </div>
 

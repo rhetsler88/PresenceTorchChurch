@@ -17,7 +17,7 @@ export default function LegalPageLayout({ title, lastUpdated, children }) {
         <header className="mb-8 border-b border-border pb-6">
           <img
             src="/logo-full.png"
-            alt="Presence Torch"
+            alt="Presence Torch Church"
             className="h-10 w-auto object-contain mb-4"
             draggable={false}
           />

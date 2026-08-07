@@ -55,20 +55,21 @@ export default function LandingPage() {
 
       <section className="hero" id="top">
         <div className="hero-copy">
-          <div className="eyebrow reveal reveal-1">
+          <p className="app-name reveal reveal-1">Presence Torch Church</p>
+          <div className="eyebrow reveal reveal-2">
             <span className="live-dot" /> Built for teams who stand watch
           </div>
-          <h1 className="reveal reveal-2">
+          <h1 className="reveal reveal-3">
             When every <em>second</em>
             <br />
             needs a clear voice.
           </h1>
-          <p className="hero-description reveal reveal-3">
+          <p className="hero-description reveal reveal-4">
             Push-to-talk communication designed for church safety teams. Coordinate channels,
             monitor every post, and move the whole team to a new protection level in one decisive
             action.
           </p>
-          <div className="hero-actions reveal reveal-4">
+          <div className="hero-actions reveal reveal-5">
             <a className="button button-primary" href={APP_URL} target="_blank" rel="noreferrer">
               Launch radio app <ArrowRight size={18} />
             </a>
@@ -76,7 +77,7 @@ export default function LandingPage() {
               Sign up your organization
             </a>
           </div>
-          <div className="trust-row reveal reveal-5">
+          <div className="trust-row reveal reveal-6">
             <span>
               <Check size={14} /> Browser-based
             </span>

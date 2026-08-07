@@ -158,6 +158,15 @@ body::before {
   gap: 10px;
 }
 
+.app-name {
+  margin: 0 0 14px;
+  font-family: var(--font-display);
+  font-size: clamp(28px, 3.2vw, 40px);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: var(--foreground);
+}
+
 .live-dot {
   width: 7px;
   height: 7px;

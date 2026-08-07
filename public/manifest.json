@@ -1,7 +1,7 @@
 {
-  "name": "Presence Torch",
+  "name": "Presence Torch Church",
   "short_name": "Presence Torch",
-  "description": "Push-to-talk communication for church security teams",
+  "description": "Push-to-talk communication designed for church safety teams",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#0f172a",

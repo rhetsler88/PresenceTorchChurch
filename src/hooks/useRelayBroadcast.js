@@ -238,5 +238,7 @@ export default function useRelayBroadcast({ channelId, userId, userName }) {
     }
   }, []);
 
-  return { isRecording, startRecording, stopLiveRelay, stopRecording, heardBroadcastsRef };
+  const getMediaStream = useCallback(() => streamRef.current, []);
+
+  return { isRecording, startRecording, stopLiveRelay, stopRecording, heardBroadcastsRef, getMediaStream };
 }

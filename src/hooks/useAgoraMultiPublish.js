@@ -14,6 +14,7 @@ export default function useAgoraMultiPublish({ userId }) {
   const [isRecording, setIsRecording] = useState(false);
 
   const streamRef = useRef(null);
+  const ownsStreamRef = useRef(true);
   const broadcastIdRef = useRef(null);
   const heardBroadcastsRef = useRef(new Set());
   const activeRef = useRef(false);
@@ -39,10 +40,10 @@ export default function useAgoraMultiPublish({ userId }) {
       await releaseAgoraClient(key).catch(() => {});
     }
 
-    if (stopStream && streamRef.current) {
+    if (stopStream && streamRef.current && ownsStreamRef.current) {
       streamRef.current.getTracks().forEach((t) => t.stop());
-      streamRef.current = null;
     }
+    streamRef.current = null;
   }, []);
 
   const publishToChannel = useCallback(async (channelId, stream, cloneStream) => {
@@ -78,7 +79,7 @@ export default function useAgoraMultiPublish({ userId }) {
     });
   }, []);
 
-  const startRecording = useCallback(async ({ broadcastId, channelIds = [], onStreamReady } = {}) => {
+  const startRecording = useCallback(async ({ broadcastId, channelIds = [], onStreamReady, sharedStream } = {}) => {
     const uid = paramsRef.current.userId;
     const ids = [...new Set(channelIds.filter(Boolean))];
     if (!uid || ids.length === 0 || activeRef.current) return Boolean(activeRef.current);
@@ -87,7 +88,8 @@ export default function useAgoraMultiPublish({ userId }) {
       broadcastIdRef.current = broadcastId || crypto.randomUUID();
       heardBroadcastsRef.current.add(broadcastIdRef.current);
 
-      const stream = await navigator.mediaDevices.getUserMedia({
+      ownsStreamRef.current = !sharedStream;
+      const stream = sharedStream || await navigator.mediaDevices.getUserMedia({
         audio: {
           echoCancellation: true,
           noiseSuppression: true,
@@ -97,7 +99,7 @@ export default function useAgoraMultiPublish({ userId }) {
       streamRef.current = stream;
       activeRef.current = true;
       setIsRecording(true);
-      onStreamReady?.(stream);
+      if (!sharedStream) onStreamReady?.(stream);
 
       void Promise.all(
         ids.map((channelId, index) => publishToChannel(channelId, stream, index > 0))

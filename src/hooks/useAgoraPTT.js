@@ -110,6 +110,7 @@ export default function useAgoraPTT({
   const idleLeaveTimerRef = useRef(null);
   const listenActiveRef = useRef(listenActive);
   const receiveEnabledRef = useRef(receiveEnabled);
+  const ownsStreamRef = useRef(true);
   const onRemoteLiveAudioRef = useRef(onRemoteLiveAudio);
   const releaseConnectionRef = useRef(null);
   const remoteHandlersRef = useRef(null);
@@ -315,7 +316,7 @@ export default function useAgoraPTT({
     clearIdleLeaveTimer();
   }, [clearIdleLeaveTimer]);
 
-  const startRecording = useCallback(async ({ broadcastId, onStreamReady } = {}) => {
+  const startRecording = useCallback(async ({ broadcastId, onStreamReady, sharedStream } = {}) => {
     const { channelId: cid, userId: uid } = paramsRef.current;
     if (!cid || !uid || activeRef.current) return Boolean(activeRef.current);
 
@@ -326,7 +327,8 @@ export default function useAgoraPTT({
       heardBroadcastsRef.current.add(broadcastIdRef.current);
       startTimeRef.current = Date.now();
 
-      const stream = await navigator.mediaDevices.getUserMedia({
+      ownsStreamRef.current = !sharedStream;
+      const stream = sharedStream || await navigator.mediaDevices.getUserMedia({
         audio: {
           echoCancellation: true,
           noiseSuppression: true,
@@ -334,7 +336,7 @@ export default function useAgoraPTT({
         },
       });
       streamRef.current = stream;
-      onStreamReady?.(stream);
+      if (!sharedStream) onStreamReady?.(stream);
 
       let client = clientRef.current;
       if (!client) {
@@ -345,7 +347,9 @@ export default function useAgoraPTT({
       }
       if (!client) {
         console.error("Agora client not ready — join failed or still connecting");
-        stream.getTracks().forEach((track) => track.stop());
+        if (ownsStreamRef.current) {
+          stream.getTracks().forEach((track) => track.stop());
+        }
         streamRef.current = null;
         return false;
       }
@@ -369,10 +373,10 @@ export default function useAgoraPTT({
         localAudioTrackRef.current.close();
         localAudioTrackRef.current = null;
       }
-      if (streamRef.current) {
+      if (streamRef.current && ownsStreamRef.current) {
         streamRef.current.getTracks().forEach((track) => track.stop());
-        streamRef.current = null;
       }
+      streamRef.current = null;
       scheduleIdleLeave();
       return false;
     }
@@ -398,10 +402,10 @@ export default function useAgoraPTT({
       scheduleIdleLeave();
     }
 
-    if (stopStream && streamRef.current) {
+    if (stopStream && streamRef.current && ownsStreamRef.current) {
       streamRef.current.getTracks().forEach((track) => track.stop());
-      streamRef.current = null;
     }
+    streamRef.current = null;
   }, [scheduleIdleLeave]);
 
   const getMediaStream = useCallback(() => streamRef.current, []);

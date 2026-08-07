@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { api } from "@/api/client";
 import { playRelayAudioTail, stopRelayAudio } from "@/lib/audioPlayer";
+import { unlockAudioForPTT } from "@/lib/pttTones";
 
 const IDLE_TIMEOUT_MS = 8000;
 const STALL_TIMEOUT_MS = 2500;
@@ -90,6 +91,7 @@ export default function useRelayReceiver({ channelId, userId }) {
 
     q.playing = true;
     const startSeconds = q.playedDuration || 0;
+    unlockAudioForPTT();
 
     const advanceAfterPlay = () => {
       if (!queuesRef.current[bId]) return;

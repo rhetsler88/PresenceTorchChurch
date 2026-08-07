@@ -5,10 +5,8 @@ import useAgoraPTT from "./useAgoraPTT";
 import useAgoraMultiPublish from "./useAgoraMultiPublish";
 
 /**
- * PTT broadcast: Agora WebRTC for live half-duplex audio when configured.
- * Storage relay is the fallback for transmit and always used when Agora is off.
- * With Agora, relay also uploads live chunks on the same mic stream so listeners
- * still get real-time audio if WebRTC subscribe/play fails.
+ * PTT broadcast: Storage relay is the source of truth for live chunks and chat archive.
+ * When Agora is configured, also publish the same mic stream over WebRTC for lower latency.
  * Pass publishChannelIds with length > 1 to publish live audio on every channel (broadcast-all).
  */
 export default function usePttBroadcast(options) {
@@ -25,29 +23,9 @@ export default function usePttBroadcast(options) {
   const relay = useRelayBroadcast({ channelId, userId, userName });
   const usingAgoraRef = useRef(false);
   const usingMultiPublishRef = useRef(false);
-  const archiveActiveRef = useRef(false);
+  const relayActiveRef = useRef(false);
   const liveActiveRef = useRef(false);
   const [isTransmitting, setIsTransmitting] = useState(false);
-
-  const startArchiveRecording = useCallback(async (stream, broadcastId) => {
-    if (!stream) return false;
-    let archiveStream = stream;
-    try {
-      if (typeof stream.clone === "function") {
-        archiveStream = stream.clone();
-      }
-    } catch {
-      archiveStream = stream;
-    }
-    const archiveOk = await relay.startRecording({
-      sharedStream: archiveStream,
-      archiveOnly: false,
-      broadcastId,
-      ownsStream: archiveStream !== stream,
-    });
-    archiveActiveRef.current = archiveOk;
-    return archiveOk;
-  }, [relay.startRecording]);
 
   const agora = useAgoraPTT({
     channelId,
@@ -62,54 +40,48 @@ export default function usePttBroadcast(options) {
       ?? (channelId ? [channelId] : []);
     const broadcastId = externalBroadcastId || crypto.randomUUID();
 
-    if (agoraEnabled && publishIds.length > 0) {
-      let ok = false;
+    const relayOk = await relay.startRecording({ broadcastId });
+    if (!relayOk) return false;
 
-      if (publishIds.length > 1) {
-        ok = await agoraMulti.startRecording({
-          broadcastId,
-          channelIds: publishIds,
-          onStreamReady: (readyStream) => {
-            void startArchiveRecording(readyStream, broadcastId);
-          },
-        });
-        usingMultiPublishRef.current = ok;
-      } else {
-        ok = await agora.startRecording({
-          broadcastId,
-          onStreamReady: (readyStream) => {
-            void startArchiveRecording(readyStream, broadcastId);
-          },
-        });
-        usingMultiPublishRef.current = false;
-      }
-
-      if (ok) {
-        usingAgoraRef.current = true;
-        liveActiveRef.current = true;
-        setIsTransmitting(true);
-        return true;
-      }
-    }
-
+    relayActiveRef.current = true;
+    liveActiveRef.current = true;
+    setIsTransmitting(true);
     usingAgoraRef.current = false;
     usingMultiPublishRef.current = false;
-    archiveActiveRef.current = false;
-    const ok = await relay.startRecording();
-    if (ok) {
-      liveActiveRef.current = true;
-      setIsTransmitting(true);
+
+    if (agoraEnabled && publishIds.length > 0) {
+      const stream = relay.getMediaStream();
+      if (stream) {
+        try {
+          if (publishIds.length > 1) {
+            const ok = await agoraMulti.startRecording({
+              broadcastId,
+              channelIds: publishIds,
+              sharedStream: stream,
+            });
+            usingMultiPublishRef.current = ok;
+            usingAgoraRef.current = ok;
+          } else {
+            const ok = await agora.startRecording({
+              broadcastId,
+              sharedStream: stream,
+            });
+            usingAgoraRef.current = ok;
+          }
+        } catch (err) {
+          console.warn("Agora publish failed; relay live audio still active:", err);
+        }
+      }
     }
-    return ok;
+
+    return true;
   }, [
     agoraEnabled,
     channelId,
     agora.startRecording,
-    agora.getMediaStream,
     agoraMulti.startRecording,
-    agoraMulti.getMediaStream,
     relay.startRecording,
-    startArchiveRecording,
+    relay.getMediaStream,
   ]);
 
   const stopLiveTransmit = useCallback(async () => {
@@ -123,7 +95,11 @@ export default function usePttBroadcast(options) {
       } else {
         await agora.stopRecording({ stopStream: false });
       }
-    } else {
+      usingAgoraRef.current = false;
+      usingMultiPublishRef.current = false;
+    }
+
+    if (relayActiveRef.current) {
       await relay.stopLiveRelay();
     }
   }, [agora.stopRecording, agoraMulti.stopRecording, relay.stopLiveRelay]);
@@ -131,27 +107,11 @@ export default function usePttBroadcast(options) {
   const stopRecording = useCallback(async () => {
     await stopLiveTransmit();
 
-    if (usingAgoraRef.current) {
-      usingAgoraRef.current = false;
-      let result = null;
+    if (!relayActiveRef.current) return null;
 
-      if (archiveActiveRef.current) {
-        result = await relay.stopRecording();
-        archiveActiveRef.current = false;
-      }
-
-      if (usingMultiPublishRef.current) {
-        await agoraMulti.stopRecording({ stopStream: true });
-        usingMultiPublishRef.current = false;
-      } else {
-        await agora.stopRecording({ stopStream: true });
-      }
-
-      if (result) return result;
-      return null;
-    }
+    relayActiveRef.current = false;
     return relay.stopRecording();
-  }, [agora.stopRecording, agoraMulti.stopRecording, relay.stopRecording, stopLiveTransmit]);
+  }, [relay.stopRecording, stopLiveTransmit]);
 
   if (agoraEnabled) {
     return {
@@ -161,8 +121,8 @@ export default function usePttBroadcast(options) {
       stopRecording,
       isLiveReceiving: agora.isReceiving,
       isChannelReady: agora.isChannelReady,
-      heardBroadcastsRef: agora.heardBroadcastsRef,
-      transport: "agora",
+      heardBroadcastsRef: relay.heardBroadcastsRef,
+      transport: "relay+agora",
     };
   }
 

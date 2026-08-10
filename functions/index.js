@@ -815,6 +815,16 @@ exports.sendRedAlertPush = onDocumentUpdated("channels/{channelId}", async (even
         },
       },
     },
+    webpush: {
+      notification: {
+        title: "RED ALERT",
+        body: `Code Red — ${channelName} — Secure Now`,
+        icon: "https://app.presencetorch.net/icons/icon-192.png",
+      },
+      fcmOptions: {
+        link: "https://app.presencetorch.net/",
+      },
+    },
   };
 
   for (let i = 0; i < allTokens.length; i += chunkSize) {
@@ -842,6 +852,7 @@ exports.sendRedAlertPush = onDocumentUpdated("channels/{channelId}", async (even
       const { data, changed } = removeStaleTokensFromUserData(userDoc.data(), staleTokens);
       if (!changed) return;
       const patch = {};
+      if (data.fcm_registrations !== undefined) patch.fcm_registrations = data.fcm_registrations;
       if (data.fcm_tokens !== undefined) patch.fcm_tokens = data.fcm_tokens;
       if (data.staff_fcm_tokens !== undefined) patch.staff_fcm_tokens = data.staff_fcm_tokens;
       batch.update(userDoc.ref, patch);

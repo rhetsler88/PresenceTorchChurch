@@ -1,6 +1,7 @@
 import React from "react";
 import { Link } from "react-router-dom";
 import AuthSignInPanel from "@/components/auth/AuthSignInPanel";
+import PwaInstallPrompt from "@/components/pwa/PwaInstallPrompt";
 
 export default function Login() {
   return (
@@ -29,6 +30,10 @@ export default function Login() {
           </p>
 
           <AuthSignInPanel />
+        </div>
+
+        <div className="mt-4">
+          <PwaInstallPrompt />
         </div>
 
         <p className="text-center text-xs text-muted-foreground mt-6">

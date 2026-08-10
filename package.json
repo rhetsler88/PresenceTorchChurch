@@ -10,6 +10,8 @@
     "lint:fix": "eslint . --fix",
     "typecheck": "tsc -p ./jsconfig.json",
     "preview": "vite preview",
+    "pwa:icons": "node scripts/generate-pwa-icons.mjs",
+    "setup:vapid": "node scripts/setup-firebase-vapid.mjs",
     "seed": "node scripts/seed-firestore.mjs",
     "channels:list": "node scripts/list-channels.mjs",
     "channels:delete-excess": "node scripts/delete-channel.mjs --excess",
@@ -120,8 +122,10 @@
     "firebase-admin": "^13.4.0",
     "globals": "^15.14.0",
     "postcss": "^8.5.3",
+    "sharp": "^0.35.3",
     "tailwindcss": "^3.4.17",
     "typescript": "^5.8.2",
-    "vite": "^6.1.0"
+    "vite": "^6.1.0",
+    "vite-plugin-pwa": "^1.3.0"
   }
 }

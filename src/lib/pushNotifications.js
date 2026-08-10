@@ -1,53 +1,56 @@
 import { Capacitor } from "@capacitor/core";
 import { PushNotifications } from "@capacitor/push-notifications";
-import { doc, updateDoc, arrayUnion, arrayRemove } from "firebase/firestore";
-import { db } from "@/lib/firebase";
+import { getToken, isSupported, onMessage } from "firebase/messaging";
+import { getFirebaseMessaging } from "@/lib/firebase";
 import { triggerRedAlert, ensureRedAlertNotificationChannel } from "@/lib/redAlertActions";
 import { isStaffAlertRecipient } from "@/lib/channelAlerts";
+import {
+  getOrCreateDeviceId,
+  getPushRegistrationKey,
+  getWebPushSurface,
+} from "@/lib/pushDevice";
+import { removePushRegistration, upsertPushRegistration } from "@/lib/pushRegistrationStore";
 
 const PUSH_CHANNEL_ID = "red_alerts";
+const VAPID_KEY = import.meta.env.VITE_FIREBASE_VAPID_KEY;
+
 let initialized = false;
 let currentUid = null;
 let currentToken = null;
+let currentRegistrationKey = null;
 let staffAlertsEnabled = false;
-
-async function saveToken(uid, token, staffAlerts) {
-  if (!uid || !token) return;
-  const userRef = doc(db, "users", uid);
-  const payload = { fcm_tokens: arrayUnion(token) };
-  if (staffAlerts) {
-    payload.staff_fcm_tokens = arrayUnion(token);
-  }
-  await updateDoc(userRef, payload);
-}
-
-async function removeSessionToken(uid, token) {
-  if (!uid || !token) return;
-  try {
-    const userRef = doc(db, "users", uid);
-    await updateDoc(userRef, { fcm_tokens: arrayRemove(token) });
-  } catch {
-    /* ignore */
-  }
-}
+let webMessageUnsub = null;
 
 function handleRedAlertPayload(data) {
   const channelName = data?.channelName || data?.channel_name || "A channel";
   triggerRedAlert(channelName);
 }
 
-export async function initPushNotifications(uid, userProfile = null) {
-  if (!uid || !Capacitor.isNativePlatform()) return;
+async function saveRegistration(uid, token, { surface, deviceId, staffAlerts }) {
+  if (!uid || !token) return;
 
-  currentUid = uid;
-  staffAlertsEnabled = isStaffAlertRecipient(userProfile);
+  const registrationKey = getPushRegistrationKey(surface, deviceId);
+  currentRegistrationKey = registrationKey;
 
-  if (initialized) {
-    if (currentToken) await saveToken(uid, currentToken, staffAlertsEnabled);
-    return;
+  await upsertPushRegistration(uid, registrationKey, {
+    token,
+    surface,
+    deviceId,
+    staff: staffAlerts,
+    updatedAt: new Date().toISOString(),
+  });
+}
+
+async function removeSessionRegistration(uid, registrationKey) {
+  if (!uid || !registrationKey) return;
+  try {
+    await removePushRegistration(uid, registrationKey);
+  } catch {
+    /* ignore */
   }
-  initialized = true;
+}
 
+async function initNativePush(uid, userProfile) {
   await ensureRedAlertNotificationChannel();
 
   try {
@@ -65,7 +68,12 @@ export async function initPushNotifications(uid, userProfile = null) {
 
   await PushNotifications.addListener("registration", async (token) => {
     currentToken = token.value;
-    await saveToken(uid, token.value, staffAlertsEnabled);
+    const deviceId = await getOrCreateDeviceId();
+    await saveRegistration(uid, token.value, {
+      surface: "native",
+      deviceId,
+      staffAlerts: staffAlertsEnabled,
+    });
   });
 
   await PushNotifications.addListener("registrationError", (err) => {
@@ -95,18 +103,122 @@ export async function initPushNotifications(uid, userProfile = null) {
   }
 }
 
+async function initWebPush(uid, userProfile) {
+  if (!VAPID_KEY) {
+    console.warn("[Push] VITE_FIREBASE_VAPID_KEY is not set; web push disabled.");
+    return;
+  }
+
+  if (!(await isSupported())) return;
+
+  if (!("Notification" in window)) return;
+
+  let permission = Notification.permission;
+  if (permission === "default") {
+    permission = await Notification.requestPermission();
+  }
+  if (permission !== "granted") return;
+
+  const messaging = await getFirebaseMessaging();
+  if (!messaging) return;
+
+  if (!("serviceWorker" in navigator)) return;
+
+  const registration = await navigator.serviceWorker.ready;
+  const token = await getToken(messaging, {
+    vapidKey: VAPID_KEY,
+    serviceWorkerRegistration: registration,
+  });
+
+  if (!token) return;
+
+  currentToken = token;
+  const deviceId = await getOrCreateDeviceId();
+  await saveRegistration(uid, token, {
+    surface: getWebPushSurface(),
+    deviceId,
+    staffAlerts: staffAlertsEnabled,
+  });
+
+  if (webMessageUnsub) {
+    webMessageUnsub();
+    webMessageUnsub = null;
+  }
+
+  webMessageUnsub = onMessage(messaging, (payload) => {
+    const data = payload?.data || {};
+    if (data.type === "red_alert") {
+      handleRedAlertPayload(data);
+    }
+  });
+}
+
+export async function initPushNotifications(uid, userProfile = null) {
+  if (!uid) return;
+
+  currentUid = uid;
+  staffAlertsEnabled = isStaffAlertRecipient(userProfile);
+
+  if (initialized) {
+    if (currentToken && currentRegistrationKey) {
+      const deviceId = await getOrCreateDeviceId();
+      const surface = Capacitor.isNativePlatform() ? "native" : getWebPushSurface();
+      await saveRegistration(uid, currentToken, {
+        surface,
+        deviceId,
+        staffAlerts: staffAlertsEnabled,
+      });
+    }
+    return;
+  }
+  initialized = true;
+
+  if (Capacitor.isNativePlatform()) {
+    await initNativePush(uid, userProfile);
+    return;
+  }
+
+  await initWebPush(uid, userProfile);
+}
+
 /** Refresh staff token registration when admin toggles staff alerts. */
 export async function refreshStaffPushRegistration(uid, userProfile) {
-  if (!uid || !currentToken || !Capacitor.isNativePlatform()) return;
+  if (!uid || !currentToken || !currentRegistrationKey) return;
+
   staffAlertsEnabled = isStaffAlertRecipient(userProfile);
-  await saveToken(uid, currentToken, staffAlertsEnabled);
+  const deviceId = await getOrCreateDeviceId();
+  const surface = Capacitor.isNativePlatform() ? "native" : getWebPushSurface();
+
+  await saveRegistration(uid, currentToken, {
+    surface,
+    deviceId,
+    staffAlerts: staffAlertsEnabled,
+  });
 }
 
 export async function teardownPushNotifications() {
-  if (currentUid && currentToken) {
-    await removeSessionToken(currentUid, currentToken);
+  if (webMessageUnsub) {
+    webMessageUnsub();
+    webMessageUnsub = null;
   }
+
+  if (currentUid && currentRegistrationKey) {
+    await removeSessionRegistration(currentUid, currentRegistrationKey);
+  }
+
   currentUid = null;
   currentToken = null;
+  currentRegistrationKey = null;
   staffAlertsEnabled = false;
+  initialized = false;
+}
+
+/** Re-register web push after PWA install (browser → standalone storage context). */
+export async function refreshWebPushAfterInstall(uid, userProfile) {
+  if (!uid || Capacitor.isNativePlatform()) return;
+
+  initialized = false;
+  currentToken = null;
+  currentRegistrationKey = null;
+  await initPushNotifications(uid, userProfile);
 }

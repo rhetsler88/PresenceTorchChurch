@@ -4,7 +4,7 @@ import { Capacitor } from "@capacitor/core";
 import { doc, getDoc, setDoc, collection, query, where, limit, getDocs } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase";
 import { authApi } from "@/api/client";
-import { initPushNotifications, teardownPushNotifications } from "@/lib/pushNotifications";
+import { initPushNotifications, teardownPushNotifications, refreshWebPushAfterInstall } from "@/lib/pushNotifications";
 import { clearDailyCodeSession } from "@/lib/dailyCode";
 import {
   clearOAuthRedirectPending,
@@ -498,6 +498,19 @@ export const AuthProvider = ({ children }) => {
     if (!isAuthenticated) return undefined;
     return installCloseLogoutHandler();
   }, [isAuthenticated]);
+
+  useEffect(() => {
+    if (!isAuthenticated || !user?.id || Capacitor.isNativePlatform()) return undefined;
+
+    const onAppInstalled = () => {
+      void refreshWebPushAfterInstall(user.id, user).catch((err) => {
+        console.warn("[Push] Failed to refresh web push after install:", err);
+      });
+    };
+
+    window.addEventListener("appinstalled", onAppInstalled);
+    return () => window.removeEventListener("appinstalled", onAppInstalled);
+  }, [isAuthenticated, user]);
 
   const logout = async (shouldRedirect = true) => {
     setUser(null);

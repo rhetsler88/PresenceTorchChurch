@@ -6,6 +6,7 @@ import {
 } from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
 import { getStorage } from "firebase/storage";
+import { getMessaging, isSupported } from "firebase/messaging";
 import { Capacitor } from "@capacitor/core";
 
 const firebaseConfig = {
@@ -36,3 +37,17 @@ function createAuth() {
 export const auth = createAuth();
 export const db = getFirestore(app);
 export const storage = getStorage(app);
+
+let messagingPromise = null;
+
+export async function getFirebaseMessaging() {
+  if (Capacitor.isNativePlatform()) return null;
+  if (messagingPromise) return messagingPromise;
+
+  messagingPromise = (async () => {
+    if (!(await isSupported())) return null;
+    return getMessaging(app);
+  })();
+
+  return messagingPromise;
+}

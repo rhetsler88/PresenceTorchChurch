@@ -11,7 +11,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { AlertTriangle } from "lucide-react";
 import { api } from "@/api/client";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 
 export default function DeleteAccountDialog({ open, onOpenChange }) {
   const [deleting, setDeleting] = useState(false);

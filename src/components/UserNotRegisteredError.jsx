@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Radio, Check, ArrowRight, ArrowLeft, MailCheck, LogOut } from 'lucide-react';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { useAuth } from '@/lib/AuthContext';
 
 const ORGANIZATIONS_FALLBACK = ["Potter's House - Columbus"];

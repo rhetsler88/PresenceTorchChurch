@@ -86,7 +86,7 @@ function MessageItem({
     longPressTimer.current = setTimeout(() => {
       longPressTriggered.current = true;
       onEnterSelection(message.id);
-    }, 500);
+    }, 750);
   };
 
   const endLongPress = () => {
@@ -102,19 +102,20 @@ function MessageItem({
       onToggleSelect(message.id);
       return;
     }
-    if (canDelete) onEnterSelection(message.id);
+    if (!isTextOnly && message.audio_url) {
+      onPlay?.(message);
+    }
   };
 
   const handlePlayClick = (event) => {
     event.stopPropagation();
-    if (selectionMode || !message.audio_url) return;
-    onPlay?.(message);
+    handleBubbleClick();
   };
 
   const bubbleClasses = `rounded-2xl px-4 py-3 transition-all select-none ${
     isMine ? "bg-primary text-primary-foreground" : "bg-card border border-border"
   } ${selectionMode && isSelected ? "ring-2 ring-destructive" : ""} ${
-    canDelete ? "cursor-pointer" : ""
+    selectionMode || (!isTextOnly && message.audio_url) ? "cursor-pointer" : ""
   }`;
 
   const selectionIndicator = (

@@ -6,7 +6,7 @@ import UserRow, { ROLE_CONFIG } from "@/components/admin/UserRow";
 import PendingRequests from "@/components/admin/PendingRequests";
 import StaffAlertRequests from "@/components/admin/StaffAlertRequests";
 import DailyCodeCard from "@/components/dailycode/DailyCodeCard";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { useAuth } from "@/lib/AuthContext";
 import {
   isPlatformAdmin,

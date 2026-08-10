@@ -11,7 +11,7 @@ import {
   getMessageDayKey,
   isMessageWithinRetention,
 } from "@/lib/transcriptRetention";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import DayGroup from "@/components/transcripts/DayGroup";
 import { exportContentToGoogleDoc } from "@/lib/googleDocsExport";
 

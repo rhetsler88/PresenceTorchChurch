@@ -28,7 +28,7 @@ import {
   ensureUserChannelMembership,
   userHasFirestoreChannelAccess,
 } from "@/lib/channelMembership";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { Button } from "@/components/ui/button";
 import { Clock, Trash2, CheckSquare } from "lucide-react";
 
@@ -938,7 +938,7 @@ export default function Talk() {
       {selectionMode ? (
         <div className="flex items-center justify-between gap-3 px-4 py-3 bg-card border-t border-border">
           <span className="text-sm font-medium text-foreground">
-            {selectedIds.size} selected · tap messages to add or remove
+            {selectedIds.size} selected · tap to toggle · hold to select
           </span>
           <div className="flex items-center gap-2">
             <Button variant="ghost" size="sm" onClick={handleCancelSelection}>

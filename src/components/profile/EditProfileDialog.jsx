@@ -14,7 +14,7 @@ import { Switch } from "@/components/ui/switch";
 import { UserCog, Fingerprint } from "lucide-react";
 import { api } from "@/api/client";
 import { useAuth } from "@/lib/AuthContext";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import {
   clearBiometricCredentials,
   getBiometricLabel,

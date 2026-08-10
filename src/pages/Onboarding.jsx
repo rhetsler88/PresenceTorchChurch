@@ -6,7 +6,7 @@ import { isPlatformAdmin } from "@/lib/userUtils";
 import { Button } from "@/components/ui/button";
 import { Radio, Check, ArrowRight, ArrowLeft, LogOut, MailCheck, Bell } from "lucide-react";
 import AppLogo from "@/components/branding/AppLogo";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { addUserChannelMembership } from "@/lib/channelMembership";
 
 export default function Onboarding() {

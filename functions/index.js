@@ -31,6 +31,7 @@ const {
   diagnoseUserAccess,
   assertModeratorRole,
 } = require("./channelMembership");
+const { logProtectionLevelChange } = require("./protectionLevelHistory");
 
 initializeApp();
 setGlobalOptions({ region: "us-east5" });
@@ -742,6 +743,23 @@ exports.getAgoraToken = onCall(
     };
   }
 );
+
+exports.logProtectionLevelChange = onDocumentUpdated("channels/{channelId}", async (event) => {
+  const before = event.data.before.data();
+  const after = event.data.after.data();
+
+  if (!before || !after) return;
+
+  const fromLevel = before.protection_level || "green";
+  const toLevel = after.protection_level || "green";
+  if (fromLevel === toLevel) return;
+
+  try {
+    await logProtectionLevelChange(getFirestore(), event.params.channelId, fromLevel, toLevel);
+  } catch (err) {
+    console.error("logProtectionLevelChange failed:", err);
+  }
+});
 
 exports.sendRedAlertPush = onDocumentUpdated("channels/{channelId}", async (event) => {
   const before = event.data.before.data();

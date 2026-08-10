@@ -1,9 +1,48 @@
 import React, { useRef, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Play, Pause, FileText, Radio, Check, MessageSquare, Circle } from "lucide-react";
+import { Play, Pause, FileText, Radio, Check, MessageSquare, Circle, Shield } from "lucide-react";
 import { etzTime } from "@/lib/etz";
 import { deviceDayKey, deviceDayLabel } from "@/lib/deviceDate";
 import { Button } from "@/components/ui/button";
+import { PROTECTION_LEVELS } from "@/components/ptt/ProtectionLevelBadge";
+import { isProtectionLevelChangeMessage } from "@/lib/protectionLevelHistory";
+
+function ProtectionLevelLineEntry({ message }) {
+  const level = message.protection_level || "green";
+  const config = PROTECTION_LEVELS[level] || PROTECTION_LEVELS.green;
+  const msgDayKey = message.device_date || deviceDayKey(message.created_date);
+  const showDateStamp = msgDayKey !== deviceDayKey();
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      className="py-1"
+    >
+      {showDateStamp && (
+        <span className="block text-center text-[9px] text-muted-foreground/70 font-semibold uppercase tracking-wider mb-1">
+          {deviceDayLabel(msgDayKey)}
+        </span>
+      )}
+      <div className="flex items-center gap-2 px-2">
+        <div className="h-px flex-1 bg-border" />
+        <div
+          className="flex items-center gap-1.5 rounded-full border px-3 py-1.5 max-w-[90%]"
+          style={{ backgroundColor: config.bg, borderColor: `${config.color}40` }}
+        >
+          <Shield className="w-3 h-3 flex-shrink-0" style={{ color: config.color }} />
+          <span className="text-[10px] font-medium leading-snug" style={{ color: config.color }}>
+            {message.text_content}
+          </span>
+          <span className="text-[9px] text-muted-foreground flex-shrink-0">
+            · {message.device_time || etzTime(message.created_date)}
+          </span>
+        </div>
+        <div className="h-px flex-1 bg-border" />
+      </div>
+    </motion.div>
+  );
+}
 
 function MessageItem({
   message,
@@ -231,18 +270,22 @@ export default function MessageFeed({
     <div className="flex flex-col gap-4 px-4 py-3">
       <AnimatePresence initial={false}>
         {messages.map(msg => (
-          <MessageItem
-            key={msg.id}
-            message={msg}
-            currentUser={currentUser}
-            onPlay={onPlayMessage}
-            isPlaying={playingId === msg.id}
-            canDelete={canDelete}
-            selectionMode={selectionMode}
-            isSelected={selectedIds?.has(msg.id)}
-            onToggleSelect={onToggleSelect}
-            onEnterSelection={onEnterSelection}
-          />
+          isProtectionLevelChangeMessage(msg) ? (
+            <ProtectionLevelLineEntry key={msg.id} message={msg} />
+          ) : (
+            <MessageItem
+              key={msg.id}
+              message={msg}
+              currentUser={currentUser}
+              onPlay={onPlayMessage}
+              isPlaying={playingId === msg.id}
+              canDelete={canDelete}
+              selectionMode={selectionMode}
+              isSelected={selectedIds?.has(msg.id)}
+              onToggleSelect={onToggleSelect}
+              onEnterSelection={onEnterSelection}
+            />
+          )
         ))}
       </AnimatePresence>
       {messages.length === 0 && (

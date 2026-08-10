@@ -24,6 +24,7 @@ import { useAuth } from "@/lib/AuthContext";
 import { useBootstrapDatabase } from "@admin/hooks/useBootstrapDatabase";
 import { CHANNEL_COLORS } from "@/lib/channelColors";
 import ColorPicker from "@/components/channels/ColorPicker";
+import { recordProtectionLevelChange } from "@/lib/protectionLevelHistory";
 
 const PROTECTION_LEVELS = ["blue", "green", "yellow", "red"];
 
@@ -60,7 +61,16 @@ export default function Channels() {
         is_active: true,
       };
       if (editing) {
-        return api.entities.Channel.update(editing.id, payload);
+        const result = await api.entities.Channel.update(editing.id, payload);
+        if ((editing.protection_level || "green") !== (form.protection_level || "green")) {
+          await recordProtectionLevelChange({
+            channelId: editing.id,
+            fromLevel: editing.protection_level || "green",
+            toLevel: form.protection_level || "green",
+            queryClient,
+          });
+        }
+        return result;
       }
       return api.entities.Channel.create(payload);
     },

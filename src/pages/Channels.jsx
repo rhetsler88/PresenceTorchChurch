@@ -9,8 +9,12 @@ import CreateChannelDialog from "../components/channels/CreateChannelDialog";
 import RenameChannelDialog from "../components/channels/RenameChannelDialog";
 import JoinChannelDialog from "../components/channels/JoinChannelDialog";
 import { useNavigate } from "react-router-dom";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { addUserChannelMembership } from "@/lib/channelMembership";
+import {
+  recordProtectionLevelChange,
+  recordProtectionLevelChanges,
+} from "@/lib/protectionLevelHistory";
 
 export default function Channels() {
   const [showCreate, setShowCreate] = useState(false);
@@ -79,12 +83,28 @@ export default function Channels() {
   });
 
   const protectionMutation = useMutation({
-    mutationFn: (/** @type {{ channelId: any, level: any }} */ { channelId, level }) => api.entities.Channel.update(channelId, { protection_level: level }),
+    mutationFn: async (/** @type {{ channelId: any, level: any }} */ { channelId, level }) => {
+      const channels = queryClient.getQueryData(["channels"]) || [];
+      const channel = channels.find((c) => c.id === channelId);
+      const fromLevel = channel?.protection_level || "green";
+      await api.entities.Channel.update(channelId, { protection_level: level });
+      await recordProtectionLevelChange({
+        channelId,
+        fromLevel,
+        toLevel: level,
+        queryClient,
+      });
+    },
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["channels"] }),
   });
 
   const setAllProtectionMutation = useMutation({
-    mutationFn: (level) => api.entities.Channel.updateMany({}, { $set: { protection_level: level } }),
+    mutationFn: async (level) => {
+      const channels = queryClient.getQueryData(["channels"]) || [];
+      await api.entities.Channel.updateMany({}, { $set: { protection_level: level } });
+      await recordProtectionLevelChanges(channels, level, queryClient);
+      return level;
+    },
     onSuccess: (_data, level) => {
       queryClient.setQueryData(["channels"], (/** @type {any[] | undefined} */ old) =>
         (old ?? []).map((c) => ({ ...c, protection_level: level }))

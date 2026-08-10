@@ -744,20 +744,28 @@ exports.getAgoraToken = onCall(
   }
 );
 
-exports.logProtectionLevelChange = onDocumentUpdated("channels/{channelId}", async (event) => {
-  const before = event.data.before.data();
-  const after = event.data.after.data();
+exports.recordProtectionLevelHistory = onCall(CALLABLE_OPTIONS, async (request) => {
+  if (!request.auth) {
+    throw new HttpsError("unauthenticated", "Sign in required");
+  }
 
-  if (!before || !after) return;
+  const channelId = request.data?.channel_id;
+  const fromLevel = request.data?.from_level || "green";
+  const toLevel = request.data?.to_level || "green";
 
-  const fromLevel = before.protection_level || "green";
-  const toLevel = after.protection_level || "green";
-  if (fromLevel === toLevel) return;
+  if (!channelId || typeof channelId !== "string") {
+    throw new HttpsError("invalid-argument", "channel_id is required");
+  }
+  if (fromLevel === toLevel) {
+    return { ok: true, skipped: true };
+  }
 
   try {
-    await logProtectionLevelChange(getFirestore(), event.params.channelId, fromLevel, toLevel);
+    await logProtectionLevelChange(getFirestore(), channelId, fromLevel, toLevel);
+    return { ok: true };
   } catch (err) {
-    console.error("logProtectionLevelChange failed:", err);
+    console.error("recordProtectionLevelHistory failed:", err);
+    throw new HttpsError("internal", "Could not record protection level history");
   }
 });
 

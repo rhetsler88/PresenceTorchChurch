@@ -19,7 +19,11 @@ import MonitorPTTBar from "../components/monitor/MonitorPTTBar";
 import useExternalPTT from "../hooks/useExternalPTT";
 import ProtectionLevelControl from "../components/monitor/ProtectionLevelControl";
 import SetAllProtectionLevel from "../components/monitor/SetAllProtectionLevel";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
+import {
+  recordProtectionLevelChange,
+  recordProtectionLevelChanges,
+} from "@/lib/protectionLevelHistory";
 
 const MONITOR_BROADCAST_MODE_KEY = "monitorBroadcastMode";
 const MONITOR_BROADCAST_SELECTION_KEY = "monitorBroadcastSelection";
@@ -538,7 +542,17 @@ export default function Monitor() {
 
   // Set protection level (synced to Talk page in real-time)
   const handleSetProtectionLevel = async (channelId, level) => {
+    const channels = queryClient.getQueryData(["channels"]) || [];
+    const channel = channels.find((c) => c.id === channelId);
+    const fromLevel = channel?.protection_level || "green";
+
     await api.entities.Channel.update(channelId, { protection_level: level });
+    await recordProtectionLevelChange({
+      channelId,
+      fromLevel,
+      toLevel: level,
+      queryClient,
+    });
     queryClient.invalidateQueries({ queryKey: ["channels"] });
     toast.success(`Protection level set to ${level}`);
   };
@@ -546,7 +560,9 @@ export default function Monitor() {
   // Set protection level across all channels at once
   const handleSetAllProtectionLevel = async (level) => {
     try {
+      const channels = queryClient.getQueryData(["channels"]) || [];
       await api.entities.Channel.updateMany({}, { $set: { protection_level: level } });
+      await recordProtectionLevelChanges(channels, level, queryClient);
       queryClient.setQueryData(["channels"], (/** @type {any[] | undefined} */ old) =>
         (old ?? []).map((c) => ({ ...c, protection_level: level }))
       );

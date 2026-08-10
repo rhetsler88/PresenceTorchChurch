@@ -728,6 +728,16 @@ export const functionsApi = {
       return result.data;
     }
 
+    if (name === "recordProtectionLevelHistory") {
+      const callable = httpsCallable(functions, "recordProtectionLevelHistory");
+      const result = await callable({
+        channel_id: params.channel_id,
+        from_level: params.from_level,
+        to_level: params.to_level,
+      });
+      return result.data;
+    }
+
     throw new Error(`Unknown function: ${name}`);
   },
 };

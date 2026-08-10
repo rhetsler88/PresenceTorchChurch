@@ -15,8 +15,6 @@ import { UserCog, Fingerprint } from "lucide-react";
 import { api } from "@/api/client";
 import { useAuth } from "@/lib/AuthContext";
 import { toast } from "sonner";
-import { useBluetoothPTTContext } from "@/components/ptt/BluetoothPTTContext";
-import BluetoothPTTControl from "@/components/ptt/BluetoothPTTControl";
 import {
   clearBiometricCredentials,
   getBiometricLabel,
@@ -33,7 +31,6 @@ export default function EditProfileDialog({ open, onOpenChange }) {
   const [biometricEnabled, setBiometricEnabled] = useState(false);
   const [biometricLabel, setBiometricLabel] = useState("Biometric");
   const [biometricSupported, setBiometricSupported] = useState(false);
-  const bluetooth = useBluetoothPTTContext();
 
   useEffect(() => {
     if (!open || !isBiometricPlatform()) return;
@@ -135,22 +132,6 @@ export default function EditProfileDialog({ open, onOpenChange }) {
               </div>
               <p className="text-xs text-muted-foreground">
                 Sign in quickly with {biometricLabel.toLowerCase()} after your first email sign-in.
-              </p>
-            </div>
-          )}
-          {bluetooth?.isSupported && (
-            <div className="border-t border-border pt-4 space-y-2">
-              <Label>Bluetooth Button</Label>
-              <BluetoothPTTControl
-                isSupported={bluetooth.isSupported}
-                isConnected={bluetooth.isConnected}
-                isConnecting={bluetooth.isConnecting}
-                deviceName={bluetooth.deviceName}
-                onConnect={bluetooth.connect}
-                onDisconnect={bluetooth.disconnect}
-              />
-              <p className="text-xs text-muted-foreground">
-                Pair a Bluetooth push-to-talk button for hands-free use.
               </p>
             </div>
           )}

@@ -7,15 +7,17 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { UserCog, LogOut, Shield, UserX } from "lucide-react";
+import { Bluetooth, BluetoothConnected, UserCog, LogOut, Shield, UserX } from "lucide-react";
 import { useAuth } from "@/lib/AuthContext";
 import { getDisplayName, getInitials } from "@/lib/userUtils";
 import { ADMIN_APP_URL } from "@/lib/appLinks";
+import { useBluetoothPTTContext } from "@/components/ptt/BluetoothPTTContext";
 import EditProfileDialog from "@/components/profile/EditProfileDialog";
 import DeleteAccountDialog from "@/components/profile/DeleteAccountDialog";
 
 export default function UserMenu() {
   const { user, logout } = useAuth();
+  const bluetooth = useBluetoothPTTContext();
   const [showEditProfile, setShowEditProfile] = useState(false);
   const [showDeleteAccount, setShowDeleteAccount] = useState(false);
 
@@ -56,6 +58,33 @@ export default function UserMenu() {
             <UserCog className="w-4 h-4" />
             Change name
           </DropdownMenuItem>
+          {bluetooth?.isSupported && (
+            <DropdownMenuItem
+              disabled={bluetooth.isConnecting}
+              onSelect={(event) => {
+                event.preventDefault();
+                if (bluetooth.isConnected) {
+                  bluetooth.disconnect();
+                  return;
+                }
+                void bluetooth.connect();
+              }}
+            >
+              {bluetooth.isConnected ? (
+                <>
+                  <BluetoothConnected className="w-4 h-4 text-green-500" />
+                  <span className="truncate">
+                    {bluetooth.deviceName || "Bluetooth button"}
+                  </span>
+                </>
+              ) : (
+                <>
+                  <Bluetooth className="w-4 h-4" />
+                  {bluetooth.isConnecting ? "Pairing Bluetooth..." : "Pair Bluetooth button"}
+                </>
+              )}
+            </DropdownMenuItem>
+          )}
           <DropdownMenuItem
             className="text-destructive focus:text-destructive"
             onClick={() => setShowDeleteAccount(true)}

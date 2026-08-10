@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Radio, Users, Signal } from "lucide-react";
+import { Radio, Users } from "lucide-react";
 import ChannelMembersSheet from "@/components/channels/ChannelMembersSheet";
 
 export default function ChannelHeader({ channel, memberCount, isConnected }) {
@@ -7,16 +7,16 @@ export default function ChannelHeader({ channel, memberCount, isConnected }) {
 
   return (
     <>
-      <div className="bg-background flex items-center justify-between px-5 py-3">
-        <div className="flex items-center gap-3">
+      <div className="bg-background flex items-center pl-5 py-3 pr-[calc(5rem+env(safe-area-inset-right,0px))] sm:pr-48">
+        <div className="flex items-center gap-3 min-w-0 flex-1">
           <div
             className="w-10 h-10 rounded-xl flex items-center justify-center"
             style={{ backgroundColor: (channel?.color || "#f59e0b") + "20" }}
           >
             <Radio className="w-5 h-5" style={{ color: channel?.color || "#f59e0b" }} />
           </div>
-          <div>
-            <h1 className="text-base font-bold text-foreground leading-tight">
+          <div className="min-w-0">
+            <h1 className="text-base font-bold text-foreground leading-tight truncate">
               {channel?.name || "No Channel"}
             </h1>
             <div className="flex items-center gap-2 mt-0.5">
@@ -35,11 +35,6 @@ export default function ChannelHeader({ channel, memberCount, isConnected }) {
             </div>
           </div>
         </div>
-        {isConnected && (
-          <div className="flex items-center gap-1">
-            <Signal className="w-4 h-4 text-green-500" />
-          </div>
-        )}
       </div>
       <ChannelMembersSheet channel={channel} open={showMembers} onOpenChange={setShowMembers} />
     </>

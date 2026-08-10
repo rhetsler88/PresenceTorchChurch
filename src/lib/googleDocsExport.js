@@ -1,5 +1,4 @@
 const GIS_SRC = "https://accounts.google.com/gsi/client";
-const DOCS_SCOPE = "https://www.googleapis.com/auth/documents";
 const DRIVE_FILE_SCOPE = "https://www.googleapis.com/auth/drive.file";
 
 function getClientId() {
@@ -48,7 +47,7 @@ function requestAccessToken(clientId, prompt = "") {
   return new Promise((resolve, reject) => {
     const tokenClient = window.google.accounts.oauth2.initTokenClient({
       client_id: clientId,
-      scope: `${DOCS_SCOPE} ${DRIVE_FILE_SCOPE}`,
+      scope: DRIVE_FILE_SCOPE,
       callback: (response) => {
         if (response.error) {
           if (response.error === "interaction_required" && prompt !== "consent") {
@@ -65,29 +64,46 @@ function requestAccessToken(clientId, prompt = "") {
   });
 }
 
-async function docsFetch(path, accessToken, options = {}) {
-  const res = await fetch(`https://docs.googleapis.com/v1${path}`, {
-    ...options,
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      "Content-Type": "application/json",
-      ...(options.headers || {}),
-    },
-  });
+async function createGoogleDocViaDrive({ title, content, accessToken }) {
+  const metadata = {
+    name: title,
+    mimeType: "application/vnd.google-apps.document",
+  };
+
+  const boundary = `presence_torch_${crypto.randomUUID()}`;
+  const body =
+    `--${boundary}\r\n` +
+    "Content-Type: application/json; charset=UTF-8\r\n\r\n" +
+    `${JSON.stringify(metadata)}\r\n` +
+    `--${boundary}\r\n` +
+    "Content-Type: text/plain; charset=UTF-8\r\n\r\n" +
+    `${content}\r\n` +
+    `--${boundary}--`;
+
+  const res = await fetch(
+    "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,webViewLink",
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": `multipart/related; boundary=${boundary}`,
+      },
+      body,
+    }
+  );
 
   if (!res.ok) {
     const errBody = await res.json().catch(() => ({}));
-    const message = errBody?.error?.message || res.statusText || "Google Docs request failed";
+    const message = errBody?.error?.message || res.statusText || "Google Drive request failed";
     throw new Error(message);
   }
 
-  if (res.status === 204) return null;
   return res.json();
 }
 
 /**
  * Creates a Google Doc in the signed-in user's Drive and inserts transcript content.
- * Uses Google Identity Services (user OAuth) — service accounts cannot own Drive files.
+ * Uses Drive API (drive.file scope) — non-sensitive OAuth, no Docs API required.
  */
 export async function exportContentToGoogleDoc({ title, content }) {
   if (!content?.trim()) {
@@ -101,32 +117,19 @@ export async function exportContentToGoogleDoc({ title, content }) {
   const accessToken = await requestAccessToken(clientId);
 
   const docTitle = (title || "Presence Torch Transcript Log").trim().slice(0, 200);
-  const created = await docsFetch("/documents", accessToken, {
-    method: "POST",
-    body: JSON.stringify({ title: docTitle }),
+  const created = await createGoogleDocViaDrive({
+    title: docTitle,
+    content,
+    accessToken,
   });
 
-  const documentId = created?.documentId;
+  const documentId = created?.id;
   if (!documentId) {
-    throw new Error("Google Docs did not return a document id");
+    throw new Error("Google Drive did not return a document id");
   }
-
-  await docsFetch(`/documents/${documentId}:batchUpdate`, accessToken, {
-    method: "POST",
-    body: JSON.stringify({
-      requests: [
-        {
-          insertText: {
-            location: { index: 1 },
-            text: content,
-          },
-        },
-      ],
-    }),
-  });
 
   return {
     documentId,
-    url: `https://docs.google.com/document/d/${documentId}/edit`,
+    url: created.webViewLink || `https://docs.google.com/document/d/${documentId}/edit`,
   };
 }

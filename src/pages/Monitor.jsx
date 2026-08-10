@@ -21,6 +21,25 @@ import ProtectionLevelControl from "../components/monitor/ProtectionLevelControl
 import SetAllProtectionLevel from "../components/monitor/SetAllProtectionLevel";
 import { toast } from "sonner";
 
+const MONITOR_BROADCAST_MODE_KEY = "monitorBroadcastMode";
+const MONITOR_BROADCAST_SELECTION_KEY = "monitorBroadcastSelection";
+
+function readStoredBroadcastMode() {
+  const mode = localStorage.getItem(MONITOR_BROADCAST_MODE_KEY);
+  return mode === "multi" ? "multi" : "single";
+}
+
+function readStoredBroadcastSelection() {
+  try {
+    const saved = localStorage.getItem(MONITOR_BROADCAST_SELECTION_KEY);
+    if (!saved) return null;
+    const parsed = JSON.parse(saved);
+    return Array.isArray(parsed) ? parsed.filter(Boolean) : null;
+  } catch {
+    return null;
+  }
+}
+
 function ChannelMonitorCard({ channel, messages, onPlayMessage, playingId, onSetProtectionLevel, userMap }) {
   const lastMsg = messages[0];
   const hasActivity = messages.length > 0;
@@ -137,7 +156,8 @@ export default function Monitor() {
 
   // PTT state (lifted from MonitorPTTBar)
   const [targetChannelId, setTargetChannelId] = useState(null);
-  const [broadcastAll, setBroadcastAll] = useState(false);
+  const [broadcastMode, setBroadcastMode] = useState(readStoredBroadcastMode);
+  const [selectedBroadcastIds, setSelectedBroadcastIds] = useState([]);
   const [isPTTPressed, setIsPTTPressed] = useState(false);
   const [isChannelBusy, setIsChannelBusy] = useState(false);
   const [busyChannelIds, setBusyChannelIds] = useState(() => new Set());
@@ -147,8 +167,10 @@ export default function Monitor() {
   const pttStartInFlightRef = useRef(false);
   const channelBusyTimeoutRef = useRef(new Map());
   const heardBroadcastsRef = useRef(new Set());
-  const broadcastAllRef = useRef(broadcastAll);
-  broadcastAllRef.current = broadcastAll;
+  const broadcastModeRef = useRef(broadcastMode);
+  broadcastModeRef.current = broadcastMode;
+  const selectedBroadcastIdsRef = useRef(selectedBroadcastIds);
+  selectedBroadcastIdsRef.current = selectedBroadcastIds;
   const targetChannelIdRef = useRef(targetChannelId);
   targetChannelIdRef.current = targetChannelId;
   const sendableChannelIdsRef = useRef([]);
@@ -221,29 +243,75 @@ export default function Monitor() {
     queryFn: () => api.entities.User.list(),
   });
 
-  // Initialize target channel from localStorage or first monitor channel
+  // Initialize target channel from localStorage or first sendable channel
   useEffect(() => {
-    if (monitorChannels.length > 0 && !targetChannelId) {
+    if (sendableMonitorChannels.length > 0 && !targetChannelId) {
       const lastId = localStorage.getItem("lastChannelId");
-      if (lastId && monitorChannels.find((c) => c.id === lastId)) {
+      if (lastId && sendableMonitorChannels.find((c) => c.id === lastId)) {
         setTargetChannelId(lastId);
       } else {
-        setTargetChannelId(monitorChannels[0].id);
+        setTargetChannelId(sendableMonitorChannels[0].id);
       }
     }
-  }, [monitorChannels, targetChannelId]);
+  }, [sendableMonitorChannels, targetChannelId]);
+
+  // Default broadcast selection: saved choice, then admin exclusions, then all sendable
+  useEffect(() => {
+    if (sendableChannelIds.length === 0) {
+      setSelectedBroadcastIds([]);
+      return;
+    }
+    const excluded = new Set(user?.broadcast_excluded_channels || []);
+    const defaults = sendableChannelIds.filter((id) => !excluded.has(id));
+    const fallback = defaults.length > 0 ? defaults : sendableChannelIds;
+
+    setSelectedBroadcastIds((prev) => {
+      const validPrev = prev.filter((id) => sendableChannelIds.includes(id));
+      if (validPrev.length > 0) return validPrev;
+
+      const stored = readStoredBroadcastSelection();
+      if (stored) {
+        const validStored = stored.filter((id) => sendableChannelIds.includes(id));
+        if (validStored.length > 0) return validStored;
+      }
+
+      return fallback;
+    });
+  }, [sendableChannelIds, user?.broadcast_excluded_channels]);
+
+  useEffect(() => {
+    localStorage.setItem(MONITOR_BROADCAST_MODE_KEY, broadcastMode);
+  }, [broadcastMode]);
+
+  useEffect(() => {
+    if (selectedBroadcastIds.length === 0) return;
+    localStorage.setItem(
+      MONITOR_BROADCAST_SELECTION_KEY,
+      JSON.stringify(selectedBroadcastIds)
+    );
+  }, [selectedBroadcastIds]);
 
   // Drop target channel when it falls outside the user's monitor scope
   useEffect(() => {
     if (!targetChannelId) return;
-    if (monitorChannels.length === 0) {
+    if (sendableMonitorChannels.length === 0) {
       setTargetChannelId(null);
       return;
     }
-    if (!monitorChannels.some((c) => c.id === targetChannelId)) {
-      setTargetChannelId(monitorChannels[0].id);
+    if (!sendableMonitorChannels.some((c) => c.id === targetChannelId)) {
+      setTargetChannelId(sendableMonitorChannels[0].id);
     }
-  }, [monitorChannels, targetChannelId]);
+  }, [sendableMonitorChannels, targetChannelId]);
+
+  const getActiveTargetIds = useCallback(() => {
+    if (broadcastModeRef.current === "multi") {
+      return selectedBroadcastIdsRef.current.filter((id) =>
+        sendableChannelIdsRef.current.includes(id)
+      );
+    }
+    const targetId = targetChannelIdRef.current;
+    return [targetId].filter((id) => id && sendableChannelIdsRef.current.includes(id));
+  }, []);
 
   const handleTargetChannelChange = useCallback((id) => {
     setTargetChannelId(id);
@@ -503,12 +571,14 @@ export default function Monitor() {
         hour: 'numeric', minute: '2-digit', hour12: true
       });
       const deviceDate = deviceDayKey(now);
-      const isBroadcastAll = broadcastAllRef.current;
+      const targetIds = broadcastModeRef.current === "multi"
+        ? selectedBroadcastIdsRef.current.filter((id) =>
+            sendableChannelIdsRef.current.includes(id)
+          )
+        : [targetChannelIdRef.current].filter(
+            (id) => id && sendableChannelIdsRef.current.includes(id)
+          );
       const targetId = targetChannelIdRef.current;
-
-      const targetIds = isBroadcastAll
-        ? sendableChannelIdsRef.current
-        : [targetId].filter((id) => sendableChannelIdsRef.current.includes(id));
 
       const created = await Promise.all(targetIds.map(cid =>
         api.entities.VoiceMessage.create({
@@ -550,18 +620,28 @@ export default function Monitor() {
         });
       });
 
-      return isBroadcastAll
-        ? `all ${targetIds.length} channels`
-        : monitorChannels.find(c => c.id === targetId)?.name || "channel";
+      const mode = broadcastModeRef.current;
+      if (mode === "multi") {
+        const allCount = sendableChannelIdsRef.current.length;
+        return targetIds.length === allCount
+          ? `all ${targetIds.length} channels`
+          : `${targetIds.length} channels`;
+      }
+      return monitorChannels.find(c => c.id === targetId)?.name || "channel";
     },
     onSuccess: (label) => {
       if (label) toast.success(`Sent to ${label}`);
     },
   });
 
-  const isTargetChannelBusy = broadcastAll
-    ? sendableChannelIds.some((id) => busyChannelIds.has(id))
-    : Boolean(targetChannelId && busyChannelIds.has(targetChannelId));
+  const activeTargetIds = useMemo(() => {
+    if (broadcastMode === "multi") {
+      return selectedBroadcastIds.filter((id) => sendableChannelIds.includes(id));
+    }
+    return targetChannelId ? [targetChannelId] : [];
+  }, [broadcastMode, selectedBroadcastIds, sendableChannelIds, targetChannelId]);
+
+  const isTargetChannelBusy = activeTargetIds.some((id) => busyChannelIds.has(id));
 
   const handlePTTStart = useCallback(async () => {
     if (isPTTPressed || !user?.id || pttStartInFlightRef.current) return;
@@ -570,13 +650,9 @@ export default function Monitor() {
       return;
     }
 
-    const primaryChannelId = sendableChannelIds.includes(targetChannelIdRef.current)
-      ? targetChannelIdRef.current
-      : sendableChannelIds[0];
+    const targetIds = getActiveTargetIds();
 
-    const targetIds = broadcastAllRef.current
-      ? sendableChannelIds
-      : [primaryChannelId].filter(Boolean);
+    const primaryChannelId = targetIds[0] || sendableChannelIds[0];
 
     if (targetIds.length === 0) {
       toast.error("No channels available to respond on");
@@ -645,6 +721,7 @@ export default function Monitor() {
     isTargetChannelBusy,
     startRecording,
     stopRecording,
+    getActiveTargetIds,
     sendableChannelIds,
     user,
   ]);
@@ -772,13 +849,15 @@ export default function Monitor() {
       </div>
 
       {/* PTT response bar */}
-      {monitorChannels.length > 0 && (
+      {monitorChannels.length > 0 && sendableMonitorChannels.length > 0 && (
         <MonitorPTTBar
-          channels={monitorChannels}
+          channels={sendableMonitorChannels}
+          mode={broadcastMode}
+          onModeChange={setBroadcastMode}
           targetChannelId={targetChannelId}
           onTargetChannelChange={handleTargetChannelChange}
-          broadcastAll={broadcastAll}
-          onBroadcastAllChange={setBroadcastAll}
+          selectedChannelIds={selectedBroadcastIds}
+          onSelectedChannelIdsChange={setSelectedBroadcastIds}
           isPressed={isPTTPressed}
           isReceiving={showReceiving}
           isChannelBusy={isTargetChannelBusy && !isPTTPressed && !showReceiving}

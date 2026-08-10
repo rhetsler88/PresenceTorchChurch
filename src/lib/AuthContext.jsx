@@ -110,6 +110,9 @@ function buildMergedProfile(existing, orphanData, firebaseUser, displayName, fir
     directed_channels: orphanData.directed_channels?.length
       ? orphanData.directed_channels
       : (existing.directed_channels || []),
+    broadcast_excluded_channels: orphanData.broadcast_excluded_channels?.length
+      ? orphanData.broadcast_excluded_channels
+      : (existing.broadcast_excluded_channels || []),
     member_of_channels: [
       ...new Set([
         ...(existing.member_of_channels || []),
@@ -156,6 +159,7 @@ async function loadOrCreateUser(firebaseUser) {
       role: "user",
       onboarded: false,
       directed_channels: [],
+      broadcast_excluded_channels: [],
       member_of_channels: [],
       is_monitor: false,
       pending_staff_alerts: false,

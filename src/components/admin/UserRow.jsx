@@ -8,6 +8,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import DirectorControls from "@/components/admin/DirectorControls";
+import MonitorBroadcastControls from "@/components/admin/MonitorBroadcastControls";
 
 export const ROLE_CONFIG = {
   super_admin: { label: "Super Admin", color: "text-red-400", bg: "bg-red-500/10", icon: Shield },
@@ -23,6 +24,7 @@ export default function UserRow({
   onChangeRole,
   channels,
   onToggleChannel,
+  onToggleBroadcastChannel,
   onToggleMonitor,
   onToggleStaffAlerts,
   canManageStaffAlerts = false,
@@ -33,6 +35,7 @@ export default function UserRow({
   const isCurrentUser = user.id === currentUser?.id;
   const initials = (user.full_name || user.first_name || user.email || "?").slice(0, 2).toUpperCase();
   const isDirector = user.role === "director";
+  const isMonitor = user.role === "monitor" || user.is_monitor === true;
 
   return (
     <div className="px-4 py-3 hover:bg-muted/30 rounded-xl transition-colors">
@@ -123,6 +126,15 @@ export default function UserRow({
           user={user}
           channels={channels}
           onToggleChannel={onToggleChannel}
+        />
+      )}
+
+      {/* Monitor broadcast channel assignment */}
+      {adminControls && isMonitor && (
+        <MonitorBroadcastControls
+          user={user}
+          channels={channels}
+          onToggleChannel={onToggleBroadcastChannel}
         />
       )}
     </div>

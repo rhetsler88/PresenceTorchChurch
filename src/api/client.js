@@ -636,6 +636,7 @@ export const authApi = {
         role: "user",
         onboarded: false,
         directed_channels: [],
+        broadcast_excluded_channels: [],
         is_monitor: false,
         pending_staff_alerts: false,
       },

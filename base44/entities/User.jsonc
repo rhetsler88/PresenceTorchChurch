@@ -21,6 +21,14 @@
       "default": [],
       "description": "Channel IDs this director/lead can manage (approve members)"
     },
+    "broadcast_excluded_channels": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "default": [],
+      "description": "Channel IDs excluded by default from the Monitor broadcast picker. Monitors can still include them per broadcast."
+    },
     "is_monitor": {
       "type": "boolean",
       "default": false,

@@ -128,6 +128,7 @@ service firebase.storage {
       return userDoc().data.get('directed_channels', []);
     }
 
+
     function isDirectorForChannel(channelId) {
       return isDirector()
         && channelExists(channelId)

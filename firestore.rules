@@ -120,6 +120,7 @@ service cloud.firestore {
       return userDoc().data.get('directed_channels', []);
     }
 
+
     function isDirectorForChannel(channelId) {
       return isDirector()
         && channelExistsPath(channelId)
@@ -186,6 +187,8 @@ service cloud.firestore {
         ? [
             'role',
             'is_monitor',
+            'directed_channels',
+            'broadcast_excluded_channels',
             'receives_staff_alerts',
             'pending_staff_alerts',
             'daily_code_verified_date',
@@ -195,6 +198,8 @@ service cloud.firestore {
         : [
             'role',
             'is_monitor',
+            'directed_channels',
+            'broadcast_excluded_channels',
             'receives_staff_alerts',
             'daily_code_verified_date',
             'daily_code_failed_attempts',
@@ -218,7 +223,7 @@ service cloud.firestore {
       return request.resource.data.diff(resource.data).affectedKeys().hasOnly(['protection_level']);
     }
 
-    // Admin tab: role changes, staff alerts, directed_channels (matches client isPlatformAdmin).
+    // Admin tab: role changes, staff alerts, directed_channels, broadcast_excluded_channels (matches client isPlatformAdmin).
     function canManageUsers() {
       return isPlatformAdmin() || isPlatformAdminFromToken();
     }

@@ -87,6 +87,20 @@ export default function Admin() {
     onError: mutationErrorToast("update channel assignment"),
   });
 
+  const toggleBroadcastChannelMutation = useMutation({
+    mutationFn: (/** @type {{ user: any, channelId: any }} */ { user, channelId }) => {
+      const current = user.broadcast_excluded_channels || [];
+      const excluded = current.includes(channelId)
+        ? current.filter(id => id !== channelId)
+        : [...current, channelId];
+      return api.entities.User.update(user.id, { broadcast_excluded_channels: excluded });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["users"] });
+    },
+    onError: mutationErrorToast("update broadcast exclusions"),
+  });
+
   const approveMutation = useMutation({
     mutationFn: async (/** @type {{ channel: any, memberId: any }} */ { channel, memberId }) => {
       const memberUid = resolvePendingMember(users, memberId);
@@ -233,6 +247,7 @@ export default function Admin() {
     channels: orgChannels,
     onChangeRole: (u, r) => changeRoleMutation.mutate({ user: u, role: r }),
     onToggleChannel: (u, cid) => toggleChannelMutation.mutate({ user: u, channelId: cid }),
+    onToggleBroadcastChannel: (u, cid) => toggleBroadcastChannelMutation.mutate({ user: u, channelId: cid }),
     onToggleMonitor: (u) => toggleMonitorMutation.mutate({ user: u }),
     onToggleStaffAlerts: (u) => toggleStaffAlertsMutation.mutate({ user: u }),
     canManageStaffAlerts,
@@ -284,7 +299,7 @@ export default function Admin() {
               <span className="text-[10px] text-muted-foreground ml-0.5">
                 {role === "admin" && "— Full control"}
                 {role === "director" && "— Channel lead"}
-                {role === "monitor" && "— All channels"}
+                {role === "monitor" && "— Listen all, pick broadcast targets"}
                 {role === "user" && "— Single channel"}
               </span>
             </div>

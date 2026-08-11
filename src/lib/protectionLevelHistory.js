@@ -1,6 +1,6 @@
 import { PROTECTION_LEVELS } from "@/components/ptt/ProtectionLevelBadge";
 import { api } from "@/api/client";
-import { deviceDayKey } from "@/lib/deviceDate";
+import { deviceTimestamp } from "@/lib/deviceDate";
 
 export const PROTECTION_LEVEL_CHANGE_TYPE = "protection_level_change";
 
@@ -29,10 +29,9 @@ function invalidateHistoryQueries(queryClient, channelId) {
   queryClient.invalidateQueries({ queryKey: ["all-channel-messages"] });
 }
 
-async function createProtectionLevelHistoryEntry(channelId, fromLevel, toLevel) {
+async function createProtectionLevelHistoryEntry(channelId, fromLevel, toLevel, timestamp = deviceTimestamp()) {
   const from = fromLevel || "green";
   const to = toLevel || "green";
-  const now = new Date();
   return api.entities.VoiceMessage.create({
     channel_id: channelId,
     message_type: PROTECTION_LEVEL_CHANGE_TYPE,
@@ -42,12 +41,8 @@ async function createProtectionLevelHistoryEntry(channelId, fromLevel, toLevel) 
     sender_name: "System",
     sender_email: "",
     is_transcribed: true,
-    device_time: now.toLocaleTimeString("en-US", {
-      hour: "numeric",
-      minute: "2-digit",
-      hour12: true,
-    }),
-    device_date: deviceDayKey(now),
+    device_time: timestamp.device_time,
+    device_date: timestamp.device_date,
   });
 }
 
@@ -62,16 +57,20 @@ export async function recordProtectionLevelChange({
   const to = toLevel || "green";
   if (!channelId || from === to) return null;
 
+  const timestamp = deviceTimestamp();
+
   try {
     await api.functions.invoke("recordProtectionLevelHistory", {
       channel_id: channelId,
       from_level: from,
       to_level: to,
+      device_time: timestamp.device_time,
+      device_date: timestamp.device_date,
     });
   } catch (err) {
     console.warn("recordProtectionLevelHistory callable failed, falling back to client write:", err);
     try {
-      await createProtectionLevelHistoryEntry(channelId, from, to);
+      await createProtectionLevelHistoryEntry(channelId, from, to, timestamp);
     } catch (fallbackErr) {
       console.warn("Protection level history fallback write failed:", fallbackErr);
       return null;

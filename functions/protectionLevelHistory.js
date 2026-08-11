@@ -35,10 +35,16 @@ function deviceTime(date = new Date()) {
   });
 }
 
-async function logProtectionLevelChange(db, channelId, fromLevel, toLevel) {
+async function logProtectionLevelChange(db, channelId, fromLevel, toLevel, timestamp = {}) {
   const now = new Date();
   const from = fromLevel || "green";
   const to = toLevel || "green";
+  const deviceTimeValue = typeof timestamp.device_time === "string" && timestamp.device_time.trim()
+    ? timestamp.device_time.trim()
+    : deviceTime(now);
+  const deviceDateValue = typeof timestamp.device_date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(timestamp.device_date)
+    ? timestamp.device_date
+    : deviceDayKey(now);
 
   await db.collection("voiceMessages").add({
     channel_id: channelId,
@@ -51,8 +57,8 @@ async function logProtectionLevelChange(db, channelId, fromLevel, toLevel) {
     is_transcribed: true,
     created_by_id: "system",
     created_date: FieldValue.serverTimestamp(),
-    device_time: deviceTime(now),
-    device_date: deviceDayKey(now),
+    device_time: deviceTimeValue,
+    device_date: deviceDateValue,
   });
 }
 

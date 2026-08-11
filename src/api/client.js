@@ -734,6 +734,8 @@ export const functionsApi = {
         channel_id: params.channel_id,
         from_level: params.from_level,
         to_level: params.to_level,
+        device_time: params.device_time,
+        device_date: params.device_date,
       });
       return result.data;
     }

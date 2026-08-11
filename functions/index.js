@@ -761,7 +761,10 @@ exports.recordProtectionLevelHistory = onCall(CALLABLE_OPTIONS, async (request) 
   }
 
   try {
-    await logProtectionLevelChange(getFirestore(), channelId, fromLevel, toLevel);
+    await logProtectionLevelChange(getFirestore(), channelId, fromLevel, toLevel, {
+      device_time: request.data?.device_time,
+      device_date: request.data?.device_date,
+    });
     return { ok: true };
   } catch (err) {
     console.error("recordProtectionLevelHistory failed:", err);

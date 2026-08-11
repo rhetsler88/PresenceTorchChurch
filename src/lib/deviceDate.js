@@ -5,6 +5,21 @@ export function deviceDayKey(date = new Date()) {
   return d.toLocaleDateString('en-CA'); // YYYY-MM-DD
 }
 
+export function deviceTime(date = new Date()) {
+  return date.toLocaleTimeString('en-US', {
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+  });
+}
+
+export function deviceTimestamp(date = new Date()) {
+  return {
+    device_time: deviceTime(date),
+    device_date: deviceDayKey(date),
+  };
+}
+
 // Human-readable label for a YYYY-MM-DD key, with Today/Yesterday shortcuts.
 export function deviceDayLabel(key) {
   const today = deviceDayKey();

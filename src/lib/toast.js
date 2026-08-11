@@ -1,24 +1,30 @@
 import { toast as sonnerToast } from "sonner";
 import { isPwaInstalled } from "@/lib/pushDevice";
 
-/** Installed PWA: skip success/info toasts for routine actions. Errors still surface. */
-function suppressActionToasts() {
+/** Installed PWA: suppress all toast pop-ups. */
+function suppressToasts() {
   return isPwaInstalled();
 }
 
-function wrapActionToast(method) {
+function wrapToast(method) {
   return (...args) => {
-    if (suppressActionToasts()) return;
+    if (suppressToasts()) return;
     return method(...args);
   };
 }
 
 export const toast = {
-  success: wrapActionToast(sonnerToast.success),
-  info: wrapActionToast(sonnerToast.info),
-  message: wrapActionToast(sonnerToast.message),
-  warning: wrapActionToast(sonnerToast.warning),
-  error: sonnerToast.error,
+  success: wrapToast(sonnerToast.success),
+  info: wrapToast(sonnerToast.info),
+  message: wrapToast(sonnerToast.message),
+  warning: wrapToast(sonnerToast.warning),
+  error: wrapToast(sonnerToast.error),
   dismiss: sonnerToast.dismiss,
-  promise: sonnerToast.promise,
+  promise: (...args) => {
+    if (suppressToasts()) {
+      const promise = args[0];
+      return promise instanceof Promise ? promise : Promise.resolve(promise);
+    }
+    return sonnerToast.promise(...args);
+  },
 };

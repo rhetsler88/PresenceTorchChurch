@@ -19,7 +19,7 @@ import MonitorPTTBar from "../components/monitor/MonitorPTTBar";
 import useExternalPTT from "../hooks/useExternalPTT";
 import ProtectionLevelControl from "../components/monitor/ProtectionLevelControl";
 import SetAllProtectionLevel from "../components/monitor/SetAllProtectionLevel";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import {
   recordProtectionLevelChange,
   recordProtectionLevelChanges,

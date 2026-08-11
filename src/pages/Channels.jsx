@@ -9,7 +9,7 @@ import CreateChannelDialog from "../components/channels/CreateChannelDialog";
 import RenameChannelDialog from "../components/channels/RenameChannelDialog";
 import JoinChannelDialog from "../components/channels/JoinChannelDialog";
 import { useNavigate } from "react-router-dom";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { addUserChannelMembership } from "@/lib/channelMembership";
 import {
   recordProtectionLevelChange,

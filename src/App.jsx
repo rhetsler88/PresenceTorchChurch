@@ -3,6 +3,7 @@ import { Toaster as SonnerToaster } from "sonner"
 import { QueryClientProvider } from '@tanstack/react-query'
 import { queryClientInstance } from '@/lib/query-client'
 import { Capacitor } from '@capacitor/core';
+import { isPwaInstalled } from '@/lib/pushDevice';
 import { BrowserRouter, HashRouter, Route, Routes } from 'react-router-dom';
 
 const Router = Capacitor.isNativePlatform() ? HashRouter : BrowserRouter;
@@ -87,14 +88,16 @@ const AuthenticatedApp = () => {
 };
 
 function App() {
+  const showToasts = !isPwaInstalled();
+
   return (
     <AuthProvider>
       <QueryClientProvider client={queryClientInstance}>
         <Router future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
           <AppRoutes />
         </Router>
-        <Toaster />
-        <SonnerToaster richColors closeButton />
+        {showToasts && <Toaster />}
+        {showToasts && <SonnerToaster richColors closeButton />}
       </QueryClientProvider>
     </AuthProvider>
   )

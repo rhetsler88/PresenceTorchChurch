@@ -10,9 +10,9 @@ function isMobileWebUserAgent() {
 
 export function isPwaInstalled() {
   if (typeof window === "undefined") return false;
-  return (
-    window.matchMedia("(display-mode: standalone)").matches ||
-    window.navigator.standalone === true
+  if (window.navigator.standalone === true) return true;
+  return ["standalone", "fullscreen", "minimal-ui"].some((mode) =>
+    window.matchMedia(`(display-mode: ${mode})`).matches
   );
 }
 

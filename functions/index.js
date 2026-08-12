@@ -955,6 +955,7 @@ exports.cleanupOldVoiceMessages = onSchedule(
   {
     schedule: "0 3 * * *",
     timeZone: "America/New_York",
+    region: "us-central1",
   },
   async () => {
     await cleanupOldVoiceMessages();
@@ -1071,7 +1072,7 @@ exports.rotateDailyAccessCodes = onSchedule(
   {
     schedule: "1 0 * * *",
     timeZone: "America/New_York",
-    region: "us-east5",
+    region: "us-central1",
   },
   async () => {
     const db = getFirestore();

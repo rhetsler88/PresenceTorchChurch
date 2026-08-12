@@ -109,6 +109,14 @@ export function canAccessChannel(user, channel) {
   return isChannelTalkMember(user, channel);
 }
 
+/** Matches Admin approvals — org admins or directors scoped to assigned channels. */
+export function canManageChannelMembership(user, channel) {
+  if (!user || !channel) return false;
+  if (isSuperAdmin(user)) return true;
+  if (isOrgAdmin(user)) return isOrgAdminForChannel(user, channel);
+  return isDirectorForChannel(user, channel);
+}
+
 /** Matches Firestore canViewAllVoiceMessages — super_admin, director, monitor roles. */
 export function canViewAllVoiceMessages(user) {
   return (

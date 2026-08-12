@@ -12,14 +12,9 @@ import {
   isPlatformAdmin,
   filterUsersByOrganization,
   filterChannelsByOrganization,
+  canManageChannelMembership,
 } from "@/lib/userUtils";
-import { addUserChannelMembership } from "@/lib/channelMembership";
-
-function resolvePendingMember(users, memberId) {
-  if (!memberId) return null;
-  const match = users.find((u) => u.id === memberId || u.email === memberId);
-  return match?.id || (memberId.includes("@") ? null : memberId);
-}
+import { adminApi } from "@/api/client";
 
 function mutationErrorToast(action) {
   return (err) => {
@@ -103,33 +98,7 @@ export default function Admin() {
 
   const approveMutation = useMutation({
     mutationFn: async (/** @type {{ channel: any, memberId: any }} */ { channel, memberId }) => {
-      const memberUid = resolvePendingMember(users, memberId);
-      const members = (channel.members || []).filter(
-        (entry) => entry !== memberId && entry !== memberUid
-      );
-      const pending = (channel.pending_members || []).filter(
-        (entry) => entry !== memberId && entry !== memberUid
-      );
-      const memberEntry = memberUid || memberId;
-
-      await api.entities.Channel.update(channel.id, {
-        members: memberEntry ? [...members, memberEntry] : members,
-        pending_members: pending,
-      });
-
-      if (memberUid) {
-        try {
-          await addUserChannelMembership(memberUid, channel.id);
-        } catch (err) {
-          // Directors may update channel.members but not other users' profiles.
-          // syncChannelMembershipProfiles (Cloud Function) backfills member_of_channels.
-          if (err?.code !== "permission-denied") throw err;
-        }
-      } else if (memberId.includes("@")) {
-        console.warn(
-          "Approved by email before user profile existed — profile sync runs when they sign in or via channel trigger"
-        );
-      }
+      await adminApi.approveChannelMember(channel.id, memberId);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["channels"] });
@@ -140,11 +109,7 @@ export default function Admin() {
 
   const rejectMutation = useMutation({
     mutationFn: async (/** @type {{ channel: any, memberId: any }} */ { channel, memberId }) => {
-      const memberUid = resolvePendingMember(users, memberId);
-      const pending = (channel.pending_members || []).filter(
-        (entry) => entry !== memberId && entry !== memberUid
-      );
-      await api.entities.Channel.update(channel.id, { pending_members: pending });
+      await adminApi.rejectChannelMember(channel.id, memberId);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["channels"] });
@@ -200,7 +165,6 @@ export default function Admin() {
 
   const isAdmin = isPlatformAdmin(currentUser);
   const isDirector = currentUser.role === "director";
-  const directedChannelIds = currentUser.directed_channels || [];
 
   if (!isAdmin && !isDirector) {
     return (
@@ -229,11 +193,9 @@ export default function Admin() {
 
   const pendingRequests = isAdmin
     ? orgChannels.filter(hasPendingChannelRequests)
-    : (directedChannelIds.length > 0
-        ? channels.filter(
-            (c) => directedChannelIds.includes(c.id) && hasPendingChannelRequests(c)
-          )
-        : filterChannelsByOrganization(currentUser, channels).filter(hasPendingChannelRequests));
+    : orgChannels.filter(
+        (c) => canManageChannelMembership(currentUser, c) && hasPendingChannelRequests(c)
+      );
 
   const staffAlertCandidates = isAdmin
     ? orgUsers.filter((u) => u.pending_staff_alerts === true)

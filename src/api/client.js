@@ -781,6 +781,18 @@ export const adminApi = {
     const callable = httpsCallable(functions, "diagnoseUserAccess");
     return (await callable({ email })).data;
   },
+
+  async approveChannelMember(channelId, memberId) {
+    await waitForFirestoreAuth({ forceRefresh: true });
+    const callable = httpsCallable(functions, "approveChannelMember");
+    return (await callable({ channelId, memberId })).data;
+  },
+
+  async rejectChannelMember(channelId, memberId) {
+    await waitForFirestoreAuth({ forceRefresh: true });
+    const callable = httpsCallable(functions, "rejectChannelMember");
+    return (await callable({ channelId, memberId })).data;
+  },
 };
 
 export const bootstrapApi = {

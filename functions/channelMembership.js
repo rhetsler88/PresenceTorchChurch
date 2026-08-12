@@ -167,25 +167,145 @@ async function mergeElevatedProfileRole(db, authUid, email) {
     }
   }
 
-  if (bestRank > roleRank(authData.role || "user")) {
+  const authDirected = authData.directed_channels || [];
+  const bestDirected = bestProfile.directed_channels || [];
+  const shouldMergeRole = bestRank > roleRank(authData.role || "user");
+  const shouldMergeDirected =
+    bestDirected.length > 0
+    && bestDirected.some((channelId) => !authDirected.includes(channelId));
+
+  if (shouldMergeRole || shouldMergeDirected) {
+    const mergedDirected = shouldMergeRole
+      ? (bestProfile.directed_channels || authData.directed_channels || [])
+      : [...new Set([...authDirected, ...bestDirected])];
+
     await db.collection("users").doc(authUid).set(
       {
         ...(normalizedEmail ? { email: normalizedEmail } : {}),
-        role: bestRole,
-        organization: bestProfile.organization || authData.organization || "",
-        directed_channels: bestProfile.directed_channels || authData.directed_channels || [],
-        is_monitor: bestProfile.is_monitor ?? authData.is_monitor ?? false,
-        onboarded: bestProfile.onboarded ?? authData.onboarded ?? false,
-        receives_staff_alerts:
-          bestProfile.receives_staff_alerts ?? authData.receives_staff_alerts ?? false,
-        pending_staff_alerts:
-          bestProfile.pending_staff_alerts ?? authData.pending_staff_alerts ?? false,
+        ...(shouldMergeRole ? {
+          role: bestRole,
+          organization: bestProfile.organization || authData.organization || "",
+          is_monitor: bestProfile.is_monitor ?? authData.is_monitor ?? false,
+          onboarded: bestProfile.onboarded ?? authData.onboarded ?? false,
+          receives_staff_alerts:
+            bestProfile.receives_staff_alerts ?? authData.receives_staff_alerts ?? false,
+          pending_staff_alerts:
+            bestProfile.pending_staff_alerts ?? authData.pending_staff_alerts ?? false,
+        } : {}),
+        directed_channels: mergedDirected,
       },
       { merge: true }
     );
   }
 
   return bestRole;
+}
+
+function normalizeOrganization(value) {
+  return (value || "").trim().toLowerCase();
+}
+
+function channelOrgMatchesUser(userOrg, channelOrg) {
+  const scoped = normalizeOrganization(userOrg);
+  if (!scoped) return true;
+  const target = normalizeOrganization(channelOrg);
+  if (!target) return true;
+  return scoped === target;
+}
+
+function isPlatformAdminRole(role) {
+  return role === "admin" || role === "super_admin";
+}
+
+function canManageChannelMembership(profile, channelId, channelData) {
+  const role = profile.role || "user";
+  if (isPlatformAdminRole(role)) {
+    return role === "super_admin" || channelOrgMatchesUser(profile.organization, channelData.organization);
+  }
+  if (role !== "director") return false;
+
+  const directed = profile.directed_channels || [];
+  if (directed.length > 0) return directed.includes(channelId);
+  return channelOrgMatchesUser(profile.organization, channelData.organization);
+}
+
+async function getEffectiveUserProfile(db, authUid, email) {
+  await mergeElevatedProfileRole(db, authUid, email);
+  const snap = await db.collection("users").doc(authUid).get();
+  return snap.exists ? (snap.data() || {}) : {};
+}
+
+async function approveChannelMember(db, auth, authUid, email, channelId, memberId) {
+  if (!channelId || !memberId) {
+    const err = new Error("channelId and memberId are required");
+    err.code = "invalid-argument";
+    throw err;
+  }
+
+  const profile = await getEffectiveUserProfile(db, authUid, email);
+  const channelRef = db.collection("channels").doc(channelId);
+  const channelSnap = await channelRef.get();
+  if (!channelSnap.exists) {
+    const err = new Error("Channel not found");
+    err.code = "not-found";
+    throw err;
+  }
+
+  const channelData = channelSnap.data() || {};
+  if (!canManageChannelMembership(profile, channelId, channelData)) {
+    const err = new Error("Not allowed to manage membership for this channel");
+    err.code = "permission-denied";
+    throw err;
+  }
+
+  const memberUid = await resolveMemberUid(db, auth, memberId);
+  const members = (channelData.members || []).filter(
+    (entry) => entry !== memberId && entry !== memberUid
+  );
+  const pending = (channelData.pending_members || []).filter(
+    (entry) => entry !== memberId && entry !== memberUid
+  );
+  const memberEntry = memberUid || memberId;
+
+  await channelRef.update({
+    members: memberEntry ? [...members, memberEntry] : members,
+    pending_members: pending,
+  });
+
+  return { channelId, memberId: memberEntry };
+}
+
+async function rejectChannelMember(db, auth, authUid, email, channelId, memberId) {
+  if (!channelId || !memberId) {
+    const err = new Error("channelId and memberId are required");
+    err.code = "invalid-argument";
+    throw err;
+  }
+
+  const profile = await getEffectiveUserProfile(db, authUid, email);
+  const channelRef = db.collection("channels").doc(channelId);
+  const channelSnap = await channelRef.get();
+  if (!channelSnap.exists) {
+    const err = new Error("Channel not found");
+    err.code = "not-found";
+    throw err;
+  }
+
+  const channelData = channelSnap.data() || {};
+  if (!canManageChannelMembership(profile, channelId, channelData)) {
+    const err = new Error("Not allowed to manage membership for this channel");
+    err.code = "permission-denied";
+    throw err;
+  }
+
+  const memberUid = await resolveMemberUid(db, auth, memberId);
+  const pending = (channelData.pending_members || []).filter(
+    (entry) => entry !== memberId && entry !== memberUid
+  );
+
+  await channelRef.update({ pending_members: pending });
+
+  return { channelId, memberId };
 }
 
 async function assertModeratorRole(db, authUid, email) {
@@ -424,4 +544,6 @@ module.exports = {
   diagnoseUserAccess,
   mergeElevatedProfileRole,
   assertModeratorRole,
+  approveChannelMember,
+  rejectChannelMember,
 };

@@ -44,6 +44,10 @@ service firebase.storage {
       return userExists() && role() == 'director';
     }
 
+    function isLead() {
+      return userExists() && role() == 'lead';
+    }
+
     function isPlatformAdmin() {
       return isSuperAdmin() || isAdmin();
     }
@@ -63,13 +67,14 @@ service firebase.storage {
         tokenRole() == 'super_admin'
         || tokenRole() == 'admin'
         || tokenRole() == 'director'
+        || tokenRole() == 'lead'
         || tokenRole() == 'monitor'
         || request.auth.token.get('is_monitor', false) == true
       );
     }
 
     function canViewAllVoiceMessages() {
-      return isElevatedFromToken() || isPlatformAdmin() || isDirector() || isMonitor();
+      return isElevatedFromToken() || isPlatformAdmin() || isLead() || isDirector() || isMonitor();
     }
 
     function memberChannelIds() {
@@ -129,11 +134,11 @@ service firebase.storage {
     }
 
 
-    function isDirectorForChannel(channelId) {
-      return isDirector()
+    function isChannelLeadForChannel(channelId) {
+      return (isLead() || isDirector())
         && channelExists(channelId)
         && (
-          userDirectedChannels().size() == 0
+          userDirectedChannels().size() == 0 && channelOrgMatchesUser(channelId)
           || userDirectedChannels().hasAny([channelId])
         );
     }
@@ -156,7 +161,7 @@ service firebase.storage {
         || isPlatformAdmin()
         || isChannelTalkMember(channelId)
         || isOrgAdminForChannel(channelId)
-        || isDirectorForChannel(channelId)
+        || isChannelLeadForChannel(channelId)
         || isMonitorForChannel(channelId);
     }
 

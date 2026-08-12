@@ -7,7 +7,7 @@ import { Radio, Volume2, Activity, Eye, Play, Pause, Wifi, WifiOff } from "lucid
 import { Button } from "@/components/ui/button";
 import { etzTime } from "@/lib/etz";
 import { deviceDayKey, deviceDayLabel } from "@/lib/deviceDate";
-import { getDisplayName, getMonitorChannels, getReadableVoiceChannels, canSendOnChannelForChannel } from "@/lib/userUtils";
+import { getDisplayName, getInitials, getInitialsFromName, getMonitorChannels, getReadableVoiceChannels, canSendOnChannelForChannel } from "@/lib/userUtils";
 import { playClearTone, playBusyTone } from "@/lib/pttTones";
 import { cleanupStalePTTSignals, claimPttChannels, releasePttSignals } from "@/lib/pttSignals";
 import { playAudioUrl, stopAudio } from "@/lib/audioPlayer";
@@ -95,7 +95,9 @@ function ChannelMonitorCard({ channel, messages, onPlayMessage, playingId, onSet
           >
             <div className="w-6 h-6 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0 mt-0.5">
               <span className="text-[9px] font-bold text-primary">
-                {(msg.sender_name || "?").slice(0, 2).toUpperCase()}
+                {userMap?.[msg.created_by_id]
+                  ? getInitials(userMap[msg.created_by_id])
+                  : getInitialsFromName(msg.sender_name)}
               </span>
             </div>
             <div className="flex-1 min-w-0">

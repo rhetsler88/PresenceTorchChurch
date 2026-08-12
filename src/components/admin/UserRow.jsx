@@ -9,11 +9,13 @@ import {
 } from "@/components/ui/dropdown-menu";
 import DirectorControls from "@/components/admin/DirectorControls";
 import MonitorBroadcastControls from "@/components/admin/MonitorBroadcastControls";
+import { getInitials } from "@/lib/userUtils";
 
 export const ROLE_CONFIG = {
   super_admin: { label: "Super Admin", color: "text-red-400", bg: "bg-red-500/10", icon: Shield },
   admin: { label: "Admin", color: "text-red-400", bg: "bg-red-500/10", icon: Shield },
-  director: { label: "Director/Lead", color: "text-purple-400", bg: "bg-purple-500/10", icon: Crown },
+  director: { label: "Director", color: "text-purple-400", bg: "bg-purple-500/10", icon: Shield },
+  lead: { label: "Lead", color: "text-purple-400", bg: "bg-purple-500/10", icon: Crown },
   monitor: { label: "Monitor", color: "text-amber-400", bg: "bg-amber-500/10", icon: Eye },
   user: { label: "User", color: "text-muted-foreground", bg: "bg-muted", icon: User },
 };
@@ -29,13 +31,21 @@ export default function UserRow({
   onToggleStaffAlerts,
   canManageStaffAlerts = false,
   adminControls = true,
+  assignableRoles,
+  showMonitorToggle = true,
+  showChannelAssignment = true,
 }) {
   const cfg = ROLE_CONFIG[user.role || "user"];
   const Icon = cfg.icon;
   const isCurrentUser = user.id === currentUser?.id;
-  const initials = (user.full_name || user.first_name || user.email || "?").slice(0, 2).toUpperCase();
-  const isDirector = user.role === "director";
+  const initials = getInitials(user);
+  const isLeadUser = user.role === "lead";
+  const isDirectorUser = user.role === "director";
+  const hasAssignedChannels = isLeadUser || isDirectorUser;
   const isMonitor = user.role === "monitor" || user.is_monitor === true;
+  const roleOptions = assignableRoles
+    ? Object.entries(ROLE_CONFIG).filter(([role]) => assignableRoles.includes(role))
+    : Object.entries(ROLE_CONFIG);
 
   return (
     <div className="px-4 py-3 hover:bg-muted/30 rounded-xl transition-colors">
@@ -53,7 +63,7 @@ export default function UserRow({
           <p className="text-xs text-muted-foreground truncate capitalize">{user.role || "user"}</p>
         </div>
 
-        {adminControls && (
+        {adminControls && showMonitorToggle && (
           <Button
             variant={user.is_monitor ? "default" : "outline"}
             size="sm"
@@ -87,7 +97,7 @@ export default function UserRow({
           </Button>
         )}
 
-        {adminControls && (
+        {onChangeRole && (
           <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button
@@ -102,7 +112,7 @@ export default function UserRow({
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
-            {Object.entries(ROLE_CONFIG).map(([role, { label, icon: RoleIcon, color }]) => (
+            {roleOptions.map(([role, { label, icon: RoleIcon, color }]) => (
               <DropdownMenuItem
                 key={role}
                 className={`gap-2 ${color} ${user.role === role ? "font-bold" : ""}`}
@@ -120,8 +130,8 @@ export default function UserRow({
         )}
       </div>
 
-      {/* Director channel assignment */}
-      {adminControls && isDirector && (
+      {/* Lead/director channel assignment */}
+      {adminControls && showChannelAssignment && hasAssignedChannels && (
         <DirectorControls
           user={user}
           channels={channels}

@@ -4,7 +4,7 @@ import { Radio, MessageSquare, FileText, Eye, Shield, Crown } from "lucide-react
 import { useAuth } from "@/lib/AuthContext";
 import DailyCodeGate from "@/components/dailycode/DailyCodeGate";
 import UserMenu from "@/components/layout/UserMenu";
-import { isPlatformAdmin, canAccessMonitorPage } from "@/lib/userUtils";
+import { isPlatformAdmin, canAccessMonitorPage, isDirector, isLead } from "@/lib/userUtils";
 import { BluetoothPTTProvider } from "@/components/ptt/BluetoothPTTContext";
 import RedAlertBanner from "@/components/ptt/RedAlertBanner";
 import useRedAlert from "@/hooks/useRedAlert";
@@ -16,14 +16,18 @@ export default function AppLayout() {
 
   const showMonitor = canAccessMonitorPage(user);
   const isAdmin = isPlatformAdmin(user);
-  const isDirector = user?.role === "director";
+  const isDirectorUser = isDirector(user);
+  const isLeadUser = isLead(user);
 
   const navItems = [
     { path: "/", icon: Radio, label: "Talk" },
     { path: "/transcripts", icon: FileText, label: "Logs" },
     ...(showMonitor ? [{ path: "/monitor", icon: Eye, label: "Monitor" }] : []),
-    ...(isAdmin || isDirector
-      ? [{ path: "/admin", icon: isAdmin ? Shield : Crown, label: isAdmin ? "Admin" : "Approve" }]
+    ...(isAdmin || isDirectorUser
+      ? [{ path: "/admin", icon: Shield, label: "Admin" }]
+      : []),
+    ...(isLeadUser && !isAdmin && !isDirectorUser
+      ? [{ path: "/admin", icon: Crown, label: "Approve" }]
       : []),
     { path: "/channels", icon: MessageSquare, label: "Channels" },
   ];

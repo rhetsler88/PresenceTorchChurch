@@ -1071,7 +1071,7 @@ exports.rotateDailyAccessCodes = onSchedule(
   {
     schedule: "1 0 * * *",
     timeZone: "America/New_York",
-    region: "us-central1",
+    region: "us-east5",
   },
   async () => {
     const db = getFirestore();

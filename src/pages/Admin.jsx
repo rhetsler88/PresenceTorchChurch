@@ -10,8 +10,13 @@ import { toast } from "@/lib/toast";
 import { useAuth } from "@/lib/AuthContext";
 import {
   isPlatformAdmin,
+  isDirector,
+  isLead,
+  canManageRoles,
+  DIRECTOR_ASSIGNABLE_ROLES,
   filterUsersByOrganization,
   filterChannelsByOrganization,
+  filterUsersInManagedChannels,
   canManageChannelMembership,
 } from "@/lib/userUtils";
 import { adminApi } from "@/api/client";
@@ -21,7 +26,7 @@ function mutationErrorToast(action) {
     console.error(`Admin ${action} failed:`, err);
     if (err?.code === "permission-denied") {
       toast.error(
-        "Permission denied — confirm your role is admin or director and that PH Kids is in your assigned channels, then refresh."
+        "Permission denied — confirm your role is admin, director, or lead and that your assigned channels are correct, then refresh."
       );
       return;
     }
@@ -164,9 +169,10 @@ export default function Admin() {
   }
 
   const isAdmin = isPlatformAdmin(currentUser);
-  const isDirector = currentUser.role === "director";
+  const isDirectorUser = isDirector(currentUser);
+  const isLeadUser = isLead(currentUser);
 
-  if (!isAdmin && !isDirector) {
+  if (!isAdmin && !isDirectorUser && !isLeadUser) {
     return (
       <div className="min-h-screen safe-top flex items-center justify-center px-6">
         <div className="text-center max-w-sm">
@@ -182,10 +188,10 @@ export default function Admin() {
     );
   }
 
-  const orgUsers = isAdmin || isDirector
+  const orgUsers = isAdmin || isDirectorUser || isLeadUser
     ? filterUsersByOrganization(currentUser, users)
     : users;
-  const orgChannels = isAdmin || isDirector
+  const orgChannels = isAdmin || isDirectorUser || isLeadUser
     ? filterChannelsByOrganization(currentUser, channels)
     : channels;
 
@@ -204,25 +210,32 @@ export default function Admin() {
   const canManageStaffAlerts = isAdmin;
 
   const directors = orgUsers.filter(u => u.role === "director");
+  const leads = orgUsers.filter(u => u.role === "lead");
   const monitors = orgUsers.filter(u => u.role === "monitor");
   const admins = orgUsers.filter(u => u.role === "admin" || u.role === "super_admin");
   const regularUsers = orgUsers.filter(u => !u.role || u.role === "user");
 
-  const rowProps = (u) => ({
+  const rowProps = (u, { assignableRoles, showMonitorToggle = true, showChannelAssignment = true } = {}) => ({
     key: u.id,
     user: u,
     currentUser,
     channels: orgChannels,
-    onChangeRole: (u, r) => changeRoleMutation.mutate({ user: u, role: r }),
+    onChangeRole: canManageRoles(currentUser)
+      ? (u, r) => changeRoleMutation.mutate({ user: u, role: r })
+      : undefined,
+    assignableRoles,
     onToggleChannel: (u, cid) => toggleChannelMutation.mutate({ user: u, channelId: cid }),
     onToggleBroadcastChannel: (u, cid) => toggleBroadcastChannelMutation.mutate({ user: u, channelId: cid }),
     onToggleMonitor: (u) => toggleMonitorMutation.mutate({ user: u }),
     onToggleStaffAlerts: (u) => toggleStaffAlertsMutation.mutate({ user: u }),
     canManageStaffAlerts,
+    showMonitorToggle,
+    showChannelAssignment,
+    adminControls: isAdmin,
   });
 
-  // Director-only view: only their channels' pending requests
-  if (isDirector && !isAdmin) {
+  // Lead-only view: approve membership only
+  if (isLeadUser && !isAdmin && !isDirectorUser) {
     return (
       <div className="min-h-screen safe-top">
         <div className="px-4 pt-4 pb-4 sm:px-5 sm:pt-6">
@@ -242,6 +255,60 @@ export default function Admin() {
           onReject={(ch, memberId) => rejectMutation.mutate({ channel: ch, memberId })}
           showEmpty
         />
+      </div>
+    );
+  }
+
+  // Director view: channel approvals + role assignment for channel members
+  if (isDirectorUser && !isAdmin) {
+    const channelMembers = filterUsersInManagedChannels(currentUser, orgUsers, orgChannels);
+
+    return (
+      <div className="min-h-screen safe-top">
+        <div className="px-4 pt-4 pb-4 sm:px-5 sm:pt-6">
+          <div className="flex items-center gap-2 mb-1">
+            <Shield className="w-5 h-5 text-purple-400" />
+            <h1 className="text-xl font-bold text-foreground">Channel Management</h1>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Approve members and assign roles for your channels
+          </p>
+        </div>
+        <DailyCodeCard organization={currentUser?.organization} />
+        <PendingRequests
+          channels={pendingRequests}
+          users={users}
+          onApprove={(ch, memberId) => approveMutation.mutate({ channel: ch, memberId })}
+          onReject={(ch, memberId) => rejectMutation.mutate({ channel: ch, memberId })}
+          showEmpty
+        />
+        <div className="px-3 pb-24">
+          {isLoading ? (
+            <div className="flex justify-center py-16">
+              <div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+            </div>
+          ) : channelMembers.length > 0 ? (
+            <div className="space-y-1">
+              <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest px-4 mb-1">
+                Channel Members ({channelMembers.length})
+              </p>
+              {channelMembers.map((u) => (
+                <UserRow
+                  {...rowProps(u, {
+                    assignableRoles: DIRECTOR_ASSIGNABLE_ROLES,
+                    showMonitorToggle: false,
+                    showChannelAssignment: false,
+                  })}
+                />
+              ))}
+            </div>
+          ) : (
+            <div className="text-center py-16">
+              <User className="w-12 h-12 text-muted-foreground/30 mx-auto mb-3" />
+              <p className="text-sm text-muted-foreground">No members in your channels yet</p>
+            </div>
+          )}
+        </div>
       </div>
     );
   }
@@ -266,7 +333,8 @@ export default function Admin() {
               <span className={`text-xs font-semibold ${color}`}>{label}</span>
               <span className="text-[10px] text-muted-foreground ml-0.5">
                 {role === "admin" && "— Full control"}
-                {role === "director" && "— Channel lead"}
+                {role === "director" && "— Channel lead + assign roles"}
+                {role === "lead" && "— Channel lead"}
                 {role === "monitor" && "— Listen all, pick broadcast targets"}
                 {role === "user" && "— Single channel"}
               </span>
@@ -301,9 +369,20 @@ export default function Admin() {
             {directors.length > 0 && (
               <div className="mb-3">
                 <p className="text-[10px] font-bold text-purple-400 uppercase tracking-widest px-4 mb-1">
-                  Directors/Leads ({directors.length})
+                  Directors ({directors.length})
                 </p>
                 {directors.map(u => (
+                  <UserRow {...rowProps(u)} />
+                ))}
+              </div>
+            )}
+            {/* Leads */}
+            {leads.length > 0 && (
+              <div className="mb-3">
+                <p className="text-[10px] font-bold text-purple-400 uppercase tracking-widest px-4 mb-1">
+                  Leads ({leads.length})
+                </p>
+                {leads.map(u => (
                   <UserRow {...rowProps(u)} />
                 ))}
               </div>

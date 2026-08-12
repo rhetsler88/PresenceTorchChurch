@@ -264,7 +264,7 @@ export default function Talk() {
 
   const sortedMessages = [...messages].reverse();
 
-  const canDelete = isPlatformAdmin(user) || user?.role === "director";
+  const canDelete = isPlatformAdmin(user);
 
   const handleEnterSelection = useCallback((msgId) => {
     if (!canDelete) return;
@@ -895,7 +895,7 @@ export default function Talk() {
               activeChannel?.members?.includes(u.email);
             if (!isMember) return false;
             const bypassesCode =
-              u.role === "admin" || u.role === "super_admin" || u.role === "director";
+              u.role === "admin" || u.role === "super_admin" || u.role === "lead" || u.role === "director";
             return bypassesCode || u.daily_code_verified_date === getCodeDateKey();
           }).length
         }

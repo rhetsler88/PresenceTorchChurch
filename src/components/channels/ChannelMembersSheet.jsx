@@ -22,7 +22,7 @@ export default function ChannelMembersSheet({ channel, open, onOpenChange }) {
   const members = users.filter((u) => {
     const isMember = memberIds.includes(u.id) || memberIds.includes(u.email);
     if (!isMember) return false;
-    const bypassesCode = u.role === "admin" || u.role === "director";
+    const bypassesCode = u.role === "admin" || u.role === "super_admin" || u.role === "lead" || u.role === "director";
     return bypassesCode || u.daily_code_verified_date === todayKey;
   });
 
@@ -54,7 +54,7 @@ export default function ChannelMembersSheet({ channel, open, onOpenChange }) {
                 </p>
                 {u.role && u.role !== "user" && (
                   <span className="text-[10px] font-semibold uppercase tracking-wide text-primary">
-                    {u.role === "director" ? "Director/Lead" : u.role}
+                    {u.role === "lead" ? "Lead" : u.role === "director" ? "Director" : u.role}
                   </span>
                 )}
               </div>

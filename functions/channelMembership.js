@@ -3,12 +3,14 @@ const { FieldValue } = require("firebase-admin/firestore");
 const ROLE_RANK = {
   user: 0,
   monitor: 1,
-  director: 2,
-  admin: 3,
-  super_admin: 4,
+  lead: 2,
+  director: 3,
+  admin: 4,
+  super_admin: 5,
 };
 
-const MODERATOR_ROLES = new Set(["super_admin", "admin", "director"]);
+const MODERATOR_ROLES = new Set(["super_admin", "admin"]);
+const CHANNEL_LEAD_ROLES = new Set(["super_admin", "admin", "lead"]);
 
 function roleRank(role) {
   return ROLE_RANK[role] ?? 0;
@@ -222,7 +224,7 @@ function canManageChannelMembership(profile, channelId, channelData) {
   if (isPlatformAdminRole(role)) {
     return role === "super_admin" || channelOrgMatchesUser(profile.organization, channelData.organization);
   }
-  if (role !== "director") return false;
+  if (role !== "lead" && role !== "director") return false;
 
   const directed = profile.directed_channels || [];
   if (directed.length > 0) return directed.includes(channelId);
@@ -311,7 +313,7 @@ async function rejectChannelMember(db, auth, authUid, email, channelId, memberId
 async function assertModeratorRole(db, authUid, email) {
   const role = await mergeElevatedProfileRole(db, authUid, email);
   if (!MODERATOR_ROLES.has(role)) {
-    const err = new Error("Admin or director role required");
+    const err = new Error("Admin role required");
     err.code = "permission-denied";
     throw err;
   }

@@ -30,14 +30,26 @@ service cloud.firestore {
       return userExists() && role() == 'director';
     }
 
+    function isLead() {
+      return userExists() && role() == 'lead';
+    }
+
     function isAdminOrDirector() {
       return isAdmin() || isDirector() || isSuperAdmin();
+    }
+
+    function isAdminOrLead() {
+      return isAdmin() || isLead() || isSuperAdmin();
     }
 
     function isAdminOrDirectorFromToken() {
       return tokenRole() == 'super_admin'
         || tokenRole() == 'admin'
         || tokenRole() == 'director';
+    }
+
+    function isLeadFromToken() {
+      return tokenRole() == 'lead';
     }
 
     function isPlatformAdmin() {
@@ -67,13 +79,14 @@ service cloud.firestore {
         tokenRole() == 'super_admin'
         || tokenRole() == 'admin'
         || tokenRole() == 'director'
+        || tokenRole() == 'lead'
         || tokenRole() == 'monitor'
         || request.auth.token.get('is_monitor', false) == true
       );
     }
 
     function canViewAllVoiceMessages() {
-      return isElevatedFromToken() || isSuperAdmin() || isAdmin() || isDirector() || isMonitor();
+      return isElevatedFromToken() || isSuperAdmin() || isAdmin() || isLead() || isDirector() || isMonitor();
     }
 
     function memberChannelIds() {
@@ -121,11 +134,11 @@ service cloud.firestore {
     }
 
 
-    function isDirectorForChannel(channelId) {
-      return isDirector()
+    function isChannelLeadForChannel(channelId) {
+      return (isLead() || isDirector())
         && channelExistsPath(channelId)
         && (
-          userDirectedChannels().size() == 0
+          userDirectedChannels().size() == 0 && channelOrgMatchesUser(channelId)
           || userDirectedChannels().hasAny([channelId])
         );
     }
@@ -153,7 +166,7 @@ service cloud.firestore {
         || isPlatformAdmin()
         || isChannelTalkMember(channelId)
         || isOrgAdminForChannel(channelId)
-        || isDirectorForChannel(channelId)
+        || isChannelLeadForChannel(channelId)
         || isMonitorForChannel(channelId);
     }
 
@@ -226,20 +239,28 @@ service cloud.firestore {
         || isSelfJoinRequest('pending_notification_members');
     }
 
+    function isAssignedToChannel(channelId) {
+      return isChannelLeadForChannel(channelId);
+    }
+
+    function isChannelAppearanceOnlyUpdate() {
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name', 'color']);
+    }
+
     function isProtectionLevelOnlyUpdate() {
       return request.resource.data.diff(resource.data).affectedKeys().hasOnly(['protection_level']);
     }
 
-    // Admin tab: role changes, staff alerts, directed_channels, broadcast_excluded_channels (matches client isPlatformAdmin).
+    // Admin tab: role changes, staff alerts, directed_channels, broadcast_excluded_channels.
     function canManageUsers() {
-      return isPlatformAdmin() || isPlatformAdminFromToken();
+      return isPlatformAdmin() || isPlatformAdminFromToken() || isDirector() || isAdminOrDirectorFromToken();
     }
 
-    // Admin tab: approve/reject channel join requests (matches client isPlatformAdmin + directors).
+    // Admin tab: approve/reject channel join requests.
     function canManageChannelMembership(channelId) {
       return isPlatformAdmin()
         || isPlatformAdminFromToken()
-        || isDirectorForChannel(channelId);
+        || isChannelLeadForChannel(channelId);
     }
 
     function systemDailyCodeDateKey() {
@@ -248,7 +269,7 @@ service cloud.firestore {
     }
 
     function bypassesDailyCodeGate() {
-      return isSuperAdmin() || isAdmin() || isDirector();
+      return isSuperAdmin() || isAdmin() || isLead() || isDirector();
     }
 
     function isDailyCodeVerifiedForSession() {
@@ -295,12 +316,19 @@ service cloud.firestore {
     // ── Channels ───────────────────────────────────────────────────────
     match /channels/{channelId} {
       allow read: if isSignedIn();
-      allow create: if isAdminOrDirector();
+      allow create: if isPlatformAdmin() || isPlatformAdminFromToken();
 
       allow update: if isSignedIn() && (
         canManageChannelMembership(channelId)
         || isSelfChannelRequest()
-        || isProtectionLevelOnlyUpdate()
+        || (
+          isProtectionLevelOnlyUpdate()
+          && (isPlatformAdmin() || isPlatformAdminFromToken() || isChannelLeadForChannel(channelId))
+        )
+        || (
+          isChannelAppearanceOnlyUpdate()
+          && (isPlatformAdmin() || isPlatformAdminFromToken() || isAssignedToChannel(channelId))
+        )
       );
 
       allow delete: if isPlatformAdmin() || isPlatformAdminFromToken();
@@ -331,7 +359,7 @@ service cloud.firestore {
         && isChannelTalkMember(resource.data.channel_id)
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['transcript', 'is_transcribed']);
 
-      allow delete: if isSignedIn() && (isAdminOrDirector() || isAdminOrDirectorFromToken());
+      allow delete: if isPlatformAdmin() || isPlatformAdminFromToken();
     }
 
     match /pttSignals/{signalId} {
@@ -350,7 +378,8 @@ service cloud.firestore {
         && channelIdOnResource()
         && (
           resource.data.sender_id == request.auth.uid
-          || isAdminOrDirector()
+          || isPlatformAdmin()
+          || isPlatformAdminFromToken()
         );
 
       allow update: if false;
@@ -368,7 +397,7 @@ service cloud.firestore {
         && canUsePttWhenDailyCodeRequired()
         && request.resource.data.sender_id == request.auth.uid;
 
-      allow delete: if isSignedIn() && isAdminOrDirector();
+      allow delete: if isPlatformAdmin() || isPlatformAdminFromToken();
 
       allow update: if false;
     }

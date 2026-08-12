@@ -9,7 +9,7 @@ import {
   markDailyCodeSession,
   needsDailyCodeVerification,
 } from "@/lib/dailyCode";
-import { normalizeOrganization } from "@/lib/userUtils";
+import { normalizeOrganization, bypassesDailyCode } from "@/lib/userUtils";
 import { getDailyVerse } from "@/lib/dailyVerse";
 import { useAuth } from "@/lib/AuthContext";
 import { useQuery } from "@tanstack/react-query";
@@ -173,7 +173,7 @@ function DailyCodeEntry({ onVerified, organization }) {
             </Button>
           </form>
           <p className="text-xs text-muted-foreground text-center mt-4">
-            Contact your admin or Director/Lead for today's code
+            Contact your admin or Lead for today's code
           </p>
         </div>
 
@@ -206,14 +206,11 @@ export default function DailyCodeGate({ user, onUserUpdate, children, showBanner
     );
   }
 
-  const isAdminOrDirector =
-    user.role === "admin" || user.role === "super_admin" || user.role === "director";
-
   if (!needsDailyCodeVerification(user)) {
     return children;
   }
 
-  if (isAdminOrDirector) {
+  if (bypassesDailyCode(user)) {
     return (
       <>
         {showBanner && <DailyCodeBanner />}

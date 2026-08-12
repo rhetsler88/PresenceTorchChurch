@@ -172,14 +172,14 @@ async function rotateAllDailyCodes(db) {
 }
 
 function bypassesDailyCode(role) {
-  return role === "super_admin" || role === "admin" || role === "director";
+  return role === "super_admin" || role === "admin" || role === "lead" || role === "director";
 }
 
 function assertCanViewDailyCode(userData, orgName) {
   const role = userData?.role || "user";
   if (role === "super_admin") return;
-  if (role !== "admin" && role !== "director") {
-    const err = new Error("Admin or director role required");
+  if (role !== "admin" && role !== "lead" && role !== "director") {
+    const err = new Error("Admin, director, or lead role required");
     err.code = "permission-denied";
     throw err;
   }
@@ -254,7 +254,7 @@ async function verifyDailyAccessCode(db, uid, submittedCode) {
 async function getDailyAccessCodeForUser(db, userData) {
   const role = userData?.role || "user";
   if (!bypassesDailyCode(role)) {
-    const err = new Error("Admin or director role required");
+    const err = new Error("Admin, director, or lead role required");
     err.code = "permission-denied";
     throw err;
   }

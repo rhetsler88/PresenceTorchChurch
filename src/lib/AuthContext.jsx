@@ -96,7 +96,7 @@ async function findOrphanProfileByEmail(email, excludeUid) {
 }
 
 function roleRank(role) {
-  const ranks = { user: 0, monitor: 1, director: 2, admin: 3, super_admin: 4 };
+  const ranks = { user: 0, monitor: 1, lead: 2, director: 3, admin: 4, super_admin: 5 };
   return ranks[role] ?? 0;
 }
 

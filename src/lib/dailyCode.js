@@ -71,7 +71,7 @@ export function clearDailyCodeSession() {
 export function needsDailyCodeVerification(user) {
   if (!user) return false;
   const role = user.role || "user";
-  if (role === "admin" || role === "super_admin" || role === "director") return false;
+  if (role === "admin" || role === "super_admin" || role === "lead" || role === "director") return false;
   if (!user.onboarded) return false;
   if (!normalizeOrganization(user.organization)) return false;
   if (user.role === "monitor" || user.is_monitor === true) return true;

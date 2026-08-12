@@ -77,7 +77,7 @@ export async function ensureUserChannelMembership(userId, email, channel) {
 export function userHasFirestoreChannelAccess(user, channelId, channel) {
   if (!user?.id || !channelId) return false;
   if (user.role === "super_admin" || user.role === "admin") return true;
-  if (user.role === "director" || user.role === "monitor" || user.is_monitor) {
+  if (user.role === "lead" || user.role === "director" || user.role === "monitor" || user.is_monitor) {
     return true;
   }
   if ((user.member_of_channels || []).includes(channelId)) return true;

@@ -19,12 +19,35 @@ export function getDisplayName(user) {
 }
 
 /**
- * Returns initials from the user's display name.
+ * Returns initials from a display name string ("Jane Doe" → "JD", "Jane" → "JA").
+ */
+export function getInitialsFromName(name) {
+  const trimmed = name?.trim();
+  if (!trimmed) return "?";
+  const parts = trimmed.split(/\s+/);
+  if (parts.length >= 2) {
+    return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+  }
+  return parts[0].slice(0, 2).toUpperCase();
+}
+
+/**
+ * Returns initials from first/last name (e.g. "Jane" + "Doe" → "JD").
+ * Falls back to the first two letters of first name when no last name is set.
  */
 export function getInitials(user) {
-  const name = getDisplayName(user);
-  if (name === "Unknown") return "?";
-  return name.slice(0, 2).toUpperCase();
+  if (!user) return "?";
+  const first = user.first_name?.trim();
+  const last = user.last_name?.trim();
+  if (first && last) return (first[0] + last[0]).toUpperCase();
+  if (first) return first.slice(0, 2).toUpperCase();
+  if (last) return last.slice(0, 2).toUpperCase();
+  if (user.full_name?.trim()) return getInitialsFromName(user.full_name);
+  if (user.email?.trim()) {
+    const local = user.email.split("@")[0];
+    return local.slice(0, 2).toUpperCase();
+  }
+  return "?";
 }
 
 export function isSuperAdmin(user) {
@@ -39,13 +62,60 @@ export function isPlatformAdmin(user) {
   return isSuperAdmin(user) || isOrgAdmin(user);
 }
 
-function isDirectorForChannel(user, channel) {
-  if (!user || !channel || user.role !== "director") return false;
+export function isDirector(user) {
+  return user?.role === "director";
+}
+
+export function isLead(user) {
+  return user?.role === "lead";
+}
+
+export function isChannelLead(user) {
+  return isLead(user) || isDirector(user);
+}
+
+/** Roles a director may assign to members of their channels. */
+export const DIRECTOR_ASSIGNABLE_ROLES = ["user", "monitor", "lead", "director"];
+
+/** Platform admins and directors may assign roles (directors: channel members only). */
+export function canManageRoles(user) {
+  return isPlatformAdmin(user) || isDirector(user);
+}
+
+/** Admin, director, and lead skip daily access code entry. */
+export function bypassesDailyCode(user) {
+  const role = user?.role || "user";
+  return role === "admin" || role === "super_admin" || role === "lead" || role === "director";
+}
+
+export function canCreateChannel(user) {
+  return isPlatformAdmin(user);
+}
+
+function isChannelLeadForChannel(user, channel) {
+  if (!user || !channel) return false;
+  if (user.role !== "lead" && user.role !== "director") return false;
   const directed = user.directed_channels || [];
   if (directed.length > 0) return directed.includes(channel.id);
   const org = user.organization?.trim();
   if (!org) return true;
   return !channel.organization || channel.organization === org;
+}
+
+/** Rename/color on channels assigned to a lead or director (admins: any org channel). */
+export function canEditAssignedChannel(user, channel) {
+  if (!user || !channel) return false;
+  if (isSuperAdmin(user)) return true;
+  if (isOrgAdmin(user)) return isOrgAdminForChannel(user, channel);
+  return isChannelLeadForChannel(user, channel);
+}
+
+/** Protection level controls — admins org-wide; leads/directors on assigned channels. */
+export function canManageChannelProtection(user, channel) {
+  if (!user || !channel) return false;
+  if (isSuperAdmin(user)) return true;
+  if (isOrgAdmin(user)) return isOrgAdminForChannel(user, channel);
+  return isChannelLeadForChannel(user, channel);
 }
 
 function isMonitorForChannel(user, channel) {
@@ -70,7 +140,7 @@ export function canReadVoiceMessageForChannel(user, channel) {
   if (isChannelTalkMember(user, channel)) return true;
   if (isChannelNotificationMember(user, channel)) return true;
   if (isOrgAdminForChannel(user, channel)) return true;
-  if (isDirectorForChannel(user, channel)) return true;
+  if (isChannelLeadForChannel(user, channel)) return true;
   if (isMonitorForChannel(user, channel)) return true;
   return false;
 }
@@ -82,7 +152,7 @@ export function canAccessChannelAlertsForChannel(user, channel) {
   if (isChannelNotificationMember(user, channel)) return true;
   if (isChannelTalkMember(user, channel)) return true;
   if (isOrgAdminForChannel(user, channel)) return true;
-  if (isDirectorForChannel(user, channel)) return true;
+  if (isChannelLeadForChannel(user, channel)) return true;
   if (isMonitorForChannel(user, channel)) return true;
   return false;
 }
@@ -93,7 +163,7 @@ export function canSendOnChannelForChannel(user, channel) {
   if (isPlatformAdmin(user)) return true;
   if (isChannelTalkMember(user, channel)) return true;
   if (isOrgAdminForChannel(user, channel)) return true;
-  if (isDirectorForChannel(user, channel)) return true;
+  if (isChannelLeadForChannel(user, channel)) return true;
   if (isMonitorForChannel(user, channel)) return true;
   return false;
 }
@@ -104,24 +174,24 @@ export function canAccessChannel(user, channel) {
   if (isOrgAdmin(user)) {
     return isOrgAdminForChannel(user, channel);
   }
-  if (isDirectorForChannel(user, channel)) return true;
+  if (isChannelLeadForChannel(user, channel)) return true;
   if (isMonitorForChannel(user, channel)) return true;
   return isChannelTalkMember(user, channel);
 }
 
-/** Matches Admin approvals — org admins or directors scoped to assigned channels. */
+/** Matches Admin approvals — org admins or channel leads/directors on assigned channels. */
 export function canManageChannelMembership(user, channel) {
   if (!user || !channel) return false;
   if (isSuperAdmin(user)) return true;
   if (isOrgAdmin(user)) return isOrgAdminForChannel(user, channel);
-  return isDirectorForChannel(user, channel);
+  return isChannelLeadForChannel(user, channel);
 }
 
-/** Matches Firestore canViewAllVoiceMessages — super_admin, director, monitor roles. */
+/** Matches Firestore canViewAllVoiceMessages — super_admin, lead, director, monitor roles. */
 export function canViewAllVoiceMessages(user) {
   return (
     isSuperAdmin(user) ||
-    user?.role === "director" ||
+    isChannelLead(user) ||
     user?.role === "monitor" ||
     user?.is_monitor === true
   );
@@ -163,6 +233,27 @@ export function filterChannelsByOrganization(user, channels) {
   return channels.filter((c) => matchesOrganization(org, c.organization));
 }
 
+function isUserOnChannel(user, channel) {
+  if (!user || !channel) return false;
+  const members = channel.members || [];
+  return members.includes(user.id) || (user.email && members.includes(user.email));
+}
+
+/** Channels a lead or director manages (assigned / org-scoped). */
+export function getManagedChannels(user, channels) {
+  if (!user || !channels?.length) return [];
+  if (isSuperAdmin(user)) return channels;
+  if (isPlatformAdmin(user)) return filterChannelsByOrganization(user, channels);
+  return channels.filter((c) => canManageChannelMembership(user, c));
+}
+
+/** Users who are approved members of channels the lead/director manages. */
+export function filterUsersInManagedChannels(manager, users, channels) {
+  const managed = getManagedChannels(manager, channels);
+  if (!managed.length || !users?.length) return [];
+  return users.filter((u) => managed.some((ch) => isUserOnChannel(u, ch)));
+}
+
 /** Channels whose voiceMessages the user may list/subscribe to (matches Firestore query scope). */
 export function getReadableVoiceChannels(user, channels) {
   if (!user?.id || !channels?.length) return [];
@@ -177,7 +268,7 @@ export function getReadableVoiceChannels(user, channels) {
     );
   }
 
-  if (user.role === "director") {
+  if (isChannelLead(user)) {
     const directed = user.directed_channels || [];
     const scoped = directed.length > 0
       ? channels.filter((c) => directed.includes(c.id))
@@ -202,7 +293,7 @@ export function getMonitorChannels(user, channels) {
 
   if (isSuperAdmin(user)) {
     scoped = channels;
-  } else if (user.role === "director") {
+  } else if (isChannelLead(user)) {
     const directed = user.directed_channels || [];
     scoped = directed.length > 0
       ? channels.filter((c) => directed.includes(c.id))

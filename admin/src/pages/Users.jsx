@@ -42,7 +42,7 @@ import {
 } from "@/lib/channelMembership";
 import { useAuth } from "@/lib/AuthContext";
 
-const ROLES = ["user", "monitor", "director", "admin", "super_admin"];
+const ROLES = ["user", "monitor", "lead", "director", "admin", "super_admin"];
 
 function canDeleteUser(currentUser, targetUser) {
   if (!isPlatformAdmin(currentUser) || !targetUser) return false;

@@ -3,7 +3,7 @@ import { Radio, Users, ChevronRight, Pencil, Shield } from "lucide-react";
 import ProtectionLevelControl from "@/components/monitor/ProtectionLevelControl";
 import { PROTECTION_LEVELS } from "@/components/ptt/ProtectionLevelBadge";
 
-export default function ChannelCard({ channel, isActive, isPending, onSelect, isAdmin, onRename, canManageProtection, protectionLevel, onProtectionChange }) {
+export default function ChannelCard({ channel, isActive, isPending, onSelect, canRename, onRename, canManageProtection, protectionLevel, onProtectionChange }) {
   const memberCount = channel.members?.length || 0;
   const protConfig = PROTECTION_LEVELS[protectionLevel] || PROTECTION_LEVELS.green;
 
@@ -47,7 +47,7 @@ export default function ChannelCard({ channel, isActive, isPending, onSelect, is
           </div>
           <ChevronRight className="w-4 h-4 text-muted-foreground flex-shrink-0" />
         </button>
-        {isAdmin && (
+        {canRename && (
           <button
             onClick={(e) => { e.stopPropagation(); onRename(channel); }}
             className="p-2 rounded-lg hover:bg-muted/70 text-muted-foreground hover:text-foreground transition-colors flex-shrink-0"

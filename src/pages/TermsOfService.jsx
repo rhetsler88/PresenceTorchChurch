@@ -23,7 +23,7 @@ export default function TermsOfService() {
 
       <h2>2. Organization accounts and access</h2>
       <p>
-        Your organization controls channel membership, roles, and permissions. Administrators and directors
+        Your organization controls channel membership, roles, and permissions. Administrators, directors, and leads
         may assign access, monitor channels, manage protection levels, and remove members according to
         organizational policies.
       </p>

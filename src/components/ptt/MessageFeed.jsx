@@ -6,6 +6,7 @@ import { deviceDayKey, deviceDayLabel } from "@/lib/deviceDate";
 import { Button } from "@/components/ui/button";
 import { PROTECTION_LEVELS } from "@/components/ptt/ProtectionLevelBadge";
 import { isProtectionLevelChangeMessage } from "@/lib/protectionLevelHistory";
+import { getInitialsFromName } from "@/lib/userUtils";
 
 function ProtectionLevelLineEntry({ message }) {
   const level = message.protection_level || "green";
@@ -56,7 +57,7 @@ function MessageItem({
   onEnterSelection,
 }) {
   const isMine = message.created_by_id === currentUser?.id;
-  const initials = (message.sender_name || "?").slice(0, 2).toUpperCase();
+  const initials = getInitialsFromName(message.sender_name);
   const longPressTimer = useRef(null);
   const longPressTriggered = useRef(false);
   const isTextOnly = !!message.text_content;

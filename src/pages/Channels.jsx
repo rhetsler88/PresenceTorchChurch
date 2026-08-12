@@ -15,6 +15,11 @@ import {
   recordProtectionLevelChange,
   recordProtectionLevelChanges,
 } from "@/lib/protectionLevelHistory";
+import {
+  canCreateChannel,
+  canEditAssignedChannel,
+  canManageChannelProtection,
+} from "@/lib/userUtils";
 
 export default function Channels() {
   const [showCreate, setShowCreate] = useState(false);
@@ -115,10 +120,8 @@ export default function Channels() {
     onError: () => toast.error("Could not update protection levels"),
   });
 
-  const canManageProtection =
-    user?.role === "admin" ||
-    user?.role === "super_admin" ||
-    user?.role === "director";
+  const showCreateButton = canCreateChannel(user);
+  const canManageAnyProtection = channels.some((ch) => canManageChannelProtection(user, ch));
 
   const handleSelect = (channel) => {
     if (channel.members?.includes(user?.id) || channel.members?.includes(user?.email)) {
@@ -138,13 +141,13 @@ export default function Channels() {
   return (
     <div className="min-h-screen safe-top">
       <div className="px-4 pt-4 pb-3 sm:px-5 sm:pt-6">
-        <div className={`flex items-center justify-between mb-3 max-sm:pr-12 ${canManageProtection ? "sm:pr-48" : ""}`}>
+        <div className={`flex items-center justify-between mb-3 max-sm:pr-12 ${showCreateButton ? "sm:pr-48" : ""}`}>
           <div>
             <h1 className="text-xl font-bold text-foreground">Channels</h1>
             <p className="text-xs text-muted-foreground mt-0.5">{channels.length} channels</p>
           </div>
           <div className="flex items-center gap-2">
-            {canManageProtection && (
+            {showCreateButton && (
               <Button size="sm" onClick={() => setShowCreate(true)} className="gap-1.5">
                 <Plus className="w-4 h-4" />
                 New
@@ -152,7 +155,7 @@ export default function Channels() {
             )}
           </div>
         </div>
-        {!canManageProtection && channels.length > 0 && (
+        {!canManageAnyProtection && channels.length > 0 && (
           <>
             <p className="text-xs text-muted-foreground mb-4">
               Tap a channel to request full PTT access.
@@ -181,9 +184,9 @@ export default function Channels() {
                   channel.pending_members?.includes(user?.email)
                 }
                 onSelect={handleSelect}
-                isAdmin={user?.role === "admin" || user?.role === "super_admin"}
+                canRename={canEditAssignedChannel(user, channel)}
                 onRename={(ch) => setRenameChannel(ch)}
-                canManageProtection={canManageProtection}
+                canManageProtection={canManageChannelProtection(user, channel)}
                 protectionLevel={channel.protection_level || "green"}
                 onProtectionChange={(level) => protectionMutation.mutateAsync({ channelId: channel.id, level })}
               />

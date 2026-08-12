@@ -26,7 +26,7 @@ function mutationErrorToast(action) {
     console.error(`Admin ${action} failed:`, err);
     if (err?.code === "permission-denied") {
       toast.error(
-        "Permission denied — confirm Firestore users/{yourUid}.role is admin or super_admin, then refresh the app."
+        "Permission denied — confirm your role is admin or director and that PH Kids is in your assigned channels, then refresh."
       );
       return;
     }
@@ -118,7 +118,13 @@ export default function Admin() {
       });
 
       if (memberUid) {
-        await addUserChannelMembership(memberUid, channel.id);
+        try {
+          await addUserChannelMembership(memberUid, channel.id);
+        } catch (err) {
+          // Directors may update channel.members but not other users' profiles.
+          // syncChannelMembershipProfiles (Cloud Function) backfills member_of_channels.
+          if (err?.code !== "permission-denied") throw err;
+        }
       } else if (memberId.includes("@")) {
         console.warn(
           "Approved by email before user profile existed — profile sync runs when they sign in or via channel trigger"

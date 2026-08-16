@@ -75,7 +75,16 @@ public class HeadsetPTTPlugin extends Plugin {
             || keyCode == KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE
             || keyCode == KeyEvent.KEYCODE_MEDIA_PLAY
             || keyCode == KeyEvent.KEYCODE_MEDIA_PAUSE
-            || keyCode == KeyEvent.KEYCODE_MEDIA_STOP;
+            || keyCode == KeyEvent.KEYCODE_MEDIA_STOP
+            || keyCode == KeyEvent.KEYCODE_MEDIA_NEXT
+            || keyCode == KeyEvent.KEYCODE_MEDIA_PREVIOUS
+            || keyCode == KeyEvent.KEYCODE_MEDIA_FAST_FORWARD
+            || keyCode == KeyEvent.KEYCODE_MEDIA_REWIND
+            || isFunctionKey(keyCode);
+    }
+
+    private boolean isFunctionKey(int keyCode) {
+        return keyCode >= KeyEvent.KEYCODE_F1 && keyCode <= KeyEvent.KEYCODE_F12;
     }
 
     private void activateMediaSession() {

@@ -66,6 +66,8 @@ public class HeadsetPTTPlugin: CAPPlugin, CAPBridgedPlugin {
         commandCenter.pauseCommand.isEnabled = true
         commandCenter.togglePlayPauseCommand.isEnabled = true
         commandCenter.stopCommand.isEnabled = true
+        commandCenter.nextTrackCommand.isEnabled = true
+        commandCenter.previousTrackCommand.isEnabled = true
 
         commandCenter.playCommand.addTarget { [weak self] _ in
             self?.handlePress()
@@ -83,6 +85,14 @@ public class HeadsetPTTPlugin: CAPPlugin, CAPBridgedPlugin {
             self?.handleToggle()
             return .success
         }
+        commandCenter.nextTrackCommand.addTarget { [weak self] _ in
+            self?.handleMomentaryPress()
+            return .success
+        }
+        commandCenter.previousTrackCommand.addTarget { [weak self] _ in
+            self?.handleMomentaryPress()
+            return .success
+        }
     }
 
     private func unregisterRemoteCommands() {
@@ -91,10 +101,14 @@ public class HeadsetPTTPlugin: CAPPlugin, CAPBridgedPlugin {
         commandCenter.pauseCommand.removeTarget(nil)
         commandCenter.togglePlayPauseCommand.removeTarget(nil)
         commandCenter.stopCommand.removeTarget(nil)
+        commandCenter.nextTrackCommand.removeTarget(nil)
+        commandCenter.previousTrackCommand.removeTarget(nil)
         commandCenter.playCommand.isEnabled = false
         commandCenter.pauseCommand.isEnabled = false
         commandCenter.togglePlayPauseCommand.isEnabled = false
         commandCenter.stopCommand.isEnabled = false
+        commandCenter.nextTrackCommand.isEnabled = false
+        commandCenter.previousTrackCommand.isEnabled = false
     }
 
     private func handlePress() {
@@ -115,5 +129,10 @@ public class HeadsetPTTPlugin: CAPPlugin, CAPBridgedPlugin {
         } else {
             handlePress()
         }
+    }
+
+    private func handleMomentaryPress() {
+        handlePress()
+        handleRelease()
     }
 }

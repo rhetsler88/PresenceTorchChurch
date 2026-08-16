@@ -84,6 +84,16 @@ export default function useBluetoothPTT({ onPress, onRelease }) {
         }
       }
 
+      if (foundCharacteristics.length === 0) {
+        device.removeEventListener("gattserverdisconnected", handleDisconnected);
+        device.gatt.disconnect();
+        deviceRef.current = null;
+        setError(
+          "Device connected but no button events were detected. Most buttons work when paired in your phone's Bluetooth settings — no in-app pairing needed. Open Talk and press the button."
+        );
+        return;
+      }
+
       characteristicsRef.current = foundCharacteristics;
       setDeviceName(device.name || "Bluetooth Button");
       setIsConnected(true);
@@ -101,6 +111,7 @@ export default function useBluetoothPTT({ onPress, onRelease }) {
     characteristicsRef.current = [];
     setIsConnected(false);
     setDeviceName(null);
+    setError(null);
     pressStateRef.current = false;
   }, []);
 

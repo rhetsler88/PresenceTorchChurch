@@ -8,11 +8,13 @@ import { Button } from "@/components/ui/button";
 import { etzTime } from "@/lib/etz";
 import { deviceDayKey, deviceDayLabel } from "@/lib/deviceDate";
 import { getDisplayName, getInitials, getInitialsFromName, getMonitorChannels, getReadableVoiceChannels, canSendOnChannelForChannel } from "@/lib/userUtils";
-import { playClearTone, playBusyTone } from "@/lib/pttTones";
+import { playClearTone, playBusyTone, unlockAudioForPTT } from "@/lib/pttTones";
+import { auth } from "@/lib/firebase";
 import { cleanupStalePTTSignals, claimPttChannels, releasePttSignals } from "@/lib/pttSignals";
 import { playAudioUrl, stopAudio } from "@/lib/audioPlayer";
 import usePttBroadcast from "../hooks/usePttBroadcast";
 import usePttReceiver from "../hooks/usePttReceiver";
+import useBackgroundRelayListen from "../hooks/useBackgroundRelayListen";
 import useAgoraMultiListen from "../hooks/useAgoraMultiListen";
 import { isAgoraEnabled } from "@/lib/agora";
 import MonitorPTTBar from "../components/monitor/MonitorPTTBar";
@@ -170,7 +172,9 @@ export default function Monitor() {
 
   const isPlayingRef = useRef(false);
   const pttSignalRefs = useRef([]);
-  const pttStartInFlightRef = useRef(false);
+  const pttStartInFlightRef = useRef(null);
+  const pttStopPendingRef = useRef(false);
+  const pttRecordingActiveRef = useRef(false);
   const channelBusyTimeoutRef = useRef(new Map());
   const heardBroadcastsRef = useRef(new Set());
   const broadcastModeRef = useRef(broadcastMode);
@@ -353,6 +357,11 @@ export default function Monitor() {
   const { isReceiving: multiLiveReceiving, heardBroadcastsRef: multiHeardRef } = usePttReceiver({
     channelIds: monitorRelayChannelIds,
     userId: user?.id,
+  });
+
+  useBackgroundRelayListen({
+    enabled: Boolean(user?.id && monitorRelayChannelIds.length > 0),
+    title: "Monitor",
   });
 
   const isLiveReceiving = agoraEnabled
@@ -661,15 +670,29 @@ export default function Monitor() {
 
   const isTargetChannelBusy = activeTargetIds.some((id) => busyChannelIds.has(id));
 
+  const finishPttStop = useCallback(() => {
+    const signalIds = [...pttSignalRefs.current];
+    pttSignalRefs.current = [];
+    signalIds.forEach((id) => {
+      api.entities.PTTSignal.delete(id).catch(() => {});
+    });
+
+    void stopLiveTransmit();
+
+    if (pttRecordingActiveRef.current) {
+      pttRecordingActiveRef.current = false;
+      sendMutation.mutate();
+    }
+  }, [sendMutation, stopLiveTransmit]);
+
   const handlePTTStart = useCallback(async () => {
-    if (isPTTPressed || !user?.id || pttStartInFlightRef.current) return;
+    if (isPTTPressed || !user?.id || pttStartInFlightRef.current || pttRecordingActiveRef.current) return;
     if (isLiveReceiving || isTargetChannelBusy || isPlayingRef.current) {
       playBusyTone();
       return;
     }
 
     const targetIds = getActiveTargetIds();
-
     const primaryChannelId = targetIds[0] || sendableChannelIds[0];
 
     if (targetIds.length === 0) {
@@ -677,61 +700,128 @@ export default function Monitor() {
       return;
     }
 
-    pttStartInFlightRef.current = true;
+    unlockAudioForPTT();
     playClearTone();
     setIsPTTPressed(true);
+    pttStopPendingRef.current = false;
+    pttRecordingActiveRef.current = false;
 
-    try {
-      if (pttSignalRefs.current.length) {
-        await releasePttSignals(pttSignalRefs.current);
-        pttSignalRefs.current = [];
-      }
-
-      await cleanupStalePTTSignals({
-        channelIds: targetIds,
-        excludeSenderId: user.id,
-      }).catch(() => {});
-
+    const startSequence = (async () => {
       const broadcastId = crypto.randomUUID();
-
-      const started = await startRecording({ broadcastId, publishChannelIds: targetIds });
-      if (!started) {
-        setIsPTTPressed(false);
-        toast.error("Microphone access denied");
-        return;
-      }
-
-      heardBroadcastsRef.current.add(broadcastId);
-
-      // Claim channels after live mic is open — do not block transmission on Firestore writes.
       try {
-        const { signalIds } = await claimPttChannels({
+        try {
+          await auth.currentUser?.getIdToken(true);
+        } catch (syncErr) {
+          console.warn("PTT token refresh failed:", syncErr);
+        }
+
+        if (pttSignalRefs.current.length) {
+          await releasePttSignals(pttSignalRefs.current);
+          pttSignalRefs.current = [];
+        }
+
+        await cleanupStalePTTSignals({
+          channelIds: targetIds,
+          excludeSenderId: user.id,
+        }).catch(() => {});
+
+        // Claim channels immediately so members hear the clear tone without waiting for mic setup.
+        const claimPromise = claimPttChannels({
           channelIds: targetIds,
           senderId: user.id,
           senderName: getDisplayName(user),
           broadcastId,
           primaryChannelId,
         });
-        pttSignalRefs.current = signalIds;
+
+        const started = await startRecording({ broadcastId, publishChannelIds: targetIds });
+
+        if (pttStopPendingRef.current) {
+          if (started) {
+            pttRecordingActiveRef.current = true;
+            return { pendingSend: true };
+          }
+          return { aborted: true };
+        }
+
+        if (!started) {
+          try {
+            const { signalIds } = await claimPromise;
+            await releasePttSignals(signalIds);
+          } catch {
+            // claim may still be in flight
+          }
+          return { micDenied: true };
+        }
+
+        pttRecordingActiveRef.current = true;
+        heardBroadcastsRef.current.add(broadcastId);
+
+        let signalIds = [];
+        try {
+          ({ signalIds } = await claimPromise);
+          pttSignalRefs.current = signalIds;
+        } catch (err) {
+          console.error("PTT signal create failed:", err);
+          await releasePttSignals(pttSignalRefs.current);
+          pttSignalRefs.current = [];
+          return { claimFailed: true, error: err };
+        }
+
+        if (pttStopPendingRef.current) {
+          return { pendingSend: true };
+        }
+
+        playClearTone();
+        return { ok: true };
       } catch (e) {
-        console.error("PTT signal create failed:", e);
-        await releasePttSignals(pttSignalRefs.current);
-        pttSignalRefs.current = [];
-        setIsPTTPressed(false);
-        await stopRecording().catch(() => {});
-        toast.error(
-          e?.code === "permission-denied"
-            ? "Permission denied — cannot respond on one or more channels"
-            : "Could not claim channel — try again"
-        );
+        return { startFailed: true, error: e };
       }
-    } catch (e) {
-      console.error("PTT start failed:", e);
+    })();
+
+    pttStartInFlightRef.current = startSequence;
+
+    const result = await startSequence;
+    pttStartInFlightRef.current = null;
+    const cancelled = pttStopPendingRef.current;
+    pttStopPendingRef.current = false;
+
+    if (result.pendingSend) {
       setIsPTTPressed(false);
+      finishPttStop();
+      return;
+    }
+
+    if (result.aborted || cancelled) {
+      setIsPTTPressed(false);
+      return;
+    }
+
+    if (result.startFailed) {
+      console.error("PTT start failed:", result.error);
       await stopRecording().catch(() => {});
+      setIsPTTPressed(false);
       toast.error("Could not start broadcast");
-    } finally {
-      pttStartInFlightRef.current = false;
+      return;
+    }
+
+    if (result.claimFailed) {
+      await releasePttSignals(pttSignalRefs.current);
+      pttSignalRefs.current = [];
+      await stopRecording().catch(() => {});
+      setIsPTTPressed(false);
+      toast.error(
+        result.error?.code === "permission-denied"
+          ? "Permission denied — cannot respond on one or more channels"
+          : "Could not claim channel — try again"
+      );
+      return;
+    }
+
+    if (result.micDenied) {
+      setIsPTTPressed(false);
+      toast.error("Microphone access denied");
+      return;
     }
   }, [
     isPTTPressed,
@@ -742,21 +832,19 @@ export default function Monitor() {
     getActiveTargetIds,
     sendableChannelIds,
     user,
+    finishPttStop,
   ]);
 
   const handlePTTStop = useCallback(() => {
-    if (!isPTTPressed) return;
+    if (pttStartInFlightRef.current) {
+      pttStopPendingRef.current = true;
+      setIsPTTPressed(false);
+      return;
+    }
+    if (!isPTTPressed && !pttRecordingActiveRef.current) return;
     setIsPTTPressed(false);
-
-    const signalIds = [...pttSignalRefs.current];
-    pttSignalRefs.current = [];
-    signalIds.forEach((id) => {
-      api.entities.PTTSignal.delete(id).catch(() => {});
-    });
-
-    void stopLiveTransmit();
-    sendMutation.mutate();
-  }, [isPTTPressed, sendMutation, stopLiveTransmit]);
+    finishPttStop();
+  }, [isPTTPressed, finishPttStop]);
 
   useExternalPTT({
     onPress: handlePTTStart,

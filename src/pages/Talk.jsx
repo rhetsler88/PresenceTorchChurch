@@ -8,6 +8,7 @@ import ProtectionLevelBadge from "../components/ptt/ProtectionLevelBadge";
 import TextInputBar from "../components/ptt/TextInputBar";
 import usePttBroadcast from "../hooks/usePttBroadcast";
 import usePttReceiver from "../hooks/usePttReceiver";
+import useBackgroundRelayListen from "../hooks/useBackgroundRelayListen";
 import { isAgoraEnabled } from "@/lib/agora";
 import useExternalPTT from "../hooks/useExternalPTT";
 import { playClearTone, playBusyTone, unlockAudioForPTT } from "@/lib/pttTones";
@@ -193,6 +194,11 @@ export default function Talk() {
   const { isReceiving: storageLiveReceiving, heardBroadcastsRef: relayHeardRef } = usePttReceiver({
     channelId: effectiveChannelId,
     userId: user?.id,
+  });
+
+  useBackgroundRelayListen({
+    enabled: Boolean(effectiveChannelId && user?.id && canReadMessages),
+    title: activeChannel?.name || "Talk",
   });
 
   const isLiveReceiving = agoraLive

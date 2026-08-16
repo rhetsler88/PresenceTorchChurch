@@ -54,6 +54,8 @@ async function playFullAudioViaElement(url, { onEnded, onError } = {}) {
 
   return new Promise((resolve, reject) => {
     const audio = new Audio(resolved);
+    audio.setAttribute("playsinline", "true");
+    audio.setAttribute("webkit-playsinline", "true");
     currentRelayAudio = audio;
 
     audio.onended = () => {
@@ -117,6 +119,8 @@ export async function playRelayAudioTail(url, startSeconds = 0, { onEnded, onErr
 
   return new Promise((resolve, reject) => {
     const audio = new Audio(resolved);
+    audio.setAttribute("playsinline", "true");
+    audio.setAttribute("webkit-playsinline", "true");
     currentRelayAudio = audio;
 
     const finish = (totalDuration) => {

@@ -4,4 +4,8 @@
     <string name="title_activity_main">Presence Torch</string>
     <string name="package_name">church.presencetorch.app</string>
     <string name="custom_url_scheme">church.presencetorch.app</string>
+    <string name="background_audio_default_title">Presence Torch</string>
+    <string name="background_audio_notification_text">Listening for live broadcasts</string>
+    <string name="background_audio_channel_name">Live broadcast listening</string>
+    <string name="background_audio_channel_description">Keeps Presence Torch listening while the app is in the background.</string>
 </resources>

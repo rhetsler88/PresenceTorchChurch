@@ -12,6 +12,7 @@ public class MainActivity extends BridgeActivity {
     public void onCreate(Bundle savedInstanceState) {
         registerPlugin(BluetoothPermissionsPlugin.class);
         registerPlugin(HeadsetPTTPlugin.class);
+        registerPlugin(BackgroundAudioPlugin.class);
         super.onCreate(savedInstanceState);
         if (getBridge() != null && getBridge().getWebView() != null) {
             getBridge().getWebView().post(this::enableWebViewForRecaptcha);

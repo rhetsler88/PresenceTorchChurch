@@ -8,7 +8,8 @@ import { Button } from "@/components/ui/button";
 import { etzTime } from "@/lib/etz";
 import { deviceDayKey, deviceDayLabel } from "@/lib/deviceDate";
 import { getDisplayName, getInitials, getInitialsFromName, getMonitorChannels, getReadableVoiceChannels, canSendOnChannelForChannel } from "@/lib/userUtils";
-import { playClearTone, playBusyTone, unlockAudioForPTT } from "@/lib/pttTones";
+import { playClearTone, playBusyTone, unlockAudioForPTT, playTextMessageTone } from "@/lib/pttTones";
+import { isProtectionLevelChangeMessage } from "@/lib/protectionLevelHistory";
 import { auth } from "@/lib/firebase";
 import { cleanupStalePTTSignals, claimPttChannels, releasePttSignals } from "@/lib/pttSignals";
 import { playAudioUrl, stopAudio } from "@/lib/audioPlayer";
@@ -508,6 +509,16 @@ export default function Monitor() {
           channelColor: channel?.color || "#f59e0b",
           ts: new Date(),
         }, ...prev].slice(0, 20));
+        return;
+      }
+
+      if (
+        event.data?.text_content
+        && !event.data?.audio_url
+        && event.data.created_by_id !== user.id
+        && !isProtectionLevelChangeMessage(event.data)
+      ) {
+        playTextMessageTone();
       }
     };
 

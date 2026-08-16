@@ -11,7 +11,8 @@ import usePttReceiver from "../hooks/usePttReceiver";
 import useBackgroundRelayListen from "../hooks/useBackgroundRelayListen";
 import { isAgoraEnabled } from "@/lib/agora";
 import useExternalPTT from "../hooks/useExternalPTT";
-import { playClearTone, playBusyTone, unlockAudioForPTT } from "@/lib/pttTones";
+import { playClearTone, playBusyTone, unlockAudioForPTT, playTextMessageTone } from "@/lib/pttTones";
+import { isProtectionLevelChangeMessage } from "@/lib/protectionLevelHistory";
 import { cleanupStalePTTSignals, claimPttChannels, releasePttSignals } from "@/lib/pttSignals";
 import { playAudioUrl, stopAudio } from "@/lib/audioPlayer";
 import { deviceDayKey } from "@/lib/deviceDate";
@@ -205,20 +206,6 @@ export default function Talk() {
     ? (agoraLiveReceiving || storageLiveReceiving)
     : storageLiveReceiving;
 
-  const shouldSkipBroadcastAutoPlay = useCallback((broadcastId) => {
-    if (!broadcastId) return false;
-    if (liveHeardBroadcastsRef.current.has(broadcastId)) return true;
-    if (relayHeardRef.current.has(broadcastId)) return true;
-    if (
-      activeLiveBroadcastRef.current === broadcastId
-      && Date.now() - lastLiveAudioAtRef.current < 20000
-    ) {
-      liveHeardBroadcastsRef.current.add(broadcastId);
-      return true;
-    }
-    return false;
-  }, [relayHeardRef]);
-
   // Reset live-broadcast tracking when switching channels
   useEffect(() => {
     activeLiveBroadcastRef.current = null;
@@ -368,38 +355,21 @@ export default function Talk() {
           queryClient.invalidateQueries({ queryKey: ["all-channel-messages"] });
         }
 
-        // Auto-play incoming voice messages from other users
-        if (event.type === "create" && event.data?.audio_url && event.data?.created_by_id !== user.id) {
-          if (shouldSkipBroadcastAutoPlay(event.data?.broadcast_id)) return;
-          setPlayingId(event.data.id);
-          setIsReceiving(true);
-          if (receivingTimeoutRef.current) clearTimeout(receivingTimeoutRef.current);
-          receivingTimeoutRef.current = setTimeout(() => {
-            setPlayingId(null);
-            setIsReceiving(false);
-          }, 30000);
-          playAudioUrl(event.data.audio_url, {
-            onEnded: () => {
-              if (receivingTimeoutRef.current) { clearTimeout(receivingTimeoutRef.current); receivingTimeoutRef.current = null; }
-              setPlayingId(null);
-              setIsReceiving(false);
-            },
-            onError: () => {
-              if (receivingTimeoutRef.current) { clearTimeout(receivingTimeoutRef.current); receivingTimeoutRef.current = null; }
-              setPlayingId(null);
-              setIsReceiving(false);
-            },
-          }).catch(() => {
-            if (receivingTimeoutRef.current) { clearTimeout(receivingTimeoutRef.current); receivingTimeoutRef.current = null; }
-            setPlayingId(null);
-            setIsReceiving(false);
-          });
+        // Ding for incoming text messages from other users
+        if (
+          event.type === "create"
+          && event.data?.text_content
+          && !event.data?.audio_url
+          && event.data?.created_by_id !== user.id
+          && !isProtectionLevelChangeMessage(event.data)
+        ) {
+          playTextMessageTone();
         }
       },
       { channel_id: effectiveChannelId }
     );
     return unsub;
-  }, [effectiveChannelId, canReadMessages, canQueryFirestore, queryClient, user, mergeChannelMessage, shouldSkipBroadcastAutoPlay]);
+  }, [effectiveChannelId, canReadMessages, canQueryFirestore, queryClient, user, mergeChannelMessage]);
 
   // Subscribe to PTT signals — broadcast beeps to all channel members
   useEffect(() => {

@@ -16,6 +16,7 @@ import {
   recordProtectionLevelChanges,
 } from "@/lib/protectionLevelHistory";
 import {
+  canAccessChannel,
   canCreateChannel,
   canEditAssignedChannel,
   canManageChannelProtection,
@@ -124,7 +125,7 @@ export default function Channels() {
   const canManageAnyProtection = channels.some((ch) => canManageChannelProtection(user, ch));
 
   const handleSelect = (channel) => {
-    if (channel.members?.includes(user?.id) || channel.members?.includes(user?.email)) {
+    if (canAccessChannel(user, channel)) {
       navigate(`/?channel=${channel.id}`);
       return;
     }
@@ -178,10 +179,11 @@ export default function Channels() {
               <ChannelCard
                 key={channel.id}
                 channel={channel}
-                isActive={channel.members?.includes(user?.id) || channel.members?.includes(user?.email)}
+                isActive={canAccessChannel(user, channel)}
                 isPending={
-                  channel.pending_members?.includes(user?.id) ||
-                  channel.pending_members?.includes(user?.email)
+                  !canAccessChannel(user, channel) &&
+                  (channel.pending_members?.includes(user?.id) ||
+                    channel.pending_members?.includes(user?.email))
                 }
                 onSelect={handleSelect}
                 canRename={canEditAssignedChannel(user, channel)}

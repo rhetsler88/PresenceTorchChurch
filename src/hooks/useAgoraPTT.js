@@ -8,6 +8,7 @@ import {
 } from "@/lib/agoraRemote";
 import { acquireAgoraClient, releaseAgoraClient, sessionKey } from "@/lib/agoraSession";
 import { configureAgoraSdk } from "@/lib/agoraInit";
+import { attachAinsToTrack, detachAinsFromTrack, isAinsAvailable } from "@/lib/agoraAins";
 import { playClearTone } from "@/lib/pttTones";
 
 configureAgoraSdk();
@@ -99,6 +100,7 @@ export default function useAgoraPTT({
   const clientRef = useRef(null);
   const sessionKeyRef = useRef(null);
   const localAudioTrackRef = useRef(null);
+  const ainsProcessorRef = useRef(null);
   const streamRef = useRef(null);
   const broadcastIdRef = useRef(null);
   const startTimeRef = useRef(0);
@@ -164,6 +166,8 @@ export default function useAgoraPTT({
     remoteSpeakerCountRef.current = 0;
 
     if (localAudioTrackRef.current) {
+      await detachAinsFromTrack(localAudioTrackRef.current, ainsProcessorRef.current);
+      ainsProcessorRef.current = null;
       localAudioTrackRef.current.stop();
       localAudioTrackRef.current.close();
       localAudioTrackRef.current = null;
@@ -331,7 +335,7 @@ export default function useAgoraPTT({
       const stream = sharedStream || await navigator.mediaDevices.getUserMedia({
         audio: {
           echoCancellation: true,
-          noiseSuppression: true,
+          noiseSuppression: !isAinsAvailable(),
           autoGainControl: true,
         },
       });
@@ -358,6 +362,7 @@ export default function useAgoraPTT({
         mediaStreamTrack: stream.getAudioTracks()[0],
         encoderConfig: "speech_standard",
       });
+      ainsProcessorRef.current = await attachAinsToTrack(localTrack);
       localAudioTrackRef.current = localTrack;
       await client.publish([localTrack]);
 
@@ -369,6 +374,8 @@ export default function useAgoraPTT({
       const client = clientRef.current;
       if (localAudioTrackRef.current) {
         await client?.unpublish([localAudioTrackRef.current]).catch(() => {});
+        await detachAinsFromTrack(localAudioTrackRef.current, ainsProcessorRef.current);
+        ainsProcessorRef.current = null;
         localAudioTrackRef.current.stop();
         localAudioTrackRef.current.close();
         localAudioTrackRef.current = null;
@@ -394,6 +401,8 @@ export default function useAgoraPTT({
 
       if (localTrack && client) {
         await client.unpublish([localTrack]).catch(() => {});
+        await detachAinsFromTrack(localTrack, ainsProcessorRef.current);
+        ainsProcessorRef.current = null;
         localTrack.stop();
         localTrack.close();
         localAudioTrackRef.current = null;

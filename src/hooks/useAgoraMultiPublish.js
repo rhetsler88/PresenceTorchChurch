@@ -3,6 +3,7 @@ import AgoraRTC from "agora-rtc-sdk-ng";
 import { fetchAgoraCredentials } from "@/lib/agoraRemote";
 import { acquireAgoraClient, releaseAgoraClient, sessionKey } from "@/lib/agoraSession";
 import { configureAgoraSdk } from "@/lib/agoraInit";
+import { attachAinsToTrack, detachAinsFromTrack, isAinsAvailable } from "@/lib/agoraAins";
 
 configureAgoraSdk();
 
@@ -18,7 +19,7 @@ export default function useAgoraMultiPublish({ userId }) {
   const broadcastIdRef = useRef(null);
   const heardBroadcastsRef = useRef(new Set());
   const activeRef = useRef(false);
-  /** @type {React.MutableRefObject<Map<string, { key: string, client: import('agora-rtc-sdk-ng').IAgoraRTCClient, track: import('agora-rtc-sdk-ng').ILocalAudioTrack, publishStream: MediaStream | null }>>} */
+  /** @type {React.MutableRefObject<Map<string, { key: string, client: import('agora-rtc-sdk-ng').IAgoraRTCClient, track: import('agora-rtc-sdk-ng').ILocalAudioTrack, publishStream: MediaStream | null, ainsProcessor: import('agora-extension-ai-denoiser').AIDenoiserProcessor | null }>>} */
   const sessionsRef = useRef(new Map());
   const paramsRef = useRef({ userId });
   paramsRef.current = { userId };
@@ -28,9 +29,10 @@ export default function useAgoraMultiPublish({ userId }) {
     sessionsRef.current.clear();
 
     for (const [, session] of sessions) {
-      const { client, key, track, publishStream } = session;
+      const { client, key, track, publishStream, ainsProcessor } = session;
       if (track && client) {
         await client.unpublish([track]).catch(() => {});
+        await detachAinsFromTrack(track, ainsProcessor);
         track.stop();
         track.close();
       }
@@ -69,6 +71,7 @@ export default function useAgoraMultiPublish({ userId }) {
       mediaStreamTrack: publishStream.getAudioTracks()[0],
       encoderConfig: "speech_standard",
     });
+    const ainsProcessor = await attachAinsToTrack(localTrack);
 
     await client.publish([localTrack]);
     sessionsRef.current.set(channelId, {
@@ -76,6 +79,7 @@ export default function useAgoraMultiPublish({ userId }) {
       client,
       track: localTrack,
       publishStream: publishStream !== stream ? publishStream : null,
+      ainsProcessor,
     });
   }, []);
 
@@ -92,7 +96,7 @@ export default function useAgoraMultiPublish({ userId }) {
       const stream = sharedStream || await navigator.mediaDevices.getUserMedia({
         audio: {
           echoCancellation: true,
-          noiseSuppression: true,
+          noiseSuppression: !isAinsAvailable(),
           autoGainControl: true,
         },
       });

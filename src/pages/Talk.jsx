@@ -21,6 +21,7 @@ import {
   canReadVoiceMessageForChannel,
   canAccessChannelAlertsForChannel,
   canSendOnChannelForChannel,
+  bypassesDailyCode,
 } from "@/lib/userUtils";
 import { getCodeDateKey, isDailyCodeVerified } from "@/lib/dailyCode";
 import { useAuth } from "@/lib/AuthContext";
@@ -28,6 +29,7 @@ import {
   ensureUserChannelMembership,
   userHasFirestoreChannelAccess,
 } from "@/lib/channelMembership";
+import { auth } from "@/lib/firebase";
 import { toast } from "@/lib/toast";
 import { Button } from "@/components/ui/button";
 import { Clock, Trash2, CheckSquare } from "lucide-react";
@@ -96,7 +98,10 @@ export default function Talk() {
     activeChannel && user && canAccessChannelAlertsForChannel(user, activeChannel)
   );
   const canSendPtt = Boolean(
-    activeChannel && user && canSendOnChannelForChannel(user, activeChannel)
+    activeChannel
+    && user
+    && canSendOnChannelForChannel(user, activeChannel)
+    && (bypassesDailyCode(user) || isDailyCodeVerified(user))
   );
   const canQueryFirestore = Boolean(
     effectiveChannelId &&
@@ -491,13 +496,14 @@ export default function Talk() {
 
   const ensureFirestoreMembership = useCallback(async () => {
     if (!user?.id || !activeChannel || !effectiveChannelId) return;
-    if (userHasFirestoreChannelAccess(user, effectiveChannelId, activeChannel)) return;
+    await refreshChannelMembership();
     const added = await ensureUserChannelMembership(
       user.id,
       user.email,
       activeChannel
     );
     if (added) await refreshChannelMembership();
+    await auth.currentUser?.getIdToken(true);
   }, [user, activeChannel, effectiveChannelId, refreshChannelMembership]);
 
   const sendMutation = useMutation({
@@ -698,6 +704,12 @@ export default function Talk() {
       let signalId = null;
       const broadcastId = crypto.randomUUID();
       try {
+        try {
+          await ensureFirestoreMembership();
+        } catch (syncErr) {
+          console.warn("PTT access sync failed:", syncErr);
+        }
+
         const started = await startRecording({ broadcastId });
 
         if (pttStopPendingRef.current) {
@@ -799,6 +811,7 @@ export default function Talk() {
     canSendPtt,
     releasePttSignal,
     finishPttStop,
+    ensureFirestoreMembership,
   ]);
 
   const handlePTTStop = useCallback(() => {

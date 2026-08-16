@@ -11,6 +11,7 @@ export function isListedOnChannel(userId, email, list = []) {
 
 export function isChannelTalkMember(user, channel) {
   if (!user || !channel) return false;
+  if ((user.member_of_channels || []).includes(channel.id)) return true;
   return isListedOnChannel(user.id, user.email, channel.members);
 }
 

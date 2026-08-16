@@ -42,9 +42,14 @@ async function hydrateUserWithMembership(firebaseUser, currentUser) {
       ...currentUser,
       email: currentUser.email || firebaseUser.email,
       role: access?.role || currentUser.role,
+      directed_channels: access?.directed_channels?.length
+        ? access.directed_channels
+        : currentUser.directed_channels || [],
       member_of_channels: access?.channelIds?.length
         ? access.channelIds
-        : currentUser.member_of_channels || [],
+        : access?.member_of_channels?.length
+          ? access.member_of_channels
+          : currentUser.member_of_channels || [],
     };
   } catch (err) {
     console.warn("Server channel membership sync failed, falling back to client:", err);
@@ -299,9 +304,15 @@ export const AuthProvider = ({ children }) => {
         prev
           ? {
               ...prev,
+              role: access?.role || prev.role,
+              directed_channels: access?.directed_channels?.length
+                ? access.directed_channels
+                : prev.directed_channels || [],
               member_of_channels: channelIds.length
                 ? channelIds
-                : prev.member_of_channels || [],
+                : access?.member_of_channels?.length
+                  ? access.member_of_channels
+                  : prev.member_of_channels || [],
             }
           : prev
       );

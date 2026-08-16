@@ -161,6 +161,7 @@ export function canAccessChannelAlertsForChannel(user, channel) {
 export function canSendOnChannelForChannel(user, channel) {
   if (!user || !channel) return false;
   if (isPlatformAdmin(user)) return true;
+  if ((user.member_of_channels || []).includes(channel.id)) return true;
   if (isChannelTalkMember(user, channel)) return true;
   if (isOrgAdminForChannel(user, channel)) return true;
   if (isChannelLeadForChannel(user, channel)) return true;

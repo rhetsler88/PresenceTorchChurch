@@ -34,6 +34,9 @@ import {
   getDisplayName,
   isPlatformAdmin,
   isSuperAdmin,
+  filterChannelsByOrganization,
+  canManageChannelMembership,
+  matchesOrganization,
 } from "@/lib/userUtils";
 import {
   getChannelsFromMembershipLists,
@@ -156,6 +159,30 @@ export default function Users() {
     },
   });
 
+  const channelMembershipMutation = useMutation({
+    mutationFn: async ({ user, channelId, assign }) => {
+      const memberId = user.id || user.email;
+      if (!memberId) throw new Error("User has no id or email");
+      if (assign) {
+        return api.admin.approveChannelMember(channelId, memberId);
+      }
+      return api.admin.removeChannelMember(channelId, memberId);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["users"] });
+      queryClient.invalidateQueries({ queryKey: ["channels"] });
+      toast.success("Channel membership updated");
+    },
+    onError: (err) => {
+      const message =
+        err?.message?.includes("permission-denied") ||
+        err?.code === "functions/permission-denied"
+          ? "You don't have permission to manage this channel"
+          : err?.message || "Couldn't update channel membership";
+      toast.error(message);
+    },
+  });
+
   const filtered = users.filter((u) => {
     const q = search.toLowerCase();
     const name = getDisplayName(u).toLowerCase();
@@ -184,6 +211,24 @@ export default function Users() {
     const synced = getChannelsFromProfile(user, channels);
     const unsynced = getUnsyncedChannelMemberships(user, channels);
     return { approved, synced, unsynced };
+  };
+
+  const getAssignableChannels = (user) => {
+    const scoped = filterChannelsByOrganization(currentUser, channels);
+    if (!user?.organization) return scoped;
+    return scoped.filter((ch) => matchesOrganization(user.organization, ch.organization));
+  };
+
+  const isUserOnChannel = (user, channel) => {
+    const { approved } = getUserChannelInfo(user);
+    return approved.some((ch) => ch.id === channel.id);
+  };
+
+  const toggleChannelMembership = (user, channelId) => {
+    const channel = channels.find((ch) => ch.id === channelId);
+    if (!channel || !canManageChannelMembership(currentUser, channel)) return;
+    const assign = !isUserOnChannel(user, channel);
+    channelMembershipMutation.mutate({ user, channelId, assign });
   };
 
   return (
@@ -397,43 +442,63 @@ export default function Users() {
             </div>
             {editing && (
               <div>
-                <Label>Approved channels</Label>
-                <div className="mt-2 rounded-lg border border-border bg-muted/30 p-3 space-y-2">
+                <Label>Channel access</Label>
+                <p className="text-xs text-muted-foreground mt-1 mb-2">
+                  Toggle channels this user can talk on. Changes take effect immediately.
+                </p>
+                <div className="rounded-lg border border-border bg-muted/30 p-3">
                   {(() => {
-                    const { approved, synced, unsynced } = getUserChannelInfo(editing);
-                    if (approved.length === 0) {
+                    const assignable = getAssignableChannels(editing);
+                    if (assignable.length === 0) {
                       return (
-                        <p className="text-sm text-muted-foreground">No approved channels</p>
+                        <p className="text-sm text-muted-foreground">No channels available</p>
                       );
                     }
-                    return approved.map((ch) => {
-                      const isSynced = synced.some((s) => s.id === ch.id);
-                      return (
-                        <div key={ch.id} className="flex items-center justify-between gap-2 text-sm">
-                          <span className="font-medium text-foreground">{ch.name}</span>
-                          <span
-                            className={`text-xs font-semibold ${
-                              isSynced
-                                ? "text-emerald-600 dark:text-emerald-400"
-                                : "text-amber-600 dark:text-amber-400"
-                            }`}
-                          >
-                            {isSynced ? "On profile" : "Not on profile"}
-                          </span>
-                        </div>
-                      );
-                    });
+                    return (
+                      <div className="flex flex-wrap gap-1.5">
+                        {assignable.map((ch) => {
+                          const assigned = isUserOnChannel(editing, ch);
+                          const canManage = canManageChannelMembership(currentUser, ch);
+                          return (
+                            <button
+                              key={ch.id}
+                              type="button"
+                              disabled={
+                                !canManage ||
+                                channelMembershipMutation.isPending
+                              }
+                              onClick={() => toggleChannelMembership(editing, ch.id)}
+                              className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all disabled:opacity-50 ${
+                                assigned
+                                  ? "text-white shadow-sm"
+                                  : "bg-muted text-muted-foreground hover:bg-muted/70"
+                              }`}
+                              style={assigned ? { backgroundColor: ch.color || "#f59e0b" } : {}}
+                              title={
+                                !canManage
+                                  ? "You can't manage this channel"
+                                  : assigned
+                                    ? "Click to remove"
+                                    : "Click to assign"
+                              }
+                            >
+                              {ch.name}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    );
                   })()}
                   {getUserChannelInfo(editing).unsynced.length > 0 && isPlatformAdmin(currentUser) && (
                     <Button
                       type="button"
                       variant="outline"
                       size="sm"
-                      className="w-full mt-2"
+                      className="w-full mt-3"
                       onClick={() => repairAccessMutation.mutate(editing.email)}
                       disabled={repairAccessMutation.isPending || !editing.email}
                     >
-                      Repair access for this user
+                      Repair sync for this user
                     </Button>
                   )}
                 </div>

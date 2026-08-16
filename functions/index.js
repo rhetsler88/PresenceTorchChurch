@@ -31,6 +31,7 @@ const {
   diagnoseUserAccess,
   assertModeratorRole,
   approveChannelMember,
+  removeChannelMember,
   rejectChannelMember,
 } = require("./channelMembership");
 const { logProtectionLevelChange } = require("./protectionLevelHistory");
@@ -316,6 +317,40 @@ exports.approveChannelMember = onCall(CALLABLE_OPTIONS, async (request) => {
     }
     console.error("approveChannelMember failed:", err);
     throw new HttpsError("internal", "Could not approve channel member");
+  }
+});
+
+exports.removeChannelMember = onCall(CALLABLE_OPTIONS, async (request) => {
+  if (!request.auth) {
+    throw new HttpsError("unauthenticated", "Sign in required");
+  }
+
+  const { channelId, memberId } = request.data || {};
+  if (!channelId || typeof channelId !== "string") {
+    throw new HttpsError("invalid-argument", "channelId is required");
+  }
+  if (!memberId || typeof memberId !== "string") {
+    throw new HttpsError("invalid-argument", "memberId is required");
+  }
+
+  const db = getFirestore();
+  const email = request.auth.token.email || "";
+  try {
+    return await removeChannelMember(
+      db,
+      getAuth(),
+      request.auth.uid,
+      email,
+      channelId,
+      memberId
+    );
+  } catch (err) {
+    const code = err?.code;
+    if (code === "invalid-argument" || code === "not-found" || code === "permission-denied") {
+      throw new HttpsError(code, err.message);
+    }
+    console.error("removeChannelMember failed:", err);
+    throw new HttpsError("internal", "Could not remove channel member");
   }
 });
 

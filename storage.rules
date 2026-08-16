@@ -91,7 +91,7 @@ service firebase.storage {
     }
 
     function channelExists(channelId) {
-      return channelDoc(channelId).data.keys().hasAny(['name', 'members']);
+      return channelDoc(channelId).exists;
     }
 
     function isListedOnChannel(list) {

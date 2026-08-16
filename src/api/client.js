@@ -793,6 +793,12 @@ export const adminApi = {
     const callable = httpsCallable(functions, "rejectChannelMember");
     return (await callable({ channelId, memberId })).data;
   },
+
+  async removeChannelMember(channelId, memberId) {
+    await waitForFirestoreAuth({ forceRefresh: true });
+    const callable = httpsCallable(functions, "removeChannelMember");
+    return (await callable({ channelId, memberId })).data;
+  },
 };
 
 export const bootstrapApi = {

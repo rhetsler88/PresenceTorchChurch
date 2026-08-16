@@ -277,6 +277,45 @@ async function approveChannelMember(db, auth, authUid, email, channelId, memberI
   return { channelId, memberId: memberEntry };
 }
 
+async function removeChannelMember(db, auth, authUid, email, channelId, memberId) {
+  if (!channelId || !memberId) {
+    const err = new Error("channelId and memberId are required");
+    err.code = "invalid-argument";
+    throw err;
+  }
+
+  const profile = await getEffectiveUserProfile(db, authUid, email);
+  const channelRef = db.collection("channels").doc(channelId);
+  const channelSnap = await channelRef.get();
+  if (!channelSnap.exists) {
+    const err = new Error("Channel not found");
+    err.code = "not-found";
+    throw err;
+  }
+
+  const channelData = channelSnap.data() || {};
+  if (!canManageChannelMembership(profile, channelId, channelData)) {
+    const err = new Error("Not allowed to manage membership for this channel");
+    err.code = "permission-denied";
+    throw err;
+  }
+
+  const memberUid = await resolveMemberUid(db, auth, memberId);
+  const members = (channelData.members || []).filter(
+    (entry) => entry !== memberId && entry !== memberUid
+  );
+  const pending = (channelData.pending_members || []).filter(
+    (entry) => entry !== memberId && entry !== memberUid
+  );
+
+  await channelRef.update({
+    members,
+    pending_members: pending,
+  });
+
+  return { channelId, memberId: memberUid || memberId };
+}
+
 async function rejectChannelMember(db, auth, authUid, email, channelId, memberId) {
   if (!channelId || !memberId) {
     const err = new Error("channelId and memberId are required");
@@ -379,11 +418,16 @@ async function syncChannelAccessForAuthUser(db, auth, uid, email) {
     { merge: true }
   );
 
+  const refreshedSnap = await db.collection("users").doc(authUid).get();
+  const refreshed = refreshedSnap.data() || {};
+
   return {
     uid: authUid,
     email: normalizedEmail,
     channelIds,
-    role: effectiveRole,
+    role: refreshed.role || effectiveRole,
+    directed_channels: refreshed.directed_channels || [],
+    member_of_channels: refreshed.member_of_channels || channelIds,
     orphanProfileIds: orphanIds,
     channelsNormalized,
   };
@@ -547,5 +591,6 @@ module.exports = {
   mergeElevatedProfileRole,
   assertModeratorRole,
   approveChannelMember,
+  removeChannelMember,
   rejectChannelMember,
 };

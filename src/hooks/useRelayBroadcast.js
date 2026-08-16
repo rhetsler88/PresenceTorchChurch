@@ -4,6 +4,16 @@ import { uploadPublicAudio, uploadPrivateAudio } from "@/api/storage";
 
 const CHUNK_MS = 1000;
 
+function isUploadPermissionError(err) {
+  const code = err?.code || "";
+  const message = err?.message || "";
+  return (
+    code === "storage/unauthorized"
+    || code.includes("permission")
+    || /unauthorized|permission/i.test(message)
+  );
+}
+
 function getSupportedMime() {
   const types = ["audio/webm;codecs=opus", "audio/webm", "audio/ogg;codecs=opus", "audio/mp4"];
   for (const t of types) {
@@ -231,10 +241,13 @@ export default function useRelayBroadcast({ channelId, userId, userName }) {
       };
     } catch (err) {
       console.error("Private audio upload failed:", err);
-      if (err?.code === "storage/unauthorized" || err?.code?.includes?.("permission")) {
+      if (isUploadPermissionError(err)) {
         throw err;
       }
-      return null;
+      throw Object.assign(new Error("Private audio upload failed"), {
+        code: "app/recording-failed",
+        cause: err,
+      });
     }
   }, []);
 

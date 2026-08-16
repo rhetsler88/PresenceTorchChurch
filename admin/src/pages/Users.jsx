@@ -35,7 +35,6 @@ import {
   isPlatformAdmin,
   isSuperAdmin,
   filterChannelsByOrganization,
-  canManageChannelMembership,
   matchesOrganization,
 } from "@/lib/userUtils";
 import {
@@ -226,7 +225,7 @@ export default function Users() {
 
   const toggleChannelMembership = (user, channelId) => {
     const channel = channels.find((ch) => ch.id === channelId);
-    if (!channel || !canManageChannelMembership(currentUser, channel)) return;
+    if (!channel) return;
     const assign = !isUserOnChannel(user, channel);
     channelMembershipMutation.mutate({ user, channelId, assign });
   };
@@ -458,15 +457,11 @@ export default function Users() {
                       <div className="flex flex-wrap gap-1.5">
                         {assignable.map((ch) => {
                           const assigned = isUserOnChannel(editing, ch);
-                          const canManage = canManageChannelMembership(currentUser, ch);
                           return (
                             <button
                               key={ch.id}
                               type="button"
-                              disabled={
-                                !canManage ||
-                                channelMembershipMutation.isPending
-                              }
+                              disabled={channelMembershipMutation.isPending}
                               onClick={() => toggleChannelMembership(editing, ch.id)}
                               className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all disabled:opacity-50 ${
                                 assigned
@@ -474,13 +469,7 @@ export default function Users() {
                                   : "bg-muted text-muted-foreground hover:bg-muted/70"
                               }`}
                               style={assigned ? { backgroundColor: ch.color || "#f59e0b" } : {}}
-                              title={
-                                !canManage
-                                  ? "You can't manage this channel"
-                                  : assigned
-                                    ? "Click to remove"
-                                    : "Click to assign"
-                              }
+                              title={assigned ? "Click to remove" : "Click to assign"}
                             >
                               {ch.name}
                             </button>

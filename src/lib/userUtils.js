@@ -130,7 +130,7 @@ function isOrgAdminForChannel(user, channel) {
   if (!user || !channel || !isOrgAdmin(user)) return false;
   const org = user.organization?.trim();
   if (!org) return true;
-  return !channel.organization || channel.organization === org;
+  return matchesOrganization(org, channel.organization);
 }
 
 /** Matches Firestore canReadVoiceMessage — per-channel voice log read access. */

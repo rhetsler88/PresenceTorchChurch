@@ -3,7 +3,7 @@ import { api } from "@/api/client";
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from "@tanstack/react-query";
 import { motion, AnimatePresence } from "framer-motion";
 import { DragDropContext, Droppable, Draggable } from "@hello-pangea/dnd";
-import { Radio, Volume2, Activity, Eye, Play, Pause, Wifi, WifiOff } from "lucide-react";
+import { Radio, Volume2, Eye, Play, Pause, WifiOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { etzTime } from "@/lib/etz";
 import { deviceDayKey, deviceDayLabel } from "@/lib/deviceDate";
@@ -91,7 +91,7 @@ function ChannelMonitorCard({ channel, messages, onPlayMessage, playingId, onSet
 
       {/* Message list */}
       <div className="divide-y divide-border max-h-48 overflow-y-auto">
-        {messages.slice(0, 5).map(msg => (
+        {messages.slice(0, 3).map(msg => (
           <div
             key={msg.id}
             className="px-4 py-2.5 flex items-start gap-2 hover:bg-muted/30 transition-colors"
@@ -234,7 +234,7 @@ export default function Monitor() {
       const batches = await Promise.all(
         monitorChannelIds.map(async (id) => {
           try {
-            return await api.entities.VoiceMessage.filter({ channel_id: id }, "-created_date", 50);
+            return await api.entities.VoiceMessage.filter({ channel_id: id }, "-created_date", 3);
           } catch (err) {
             if (err?.code === "permission-denied") return [];
             throw err;
@@ -243,7 +243,7 @@ export default function Monitor() {
       );
       const items = batches.flat();
       items.sort((a, b) => String(b.created_date || "").localeCompare(String(a.created_date || "")));
-      return items.slice(0, 200);
+      return items;
     },
     placeholderData: keepPreviousData,
     refetchInterval: 15000,
@@ -862,15 +862,13 @@ export default function Monitor() {
     onRelease: handlePTTStop,
   });
 
-  const totalMessages = allMessages.length;
-  const activeChannelCount = Object.values(messagesByChannel).filter(msgs => msgs.length > 0).length;
   const showReceiving = isLiveReceiving && !isPTTPressed;
 
   return (
     <div className="min-h-screen safe-top">
       {/* Header */}
       <div className="px-4 pt-4 pb-4 border-b border-border sm:px-5 sm:pt-6">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-4 sm:pr-48">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:pr-48">
           <div>
             <div className="flex items-center gap-2">
               <Eye className="w-5 h-5 text-primary" />
@@ -881,21 +879,6 @@ export default function Monitor() {
           <div className="flex items-center gap-2 flex-wrap">
             <SetAllProtectionLevel onApply={handleSetAllProtectionLevel} />
           </div>
-        </div>
-
-        {/* Stats */}
-        <div className="grid grid-cols-3 gap-3">
-          {[
-            { label: "Channels", value: monitorChannels.length, icon: Radio },
-            { label: "Active", value: activeChannelCount, icon: Activity },
-            { label: "Messages", value: totalMessages, icon: Wifi },
-          ].map(({ label, value, icon: Icon }) => (
-            <div key={label} className="bg-card border border-border rounded-xl px-3 py-2.5 text-center">
-              <Icon className="w-4 h-4 text-primary mx-auto mb-1" />
-              <p className="text-lg font-bold text-foreground">{value}</p>
-              <p className="text-[10px] text-muted-foreground">{label}</p>
-            </div>
-          ))}
         </div>
       </div>
 

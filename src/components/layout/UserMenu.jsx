@@ -35,11 +35,11 @@ export default function UserMenu() {
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <button
-            className="fixed z-40 flex items-center gap-2 pl-1 pr-2.5 py-1 rounded-full bg-card border border-border shadow-sm hover:border-primary/40 transition-colors active:scale-95 right-[calc(1.75rem+env(safe-area-inset-right,0px))]"
+            className="fixed z-40 flex items-center gap-2 p-1 sm:pl-1 sm:pr-2.5 rounded-full bg-card border border-border shadow-sm hover:border-primary/40 transition-colors active:scale-95 right-[calc(1.75rem+env(safe-area-inset-right,0px))]"
             style={{ top: "calc(env(safe-area-inset-top, 0px) + 0.75rem)" }}
             title="Account menu"
           >
-            <span className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-xs font-bold text-primary flex-shrink-0">
+            <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-bold leading-none text-primary">
               {initials}
             </span>
             <span className="text-xs font-semibold text-foreground max-w-[7rem] truncate hidden sm:inline">

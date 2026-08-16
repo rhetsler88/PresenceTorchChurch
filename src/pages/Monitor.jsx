@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from "react";
+import { useNavigate } from "react-router-dom";
 import { api } from "@/api/client";
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from "@tanstack/react-query";
 import { motion, AnimatePresence } from "framer-motion";
@@ -47,7 +48,7 @@ function readStoredBroadcastSelection() {
   }
 }
 
-function ChannelMonitorCard({ channel, messages, onPlayMessage, playingId, onSetProtectionLevel, userMap }) {
+function ChannelMonitorCard({ channel, messages, onPlayMessage, playingId, onSetProtectionLevel, onOpenChannel, userMap }) {
   const lastMsg = messages[0];
   const hasActivity = messages.length > 0;
 
@@ -58,9 +59,14 @@ function ChannelMonitorCard({ channel, messages, onPlayMessage, playingId, onSet
         : "border-border"
     }`}>
       {/* Channel header */}
-      <div className="px-4 py-3 flex items-center gap-3 border-b border-border">
+      <button
+        type="button"
+        onClick={() => onOpenChannel?.(channel.id)}
+        onPointerDown={(e) => e.stopPropagation()}
+        className="w-full px-4 py-3 flex items-center gap-3 border-b border-border text-left hover:bg-muted/30 transition-colors"
+      >
         <div
-          className="w-8 h-8 rounded-lg flex items-center justify-center"
+          className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0"
           style={{ backgroundColor: (channel.color || "#f59e0b") + "20" }}
         >
           <Radio className="w-4 h-4" style={{ color: channel.color || "#f59e0b" }} />
@@ -73,13 +79,13 @@ function ChannelMonitorCard({ channel, messages, onPlayMessage, playingId, onSet
           <motion.div
             animate={{ opacity: [1, 0.3, 1] }}
             transition={{ duration: 0.8, repeat: Infinity }}
-            className="flex items-center gap-1 text-green-500"
+            className="flex items-center gap-1 text-green-500 flex-shrink-0"
           >
             <Volume2 className="w-4 h-4" />
             <span className="text-[10px] font-semibold">LIVE</span>
           </motion.div>
         )}
-      </div>
+      </button>
 
       {/* Protection level control */}
       <div className="px-4 py-2 border-b border-border">
@@ -157,6 +163,7 @@ function ChannelMonitorCard({ channel, messages, onPlayMessage, playingId, onSet
 }
 
 export default function Monitor() {
+  const navigate = useNavigate();
   const [playingId, setPlayingId] = useState(null);
   const [playingChannel, setPlayingChannel] = useState(null);
   const [activityLog, setActivityLog] = useState([]);
@@ -328,6 +335,12 @@ export default function Monitor() {
     setTargetChannelId(id);
     localStorage.setItem("lastChannelId", id);
   }, []);
+
+  const handleOpenChannelInTalk = useCallback((channelId) => {
+    if (!channelId) return;
+    localStorage.setItem("lastChannelId", channelId);
+    navigate(`/?channel=${channelId}`);
+  }, [navigate]);
 
   const monitorRelayChannelIds = useMemo(
     () => monitorChannels.map((c) => c.id).filter(Boolean),
@@ -934,6 +947,7 @@ export default function Monitor() {
                             onPlayMessage={handlePlayMessage}
                             playingId={playingId}
                             onSetProtectionLevel={handleSetProtectionLevel}
+                            onOpenChannel={handleOpenChannelInTalk}
                             userMap={userMap}
                           />
                         </div>

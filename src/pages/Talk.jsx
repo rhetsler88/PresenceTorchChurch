@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import { useSearchParams } from "react-router-dom";
 import { api } from "@/api/client";
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from "@tanstack/react-query";
 import PTTButton from "../components/ptt/PTTButton";
@@ -69,8 +70,8 @@ export default function Talk() {
   const lastLiveAudioAtRef = useRef(0);
   const activeBroadcastClearTimerRef = useRef(null);
 
-  const urlParams = new URLSearchParams(window.location.search);
-  const channelParam = urlParams.get("channel");
+  const [searchParams] = useSearchParams();
+  const channelParam = searchParams.get("channel");
 
   const { data: channels = [] } = useQuery({
     queryKey: ["channels"],
@@ -217,13 +218,21 @@ export default function Talk() {
 
   // Auto-select channel from URL param, last selected, or first approved channel
   useEffect(() => {
-    if (myChannels.length > 0 && !activeChannelId) {
-      const fromUrl = channelParam && myChannels.find(c => c.id === channelParam);
+    if (myChannels.length === 0) return;
+
+    const fromUrl = channelParam && myChannels.find((c) => c.id === channelParam);
+    if (fromUrl) {
+      if (activeChannelId !== fromUrl.id) {
+        setActiveChannelId(fromUrl.id);
+      }
+      return;
+    }
+
+    if (!activeChannelId) {
       const fromStorage = localStorage.getItem("lastChannelId");
-      const fromLast = fromStorage && myChannels.find(c => c.id === fromStorage);
+      const fromLast = fromStorage && myChannels.find((c) => c.id === fromStorage);
       const fallback = myChannels[0].id;
-      const selected = fromUrl ? fromUrl.id : (fromLast ? fromLast.id : fallback);
-      setActiveChannelId(selected);
+      setActiveChannelId(fromLast ? fromLast.id : fallback);
     }
   }, [myChannels, activeChannelId, channelParam]);
 

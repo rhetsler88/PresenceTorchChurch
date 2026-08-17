@@ -8,9 +8,10 @@ import MessageFeed from "../components/ptt/MessageFeed";
 import ProtectionLevelBadge from "../components/ptt/ProtectionLevelBadge";
 import TextInputBar from "../components/ptt/TextInputBar";
 import usePttBroadcast from "../hooks/usePttBroadcast";
-import usePttReceiver from "../hooks/usePttReceiver";
-import { useBackgroundListenRegistration } from "../components/ptt/BackgroundListenContext";
-import { isAgoraEnabled } from "@/lib/agora";
+import {
+  usePassiveTalkListen,
+  usePassiveTalkListenRegistration,
+} from "../components/ptt/PassiveTalkListenProvider";
 import useExternalPTT from "../hooks/useExternalPTT";
 import { playClearTone, playBusyTone, unlockAudioForPTT, playTextMessageTone } from "@/lib/pttTones";
 import { isProtectionLevelChangeMessage } from "@/lib/protectionLevelHistory";
@@ -65,10 +66,8 @@ export default function Talk() {
   const pttSessionUserRef = useRef(null);
   const channelBusyTimeoutRef = useRef(null);
   const receivingTimeoutRef = useRef(null);
-  const liveHeardBroadcastsRef = useRef(new Set());
   /** Active monitor/PTT broadcast on this channel (from PTT signal, not yet heard). */
   const activeLiveBroadcastRef = useRef(null);
-  const lastLiveAudioAtRef = useRef(0);
   const activeBroadcastClearTimerRef = useRef(null);
 
   const [searchParams] = useSearchParams();
@@ -160,59 +159,34 @@ export default function Talk() {
   ]);
 
   const hasPassiveMonitor = canAccessMonitorPage(user);
+  const passiveTalk = usePassiveTalkListen();
 
-  // Agora: stay joined on the active channel for instant live PTT (skip while self-transmitting).
-  const agoraListenActive = !hasPassiveMonitor && Boolean(effectiveChannelId && !isPTTPressed);
-
-  const onRemoteLiveAudio = useCallback(() => {
-    lastLiveAudioAtRef.current = Date.now();
-    const bId = activeLiveBroadcastRef.current;
-    if (bId) {
-      liveHeardBroadcastsRef.current.add(bId);
-      return;
-    }
-    if (!effectiveChannelId || !user?.id) return;
-    void cleanupStalePTTSignals({ channelId: effectiveChannelId, excludeSenderId: user.id, limit: 5 })
-      .then((active) => {
-        const match = active.find((signal) => signal.broadcast_id);
-        if (!match?.broadcast_id) return;
-        activeLiveBroadcastRef.current = match.broadcast_id;
-        liveHeardBroadcastsRef.current.add(match.broadcast_id);
-      })
-      .catch(() => {});
-  }, [effectiveChannelId, user?.id]);
+  usePassiveTalkListenRegistration({
+    channelId: effectiveChannelId,
+    title: activeChannel?.name || "Talk",
+    canRead: !hasPassiveMonitor && canReadMessages,
+    listenPaused: isPTTPressed,
+    persist: true,
+  });
 
   const {
     startRecording,
     stopRecording,
     stopLiveTransmit,
-    isLiveReceiving: agoraLiveReceiving,
   } = usePttBroadcast({
     channelId: effectiveChannelId,
     userId: user?.id,
     userName: user ? getDisplayName(user) : "",
-    listenActive: agoraListenActive,
-    onRemoteLiveAudio,
+    listenActive: false,
+    receiveEnabled: false,
   });
 
-  const agoraLive = isAgoraEnabled();
-  const { isReceiving: storageLiveReceiving } = usePttReceiver({
-    channelId: hasPassiveMonitor ? undefined : effectiveChannelId,
-    userId: user?.id,
-    enabled: !hasPassiveMonitor && Boolean(effectiveChannelId),
-  });
-
-  useBackgroundListenRegistration("talk", {
-    enabled: !hasPassiveMonitor && Boolean(effectiveChannelId && user?.id && canReadMessages),
-    title: activeChannel?.name || "Talk",
-    persist: true,
-  });
-
-  const isLiveReceiving = hasPassiveMonitor
-    ? false
-    : agoraLive
-      ? (agoraLiveReceiving || storageLiveReceiving)
-      : storageLiveReceiving;
+  const channelLiveActive = hasPassiveMonitor
+    ? isChannelBusy
+    : Boolean(
+        passiveTalk?.isLiveReceiving
+        && passiveTalk?.listenChannelId === effectiveChannelId
+      );
 
   // Reset live-broadcast tracking when switching channels
   useEffect(() => {
@@ -678,7 +652,7 @@ export default function Talk() {
     ) {
       return;
     }
-    if (isLiveReceiving || isChannelBusy) {
+    if (channelLiveActive || isChannelBusy) {
       playBusyTone();
       return;
     }
@@ -794,7 +768,7 @@ export default function Talk() {
   }, [
     activeChannel,
     isPTTPressed,
-    isLiveReceiving,
+    channelLiveActive,
     isChannelBusy,
     startRecording,
     stopRecording,
@@ -968,8 +942,8 @@ export default function Talk() {
             onStart={handlePTTStart}
             onStop={handlePTTStop}
             isConnected={!!activeChannel && canSendPtt}
-            isReceiving={(isReceiving || (hasPassiveMonitor ? isChannelBusy : isLiveReceiving)) && !isPTTPressed}
-            isChannelBusy={isChannelBusy && !isPTTPressed && !isReceiving && !(hasPassiveMonitor ? isChannelBusy : isLiveReceiving)}
+            isReceiving={(isReceiving || channelLiveActive) && !isPTTPressed}
+            isChannelBusy={isChannelBusy && !isPTTPressed && !isReceiving && !channelLiveActive}
           />
           <TextInputBar
             onSend={(text) => sendTextMutation.mutate(text)}

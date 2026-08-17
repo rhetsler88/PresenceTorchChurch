@@ -6,8 +6,8 @@ import DailyCodeGate from "@/components/dailycode/DailyCodeGate";
 import UserMenu from "@/components/layout/UserMenu";
 import { isPlatformAdmin, canAccessMonitorPage, isDirector, isLead } from "@/lib/userUtils";
 import { BluetoothPTTProvider } from "@/components/ptt/BluetoothPTTContext";
-import { BackgroundListenProvider } from "@/components/ptt/BackgroundListenContext";
 import { PassiveMonitorProvider } from "@/components/monitor/PassiveMonitorProvider";
+import { PassiveTalkListenProvider } from "@/components/ptt/PassiveTalkListenProvider";
 import RedAlertBanner from "@/components/ptt/RedAlertBanner";
 import useRedAlert from "@/hooks/useRedAlert";
 
@@ -38,7 +38,7 @@ export default function AppLayout() {
     <div className="h-dvh bg-background flex flex-col safe-top">
       <BluetoothPTTProvider>
       <PassiveMonitorProvider user={user}>
-      <BackgroundListenProvider>
+      <PassiveTalkListenProvider user={user}>
       <DailyCodeGate user={user} onUserUpdate={checkUserAuth}>
       <RedAlertBanner channelName={alertChannel} onDismiss={dismissAlert} />
       <UserMenu />
@@ -75,7 +75,7 @@ export default function AppLayout() {
         </div>
       </nav>
       </DailyCodeGate>
-      </BackgroundListenProvider>
+      </PassiveTalkListenProvider>
       </PassiveMonitorProvider>
       </BluetoothPTTProvider>
     </div>

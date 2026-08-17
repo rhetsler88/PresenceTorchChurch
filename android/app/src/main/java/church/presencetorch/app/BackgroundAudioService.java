@@ -9,7 +9,9 @@ import android.content.Context;
 import android.content.Intent;
 import android.media.AudioAttributes;
 import android.media.AudioFocusRequest;
+import android.media.AudioFormat;
 import android.media.AudioManager;
+import android.media.AudioTrack;
 import android.os.Build;
 import android.os.IBinder;
 import android.os.PowerManager;
@@ -23,14 +25,25 @@ public class BackgroundAudioService extends Service {
     public static final String ACTION_START = "church.presencetorch.app.action.START_BACKGROUND_AUDIO";
     public static final String ACTION_STOP = "church.presencetorch.app.action.STOP_BACKGROUND_AUDIO";
     public static final String EXTRA_TITLE = "title";
+    public static final String EXTRA_SILENT = "silent";
 
     private static final int NOTIFICATION_ID = 41001;
     private static final String CHANNEL_ID = "presence_torch_background_listen";
+    private static final String CHANNEL_ID_SILENT = "presence_torch_background_listen_silent";
+    private static final int SAMPLE_RATE = 44100;
+
+    private static volatile boolean sessionActive = false;
 
     private AudioManager audioManager;
     private AudioFocusRequest audioFocusRequest;
     private AudioManager.OnAudioFocusChangeListener audioFocusListener;
     private PowerManager.WakeLock wakeLock;
+    private AudioTrack silentTrack;
+    private boolean silentNotification = false;
+
+    public static boolean isSessionActive() {
+        return sessionActive;
+    }
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
@@ -46,6 +59,7 @@ public class BackgroundAudioService extends Service {
         }
 
         String title = intent.getStringExtra(EXTRA_TITLE);
+        silentNotification = intent.getBooleanExtra(EXTRA_SILENT, false);
         if (title == null || title.isEmpty()) {
             title = getString(R.string.background_audio_default_title);
         }
@@ -58,14 +72,26 @@ public class BackgroundAudioService extends Service {
         createNotificationChannel();
         acquireWakeLock();
         requestAudioFocus();
+        startSilentLoop();
 
         Notification notification = buildNotification(title);
-        startForeground(NOTIFICATION_ID, notification);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            startForeground(
+                NOTIFICATION_ID,
+                notification,
+                android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK
+            );
+        } else {
+            startForeground(NOTIFICATION_ID, notification);
+        }
+        sessionActive = true;
     }
 
     private void stopForegroundSession() {
+        stopSilentLoop();
         abandonAudioFocus();
         releaseWakeLock();
+        sessionActive = false;
         stopForeground(STOP_FOREGROUND_REMOVE);
         stopSelf();
     }
@@ -80,15 +106,29 @@ public class BackgroundAudioService extends Service {
             PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE
         );
 
-        return new NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle(title)
-            .setContentText(getString(R.string.background_audio_notification_text))
+        String channelId = silentNotification ? CHANNEL_ID_SILENT : CHANNEL_ID;
+        NotificationCompat.Builder builder = new NotificationCompat.Builder(this, channelId)
             .setSmallIcon(R.mipmap.ic_launcher)
             .setOngoing(true)
             .setOnlyAlertOnce(true)
             .setContentIntent(pendingIntent)
-            .setCategory(NotificationCompat.CATEGORY_SERVICE)
-            .build();
+            .setCategory(NotificationCompat.CATEGORY_SERVICE);
+
+        if (silentNotification) {
+            builder
+                .setContentTitle("")
+                .setContentText("")
+                .setPriority(NotificationCompat.PRIORITY_MIN)
+                .setSilent(true)
+                .setShowWhen(false)
+                .setVisibility(NotificationCompat.VISIBILITY_SECRET);
+        } else {
+            builder
+                .setContentTitle(title)
+                .setContentText(getString(R.string.background_audio_notification_text));
+        }
+
+        return builder.build();
     }
 
     private void createNotificationChannel() {
@@ -102,11 +142,17 @@ public class BackgroundAudioService extends Service {
         }
 
         NotificationChannel channel = new NotificationChannel(
-            CHANNEL_ID,
+            silentNotification ? CHANNEL_ID_SILENT : CHANNEL_ID,
             getString(R.string.background_audio_channel_name),
-            NotificationManager.IMPORTANCE_LOW
+            silentNotification ? NotificationManager.IMPORTANCE_MIN : NotificationManager.IMPORTANCE_LOW
         );
         channel.setDescription(getString(R.string.background_audio_channel_description));
+        channel.setShowBadge(false);
+        if (silentNotification) {
+            channel.setSound(null, null);
+            channel.enableVibration(false);
+            channel.enableLights(false);
+        }
         manager.createNotificationChannel(channel);
     }
 
@@ -155,6 +201,64 @@ public class BackgroundAudioService extends Service {
         }
     }
 
+    /**
+     * Silent loop keeps the audio pipeline active while the screen is off (mirrors iOS plugin).
+     */
+    private void startSilentLoop() {
+        stopSilentLoop();
+
+        int minBufferSize = AudioTrack.getMinBufferSize(
+            SAMPLE_RATE,
+            AudioFormat.CHANNEL_OUT_MONO,
+            AudioFormat.ENCODING_PCM_16BIT
+        );
+        if (minBufferSize <= 0) {
+            return;
+        }
+
+        AudioAttributes attrs = new AudioAttributes.Builder()
+            .setUsage(AudioAttributes.USAGE_MEDIA)
+            .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+            .build();
+        AudioFormat format = new AudioFormat.Builder()
+            .setSampleRate(SAMPLE_RATE)
+            .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
+            .setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
+            .build();
+
+        try {
+            silentTrack = new AudioTrack.Builder()
+                .setAudioAttributes(attrs)
+                .setAudioFormat(format)
+                .setTransferMode(AudioTrack.MODE_STATIC)
+                .setBufferSizeInBytes(minBufferSize)
+                .build();
+
+            byte[] silence = new byte[minBufferSize];
+            silentTrack.write(silence, 0, silence.length);
+            silentTrack.setLoopPoints(0, minBufferSize / 2, -1);
+            silentTrack.setVolume(0.001f);
+            silentTrack.play();
+        } catch (Exception ignored) {
+            stopSilentLoop();
+        }
+    }
+
+    private void stopSilentLoop() {
+        if (silentTrack == null) {
+            return;
+        }
+        try {
+            if (silentTrack.getPlayState() == AudioTrack.PLAYSTATE_PLAYING) {
+                silentTrack.stop();
+            }
+            silentTrack.release();
+        } catch (Exception ignored) {
+            /* ignore */
+        }
+        silentTrack = null;
+    }
+
     private void acquireWakeLock() {
         if (wakeLock != null && wakeLock.isHeld()) {
             return;
@@ -181,8 +285,10 @@ public class BackgroundAudioService extends Service {
 
     @Override
     public void onDestroy() {
+        stopSilentLoop();
         abandonAudioFocus();
         releaseWakeLock();
+        sessionActive = false;
         super.onDestroy();
     }
 

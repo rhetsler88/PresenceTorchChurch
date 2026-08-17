@@ -13,16 +13,16 @@ export function isBackgroundAudioAvailable() {
  * Start a native background-audio session for Storage-relay listening.
  * Reference-counted so Talk ↔ Monitor tab switches do not flicker the session.
  */
-export async function startBackgroundAudio({ title = "Presence Torch" } = {}) {
+export async function startBackgroundAudio({ title = "Presence Torch", silent = false } = {}) {
   if (!isBackgroundAudioAvailable()) return;
 
   sessionRefCount += 1;
   activeTitle = title;
 
   if (sessionRefCount === 1) {
-    await BackgroundAudio.startSession({ title });
-  } else if (title !== activeTitle) {
-    await BackgroundAudio.startSession({ title });
+    await BackgroundAudio.startSession({ title, silent });
+  } else if (title !== activeTitle || silent) {
+    await BackgroundAudio.startSession({ title, silent });
     activeTitle = title;
   }
 }

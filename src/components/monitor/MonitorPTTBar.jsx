@@ -57,6 +57,20 @@ export default function MonitorPTTBar(props) {
     onStop?.();
   }, [isPressed, onStop]);
 
+  // Mic permission dialogs and mobile WebViews often swallow touchend on the button itself.
+  useEffect(() => {
+    if (!isPressed) return;
+
+    const handleGlobalRelease = () => onStop?.();
+
+    window.addEventListener("pointerup", handleGlobalRelease);
+    window.addEventListener("pointercancel", handleGlobalRelease);
+    return () => {
+      window.removeEventListener("pointerup", handleGlobalRelease);
+      window.removeEventListener("pointercancel", handleGlobalRelease);
+    };
+  }, [isPressed, onStop]);
+
   const toggleChannel = useCallback((channelId, checked) => {
     if (checked) {
       onSelectedChannelIdsChange([...new Set([...selectedChannelIds, channelId])]);

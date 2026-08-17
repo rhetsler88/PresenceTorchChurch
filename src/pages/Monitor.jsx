@@ -4,7 +4,7 @@ import { api } from "@/api/client";
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from "@tanstack/react-query";
 import { motion, AnimatePresence } from "framer-motion";
 import { DragDropContext, Droppable, Draggable } from "@hello-pangea/dnd";
-import { Radio, Volume2, Eye, Play, Pause, WifiOff } from "lucide-react";
+import { Radio, Volume2, VolumeX, Eye, Play, Pause, WifiOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { etzTime } from "@/lib/etz";
 import { deviceDayKey, deviceDayLabel } from "@/lib/deviceDate";
@@ -15,10 +15,7 @@ import { auth } from "@/lib/firebase";
 import { cleanupStalePTTSignals, claimPttChannels, releasePttSignals } from "@/lib/pttSignals";
 import { playAudioUrl, stopAudio } from "@/lib/audioPlayer";
 import usePttBroadcast from "../hooks/usePttBroadcast";
-import usePttReceiver from "../hooks/usePttReceiver";
-import useBackgroundRelayListen from "../hooks/useBackgroundRelayListen";
-import useAgoraMultiListen from "../hooks/useAgoraMultiListen";
-import { isAgoraEnabled } from "@/lib/agora";
+import { usePassiveMonitor } from "../components/monitor/PassiveMonitorProvider";
 import MonitorPTTBar from "../components/monitor/MonitorPTTBar";
 import useExternalPTT from "../hooks/useExternalPTT";
 import ProtectionLevelControl from "../components/monitor/ProtectionLevelControl";
@@ -48,7 +45,17 @@ function readStoredBroadcastSelection() {
   }
 }
 
-function ChannelMonitorCard({ channel, messages, onPlayMessage, playingId, onSetProtectionLevel, onOpenChannel, userMap }) {
+function ChannelMonitorCard({
+  channel,
+  messages,
+  onPlayMessage,
+  playingId,
+  onSetProtectionLevel,
+  onOpenChannel,
+  userMap,
+  isMuted,
+  onToggleMute,
+}) {
   const lastMsg = messages[0];
   const hasActivity = messages.length > 0;
 
@@ -73,8 +80,26 @@ function ChannelMonitorCard({ channel, messages, onPlayMessage, playingId, onSet
         </div>
         <div className="flex-1 min-w-0">
           <p className="text-sm font-semibold text-foreground truncate">{channel.name}</p>
-          <p className="text-[10px] text-muted-foreground">{messages.length} messages</p>
+          <p className="text-[10px] text-muted-foreground">
+            {isMuted ? "Muted" : "Listening"} · {messages.length} messages
+          </p>
         </div>
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            onToggleMute?.(channel.id);
+          }}
+          onPointerDown={(e) => e.stopPropagation()}
+          className={`p-2 rounded-lg border transition-colors flex-shrink-0 ${
+            isMuted
+              ? "border-border text-muted-foreground hover:text-foreground"
+              : "border-primary/30 text-primary hover:bg-primary/10"
+          }`}
+          aria-label={isMuted ? `Unmute ${channel.name}` : `Mute ${channel.name}`}
+        >
+          {isMuted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
+        </button>
         {playingId && messages.some(m => m.id === playingId) && (
           <motion.div
             animate={{ opacity: [1, 0.3, 1] }}
@@ -164,6 +189,15 @@ function ChannelMonitorCard({ channel, messages, onPlayMessage, playingId, onSet
 
 export default function Monitor() {
   const navigate = useNavigate();
+  const passiveMonitor = usePassiveMonitor();
+  const {
+    heardBroadcastsRef: passiveHeardRef,
+    relayHeardRef,
+    agoraHeardRef,
+    isLiveReceiving,
+    isMuted,
+    toggleMute,
+  } = passiveMonitor || {};
   const [playingId, setPlayingId] = useState(null);
   const [playingChannel, setPlayingChannel] = useState(null);
   const [activityLog, setActivityLog] = useState([]);
@@ -342,13 +376,6 @@ export default function Monitor() {
     navigate(`/?channel=${channelId}`);
   }, [navigate]);
 
-  const monitorRelayChannelIds = useMemo(
-    () => monitorChannels.map((c) => c.id).filter(Boolean),
-    [monitorChannels]
-  );
-
-  const agoraEnabled = isAgoraEnabled();
-
   const {
     startRecording,
     stopRecording,
@@ -362,27 +389,7 @@ export default function Monitor() {
     receiveEnabled: false,
   });
 
-  const { isReceiving: agoraMultiReceiving } = useAgoraMultiListen({
-    userId: user?.id,
-    channelIds: agoraEnabled ? monitorRelayChannelIds : [],
-    onRemoteTalkStart: (_channelId, _uid) => {},
-  });
-
-  const { isReceiving: multiLiveReceiving, heardBroadcastsRef: multiHeardRef } = usePttReceiver({
-    channelIds: monitorRelayChannelIds,
-    userId: user?.id,
-  });
-
-  useBackgroundRelayListen({
-    enabled: Boolean(user?.id && monitorRelayChannelIds.length > 0),
-    title: "Monitor",
-  });
-
-  const isLiveReceiving = agoraEnabled
-    ? (agoraMultiReceiving || multiLiveReceiving)
-    : multiLiveReceiving;
-
-  // Per-channel PTT subscriptions — collection-wide queries fail Firestore rules for partial access
+  // Per-channel PTT subscriptions for transmit busy state (passive listen runs app-wide).
   useEffect(() => {
     if (!user?.id || monitorChannelIds.length === 0) return;
 
@@ -395,7 +402,6 @@ export default function Monitor() {
           if (event.data?.broadcast_id) {
             heardBroadcastsRef.current.add(event.data.broadcast_id);
           }
-          playClearTone();
           setBusyChannelIds((prev) => new Set(prev).add(channelId));
           setIsChannelBusy(true);
           const prevTimeout = channelBusyTimeoutRef.current.get(channelId);
@@ -509,7 +515,9 @@ export default function Monitor() {
       if (event.data?.broadcast_id && (
         heardBroadcastsRef.current.has(event.data.broadcast_id)
         || pttHeardRef.current.has(event.data.broadcast_id)
-        || multiHeardRef.current.has(event.data.broadcast_id)
+        || passiveHeardRef?.current?.has(event.data.broadcast_id)
+        || relayHeardRef?.current?.has(event.data.broadcast_id)
+        || agoraHeardRef?.current?.has(event.data.broadcast_id)
       )) {
         return;
       }
@@ -540,7 +548,7 @@ export default function Monitor() {
       monitorChannelIds.map((channelId) => ({ channel_id: channelId }))
     );
     return unsub;
-  }, [monitorChannelIds, monitorChannels, user, queryClient, heardBroadcastsRef, pttHeardRef, multiHeardRef]);
+  }, [monitorChannelIds, monitorChannels, user, queryClient, heardBroadcastsRef, pttHeardRef, passiveHeardRef, relayHeardRef, agoraHeardRef]);
 
   const handlePlayMessage = (msg) => {
     if (!msg.audio_url) return;
@@ -711,7 +719,7 @@ export default function Monitor() {
 
   const handlePTTStart = useCallback(async () => {
     if (isPTTPressed || !user?.id || pttStartInFlightRef.current || pttRecordingActiveRef.current) return;
-    if (isLiveReceiving || isTargetChannelBusy || isPlayingRef.current) {
+    if (isTargetChannelBusy || isPlayingRef.current) {
       playBusyTone();
       return;
     }
@@ -849,7 +857,6 @@ export default function Monitor() {
     }
   }, [
     isPTTPressed,
-    isLiveReceiving,
     isTargetChannelBusy,
     startRecording,
     stopRecording,
@@ -887,7 +894,9 @@ export default function Monitor() {
               <Eye className="w-5 h-5 text-primary" />
               <h1 className="text-lg font-bold text-foreground sm:text-xl">Channel Monitor</h1>
             </div>
-            <p className="text-xs text-muted-foreground mt-0.5">Listening across all channels</p>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Tap the speaker icon to mute channels you do not want to hear
+            </p>
           </div>
           <div className="flex items-center gap-2 flex-wrap">
             <SetAllProtectionLevel onApply={handleSetAllProtectionLevel} />
@@ -949,6 +958,8 @@ export default function Monitor() {
                             onSetProtectionLevel={handleSetProtectionLevel}
                             onOpenChannel={handleOpenChannelInTalk}
                             userMap={userMap}
+                            isMuted={isMuted?.(channel.id)}
+                            onToggleMute={toggleMute}
                           />
                         </div>
                       )}

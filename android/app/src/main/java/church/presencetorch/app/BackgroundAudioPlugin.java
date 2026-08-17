@@ -14,10 +14,12 @@ public class BackgroundAudioPlugin extends Plugin {
     @PluginMethod
     public void startSession(PluginCall call) {
         String title = call.getString("title", "Presence Torch");
+        boolean silent = call.getBoolean("silent", false);
 
         Intent intent = new Intent(getContext(), BackgroundAudioService.class);
         intent.setAction(BackgroundAudioService.ACTION_START);
         intent.putExtra(BackgroundAudioService.EXTRA_TITLE, title);
+        intent.putExtra(BackgroundAudioService.EXTRA_SILENT, silent);
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             ContextCompat.startForegroundService(getContext(), intent);

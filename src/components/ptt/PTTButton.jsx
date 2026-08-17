@@ -11,6 +11,28 @@ export default function PTTButton({ isPressed, isConnected, isReceiving, isChann
 
   const showPressed = isHeld || isPressed;
 
+  // Parent clears isPTTPressed on release even when pointer events are lost (e.g. mic permission dialog).
+  useEffect(() => {
+    if (!isPressed) setIsHeld(false);
+  }, [isPressed]);
+
+  // Catch release anywhere on screen — permission dialogs and WebViews often swallow button pointerup.
+  useEffect(() => {
+    if (!showPressed) return;
+
+    const handleGlobalRelease = () => {
+      setIsHeld(false);
+      onStop?.();
+    };
+
+    window.addEventListener("pointerup", handleGlobalRelease);
+    window.addEventListener("pointercancel", handleGlobalRelease);
+    return () => {
+      window.removeEventListener("pointerup", handleGlobalRelease);
+      window.removeEventListener("pointercancel", handleGlobalRelease);
+    };
+  }, [showPressed, onStop]);
+
   useEffect(() => {
     if (showPressed) {
       setDuration(0);
@@ -41,8 +63,6 @@ export default function PTTButton({ isPressed, isConnected, isReceiving, isChann
   }, [isHeld, onStop]);
 
   const handlePointerCancel = useCallback((e) => {
-    // Ignore cancel while pointer capture is held (browser quirk during async mic start)
-    if (buttonRef.current?.hasPointerCapture?.(e.pointerId)) return;
     handlePointerUp(e);
   }, [handlePointerUp]);
 

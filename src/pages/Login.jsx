@@ -7,18 +7,13 @@ export default function Login() {
   return (
     <div className="min-h-screen flex flex-col items-center justify-center bg-background dark p-6">
       <div className="w-full max-w-sm">
-        <div className="flex flex-col items-center mb-8">
+        <div className="flex flex-col items-center mb-6">
           <img
             src="/logo-full.png"
             alt="Presence Torch Church"
-            className="w-full max-w-[220px] h-auto object-contain mb-4"
+            className="w-full max-w-[220px] h-auto object-contain"
             draggable={false}
           />
-          <h1 className="text-2xl font-bold text-foreground">Presence Torch Church</h1>
-          <p className="text-sm text-muted-foreground text-center mt-2 max-w-sm">
-            Push-to-talk communication designed for church safety teams. Coordinate channels,
-            monitor transmissions, and manage organization-wide protection levels.
-          </p>
         </div>
 
         <div className="bg-card border border-border rounded-2xl p-6">

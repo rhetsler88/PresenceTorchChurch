@@ -43,6 +43,21 @@ export function getSessionRemainingMs() {
   return SESSION_MAX_MS - (Date.now() - loginTime);
 }
 
+/** Set before native Google sign-in so auth init does not time out during account picker. */
+const NATIVE_GOOGLE_SIGNIN_KEY = "presence_native_google_signin";
+
+export function markNativeGoogleSignInPending() {
+  sessionStorage.setItem(NATIVE_GOOGLE_SIGNIN_KEY, "1");
+}
+
+export function clearNativeGoogleSignInPending() {
+  sessionStorage.removeItem(NATIVE_GOOGLE_SIGNIN_KEY);
+}
+
+export function isNativeGoogleSignInPending() {
+  return sessionStorage.getItem(NATIVE_GOOGLE_SIGNIN_KEY) === "1";
+}
+
 /** Set before signInWithRedirect navigates away so pagehide does not force sign-out. */
 export function markOAuthRedirectPending() {
   sessionStorage.setItem(OAUTH_REDIRECT_KEY, "1");

@@ -15,6 +15,7 @@ import {
   clearLoginTime,
   getLoginTime,
   SESSION_MAX_MS,
+  isNativeGoogleSignInPending,
 } from "@/lib/logoutOnClose";
 import { formatAuthError } from "@/api/client";
 import { syncUserChannelMembership } from "@/lib/channelMembership";
@@ -471,6 +472,7 @@ export const AuthProvider = ({ children }) => {
 
     const timeoutId = window.setTimeout(() => {
       if (cancelled || authInitSettled || authHandling || listenerHasFired) return;
+      if (isNativeGoogleSignInPending()) return;
       console.warn("[Auth] Initialization timed out; showing sign-in.");
       finishSignedOut();
     }, 12000);

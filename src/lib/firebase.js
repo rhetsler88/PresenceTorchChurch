@@ -2,7 +2,7 @@ import { initializeApp, getApp, getApps } from "firebase/app";
 import {
   getAuth,
   initializeAuth,
-  browserLocalPersistence,
+  indexedDBLocalPersistence,
 } from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
 import { getStorage } from "firebase/storage";
@@ -24,8 +24,9 @@ export const app = getApps().length ? getApp() : initializeApp(firebaseConfig);
 function createAuth() {
   if (Capacitor.isNativePlatform()) {
     try {
+      // Required for Firebase JS SDK + Firestore in Capacitor WebView (see @capacitor-firebase/authentication docs).
       return initializeAuth(app, {
-        persistence: browserLocalPersistence,
+        persistence: indexedDBLocalPersistence,
       });
     } catch {
       return getAuth(app);

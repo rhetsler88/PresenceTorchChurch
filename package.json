@@ -13,6 +13,8 @@
     "pwa:icons": "node scripts/generate-pwa-icons.mjs",
     "setup:vapid": "node scripts/setup-firebase-vapid.mjs",
     "seed": "node scripts/seed-firestore.mjs",
+    "create:play-reviewer": "node scripts/create-play-reviewer.mjs",
+    "capture:screenshots": "node scripts/capture-screenshots.mjs",
     "channels:list": "node scripts/list-channels.mjs",
     "channels:delete-excess": "node scripts/delete-channel.mjs --excess",
     "dev:admin": "npm run dev --prefix admin",
@@ -26,6 +28,9 @@
     "deploy:admin-delete-user": "npx firebase-tools deploy --only functions:adminDeleteUser --project presence-torch-church",
     "deploy:rules": "npx firebase-tools deploy --only firestore:rules,storage --project presence-torch-church",
     "cap:sync": "npm run build && npx cap sync",
+    "cap:sync:android": "node scripts/sync-recaptcha-env.mjs && npm run cap:sync",
+    "cap:icons": "node scripts/generate-capacitor-assets.mjs",
+    "cap:sha1": "node scripts/print-android-sha1.mjs",
     "cap:open:android": "npx cap open android",
     "cap:open:ios": "npx cap open ios"
   },
@@ -108,6 +113,7 @@
     "zod": "^3.24.2"
   },
   "devDependencies": {
+    "@capacitor/assets": "^3.0.5",
     "@capacitor/cli": "^8.4.2",
     "@eslint/js": "^9.19.0",
     "@types/node": "^22.13.5",

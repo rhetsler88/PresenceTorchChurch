@@ -22,6 +22,7 @@ import Onboarding from './pages/Onboarding';
 import Login from './pages/Login';
 import PrivacyPolicy from './pages/PrivacyPolicy';
 import TermsOfService from './pages/TermsOfService';
+import AppLoadingScreen from '@/components/ui/AppLoadingScreen';
 
 function AppRoutes() {
   return (
@@ -40,14 +41,7 @@ const AuthenticatedApp = () => {
     const loadingMessage =
       auth.currentUser ? "Loading your account..." : "Connecting...";
 
-    return (
-      <div className="fixed inset-0 flex items-center justify-center bg-background dark">
-        <div className="flex flex-col items-center gap-3">
-          <div className="w-8 h-8 border-4 border-primary/20 border-t-primary rounded-full animate-spin" />
-          <span className="text-sm text-muted-foreground font-medium">{loadingMessage}</span>
-        </div>
-      </div>
-    );
+    return <AppLoadingScreen message={loadingMessage} />;
   }
 
   if (authError) {

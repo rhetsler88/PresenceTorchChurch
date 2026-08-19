@@ -14,6 +14,38 @@
       },
       "oauth_client": [
         {
+          "client_id": "956501692008-3pof0jnv30fll59ou694rc2mn77qeabd.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "church.presencetorch.app",
+            "certificate_hash": "778f064c45e731c26bf99435ee237886116525b0"
+          }
+        },
+        {
+          "client_id": "956501692008-cecus87sfogtnef73hk5rsov1jd78iak.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "church.presencetorch.app",
+            "certificate_hash": "31ab5ef98ed3a29f958ecd8358be333bd4b39cda"
+          }
+        },
+        {
+          "client_id": "956501692008-fh42708a3a3papt7qc8r17qin01odqt1.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "church.presencetorch.app",
+            "certificate_hash": "befdf176b17499be68707c19a5a8c248f19d5d62"
+          }
+        },
+        {
+          "client_id": "956501692008-i60ith7d8ok0qarf7ppi1i9svcp8f868.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "church.presencetorch.app",
+            "certificate_hash": "6e86789b16c0c4c4b63933af02c524b44b15d8d4"
+          }
+        },
+        {
           "client_id": "956501692008-lj14r06gtrg12034uoo362k4qhmfen99.apps.googleusercontent.com",
           "client_type": 3
         }
@@ -29,6 +61,13 @@
             {
               "client_id": "956501692008-lj14r06gtrg12034uoo362k4qhmfen99.apps.googleusercontent.com",
               "client_type": 3
+            },
+            {
+              "client_id": "956501692008-v842mpcnv1r10gs8nj3r4j3h1lnmngop.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "church.presencetorch.app"
+              }
             }
           ]
         }

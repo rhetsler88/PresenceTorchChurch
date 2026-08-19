@@ -34,7 +34,8 @@ import { uploadPublicAudio, uploadPrivateAudio } from "@/api/storage";
 import { getDownloadURL, ref } from "firebase/storage";
 import seedData from "../../scripts/seed-data.json";
 import { isDefaultSetupComplete } from "@/lib/defaultSeed";
-import { markOAuthRedirectPending, recordLoginTime, clearLoginTime } from "@/lib/logoutOnClose";
+import { markOAuthRedirectPending, recordLoginTime, clearLoginTime, markNativeGoogleSignInPending, clearNativeGoogleSignInPending } from "@/lib/logoutOnClose";
+import { verifyFirebaseConnection } from "@/lib/firebaseConnection";
 import { addUserChannelMembership } from "@/lib/channelMembership";
 import { clearDailyCodeSession } from "@/lib/dailyCode";
 import { clearBiometricCredentials } from "@/lib/biometricAuth";
@@ -135,6 +136,15 @@ export function formatAuthError(err) {
       return "Please complete the \"I'm not a robot\" check.";
     case "auth/recaptcha-failed":
       return "reCAPTCHA verification failed. Please try again.";
+    case "auth/account-exists-with-different-credential":
+      return "This email is already registered with a different sign-in method.";
+    case "auth/credential-already-in-use":
+      return "This Google account is already linked to another user.";
+    case "firestore/unavailable":
+    case "firestore/unknown":
+      return err?.message || "Could not reach Firebase. Check your connection and try again.";
+    case "firestore/permission-denied":
+      return err?.message || "Your account is not registered for this app yet.";
     default:
       return err?.message || "Something went wrong. Please try again.";
   }
@@ -520,6 +530,15 @@ export function getAuthErrorMessage(err) {
       return "Please complete the \"I'm not a robot\" check.";
     case "auth/recaptcha-failed":
       return "reCAPTCHA verification failed. Please try again.";
+    case "auth/account-exists-with-different-credential":
+      return "This email is already registered with a different sign-in method.";
+    case "auth/credential-already-in-use":
+      return "This Google account is already linked to another user.";
+    case "firestore/unavailable":
+    case "firestore/unknown":
+      return err?.message || "Could not reach Firebase. Check your connection and try again.";
+    case "firestore/permission-denied":
+      return err?.message || "Your account is not registered for this app yet.";
     default:
       return err?.message || "Sign-in failed. Please try again.";
   }
@@ -570,17 +589,31 @@ export const authApi = {
     await verifyRecaptchaToken(captchaToken);
 
     if (Capacitor.isNativePlatform()) {
-      const result = await FirebaseAuthentication.signInWithGoogle();
-      const idToken = result.credential?.idToken;
-      if (!idToken) {
-        throw Object.assign(new Error("Google sign-in was cancelled."), { code: "auth/popup-closed-by-user" });
+      markNativeGoogleSignInPending();
+      try {
+        const result = await FirebaseAuthentication.signInWithGoogle();
+        const idToken = result.credential?.idToken;
+        if (!idToken) {
+          throw Object.assign(new Error("Google sign-in was cancelled."), { code: "auth/popup-closed-by-user" });
+        }
+        const credential = GoogleAuthProvider.credential(
+          idToken,
+          result.credential?.accessToken ?? undefined,
+        );
+        await signInWithCredential(auth, credential);
+        await auth.authStateReady();
+        const firebaseUser = auth.currentUser;
+        if (!firebaseUser) {
+          throw Object.assign(new Error("Google sign-in did not persist. Please try again."), {
+            code: "auth/not-authenticated",
+          });
+        }
+        await firebaseUser.getIdToken(true);
+        await verifyFirebaseConnection();
+        recordLoginTime();
+      } finally {
+        clearNativeGoogleSignInPending();
       }
-      const credential = GoogleAuthProvider.credential(
-        idToken,
-        result.credential?.accessToken ?? undefined,
-      );
-      await signInWithCredential(auth, credential);
-      recordLoginTime();
       return;
     }
 

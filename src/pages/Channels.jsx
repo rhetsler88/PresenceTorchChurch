@@ -140,9 +140,9 @@ export default function Channels() {
   };
 
   return (
-    <div className="min-h-screen safe-top">
-      <div className="px-4 pt-4 pb-3 sm:px-5 sm:pt-6">
-        <div className={`flex items-center justify-between mb-3 max-sm:pr-12 ${showCreateButton ? "sm:pr-48" : ""}`}>
+    <div className="w-full max-w-full overflow-x-hidden">
+      <div className="px-4 pt-4 pb-3 sm:px-5 sm:pt-6 max-sm:pr-12 sm:pr-48">
+        <div className="flex items-center justify-between mb-3">
           <div>
             <h1 className="text-xl font-bold text-foreground">Channels</h1>
             <p className="text-xs text-muted-foreground mt-0.5">{channels.length} channels</p>
@@ -161,14 +161,14 @@ export default function Channels() {
             <p className="text-xs text-muted-foreground mb-4">
               Tap a channel to request full PTT access.
             </p>
-            <div className="flex justify-center mb-5">
+            <div className="mb-5">
               <SetAllProtectionLevel onApply={(level) => setAllProtectionMutation.mutateAsync(level)} />
             </div>
           </>
         )}
       </div>
 
-      <div className="px-3 pb-24">
+      <div className="px-4 pb-24">
         {isLoading ? (
           <div className="flex justify-center py-16">
             <div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin" />

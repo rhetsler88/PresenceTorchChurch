@@ -64,8 +64,8 @@ export default function PendingRequests({ channels, users = [], onApprove, onRej
   }
 
   return (
-    <div className="px-3 mb-4">
-      <p className="text-[10px] font-bold text-amber-500 uppercase tracking-widest px-4 mb-2">
+    <div className="px-4 mb-4">
+      <p className="text-[10px] font-bold text-amber-500 uppercase tracking-widest px-1 mb-2">
         Pending Channel Requests ({pendingRows.length})
       </p>
       {pendingRows.map(({ channel, memberId }) => (

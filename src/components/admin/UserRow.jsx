@@ -48,12 +48,12 @@ export default function UserRow({
     : Object.entries(ROLE_CONFIG);
 
   return (
-    <div className="px-4 py-3 hover:bg-muted/30 rounded-xl transition-colors">
-      <div className="flex items-center gap-3">
-        <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
+    <div className="px-4 py-3 hover:bg-muted/30 rounded-xl transition-colors overflow-hidden">
+      <div className="flex items-center gap-3 flex-wrap">
+        <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
           <span className="text-sm font-bold text-primary">{initials}</span>
         </div>
-        <div className="flex-1 min-w-0">
+        <div className="flex-1 min-w-0 basis-[calc(100%-3.25rem)] sm:basis-auto">
           <p className="text-sm font-semibold text-foreground truncate">
             {[user.first_name, user.last_name].filter(Boolean).join(" ") || user.full_name || "—"}
             {isCurrentUser && (
@@ -63,6 +63,7 @@ export default function UserRow({
           <p className="text-xs text-muted-foreground truncate capitalize">{user.role || "user"}</p>
         </div>
 
+        <div className="flex items-center gap-2 ml-auto shrink-0">
         {adminControls && showMonitorToggle && (
           <Button
             variant={user.is_monitor ? "default" : "outline"}
@@ -103,12 +104,12 @@ export default function UserRow({
             <Button
               variant="outline"
               size="sm"
-              className={`gap-1.5 text-xs h-8 ${cfg.color} border-border`}
+              className={`gap-1.5 text-xs h-8 max-w-[9rem] sm:max-w-none ${cfg.color} border-border`}
               disabled={isCurrentUser}
             >
-              <Icon className="w-3.5 h-3.5" />
-              {cfg.label}
-              <ChevronDown className="w-3 h-3 opacity-60" />
+              <Icon className="w-3.5 h-3.5 shrink-0" />
+              <span className="truncate">{cfg.label}</span>
+              <ChevronDown className="w-3 h-3 opacity-60 shrink-0" />
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
@@ -128,6 +129,7 @@ export default function UserRow({
           </DropdownMenuContent>
         </DropdownMenu>
         )}
+        </div>
       </div>
 
       {/* Lead/director channel assignment */}

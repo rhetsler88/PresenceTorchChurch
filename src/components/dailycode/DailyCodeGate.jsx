@@ -9,10 +9,11 @@ import {
   markDailyCodeSession,
   needsDailyCodeVerification,
 } from "@/lib/dailyCode";
-import { normalizeOrganization, bypassesDailyCode } from "@/lib/userUtils";
+import { normalizeOrganization, bypassesDailyCode, userHasDisplayName } from "@/lib/userUtils";
 import { getDailyVerse } from "@/lib/dailyVerse";
 import { useAuth } from "@/lib/AuthContext";
 import { useQuery } from "@tanstack/react-query";
+import EditProfileDialog from "@/components/profile/EditProfileDialog";
 import dailyCodeBanner from "@/assets/logo-daily-code.png";
 
 function DailyCodeBanner() {
@@ -77,6 +78,7 @@ function DailyCodeEntry({ onVerified, organization }) {
   const [code, setCode] = useState("");
   const [error, setError] = useState("");
   const [isVerifying, setIsVerifying] = useState(false);
+  const [isSwitchingAccount, setIsSwitchingAccount] = useState(false);
 
   const hasOrganization = Boolean(normalizeOrganization(organization));
 
@@ -178,11 +180,25 @@ function DailyCodeEntry({ onVerified, organization }) {
         </div>
 
         <button
-          onClick={() => logout(true)}
-          className="w-full flex items-center justify-center gap-2 py-3 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
+          type="button"
+          disabled={isSwitchingAccount}
+          onClick={() => {
+            setIsSwitchingAccount(true);
+            void logout(true);
+          }}
+          className="w-full flex items-center justify-center gap-2 py-3 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors disabled:opacity-60"
         >
-          <LogOut className="w-4 h-4" />
-          Switch Account
+          {isSwitchingAccount ? (
+            <>
+              <div className="w-4 h-4 border-2 border-primary/20 border-t-primary rounded-full animate-spin" />
+              Switching account...
+            </>
+          ) : (
+            <>
+              <LogOut className="w-4 h-4" />
+              Switch Account
+            </>
+          )}
         </button>
       </div>
     </div>
@@ -191,6 +207,7 @@ function DailyCodeEntry({ onVerified, organization }) {
 
 export default function DailyCodeGate({ user, onUserUpdate, children, showBanner = false }) {
   const [verified, setVerified] = useState(() => isDailyCodeVerified(user));
+  const [nameComplete, setNameComplete] = useState(() => userHasDisplayName(user));
 
   useEffect(() => {
     if (isDailyCodeVerified(user)) {
@@ -198,10 +215,30 @@ export default function DailyCodeGate({ user, onUserUpdate, children, showBanner
     }
   }, [user?.daily_code_verified_date, user?.id]);
 
+  useEffect(() => {
+    setNameComplete(userHasDisplayName(user));
+  }, [user?.first_name, user?.full_name, user?.id]);
+
   if (!user) {
+    return null;
+  }
+
+  const needsProfileName =
+    api.auth.hasPasswordProvider() && !userHasDisplayName(user);
+
+  if (needsProfileName && !nameComplete) {
     return (
-      <div className="flex-1 flex items-center justify-center min-h-screen">
-        <div className="w-8 h-8 border-4 border-primary/20 border-t-primary rounded-full animate-spin" />
+      <div className="flex-1 flex flex-col min-h-full bg-background">
+        <EditProfileDialog
+          open
+          required
+          nameOnly
+          onOpenChange={() => {}}
+          onCompleted={async () => {
+            await onUserUpdate?.({ silent: true });
+            setNameComplete(true);
+          }}
+        />
       </div>
     );
   }

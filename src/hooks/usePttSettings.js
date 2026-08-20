@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { getEarbudToggleMode, setEarbudToggleMode } from "@/lib/pttSettings";
+import { getEarbudToggleMode, setEarbudToggleMode as persistEarbudToggleMode } from "@/lib/pttSettings";
 
 export default function usePttSettings() {
   const [earbudToggleMode, setEarbudToggleModeState] = useState(() => getEarbudToggleMode());
@@ -15,7 +15,7 @@ export default function usePttSettings() {
   }, []);
 
   const setEarbudToggleMode = useCallback((enabled) => {
-    setEarbudToggleMode(enabled);
+    persistEarbudToggleMode(enabled);
     setEarbudToggleModeState(enabled);
   }, []);
 

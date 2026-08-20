@@ -17,6 +17,7 @@ import {
   saveBiometricCredentials,
   signInWithBiometric,
 } from "@/lib/biometricAuth";
+import { MIN_PASSWORD_LENGTH } from "@/lib/passwordPolicy";
 
 export default function AuthSignInPanel({ googleButtonLabel = "Sign in with Google" }) {
   const { navigateToLogin, signInWithEmail, signUpWithEmail } = useAuth();
@@ -118,6 +119,7 @@ export default function AuthSignInPanel({ googleButtonLabel = "Sign in with Goog
       if (isCaptchaError(err)) {
         resetCaptcha();
       }
+    } finally {
       setGoogleSigningIn(false);
     }
   };
@@ -211,14 +213,14 @@ export default function AuthSignInPanel({ googleButtonLabel = "Sign in with Goog
             id="auth-password"
             type="password"
             autoComplete={mode === "sign-in" ? "current-password" : "new-password"}
-            placeholder={mode === "sign-in" ? "Your password" : "At least 6 characters"}
+            placeholder={mode === "sign-in" ? "Your password" : `At least ${MIN_PASSWORD_LENGTH} characters`}
             value={password}
             onChange={(e) => {
               setPassword(e.target.value);
               if (error) setError(null);
             }}
             required
-            minLength={6}
+            minLength={mode === "sign-up" ? MIN_PASSWORD_LENGTH : undefined}
             disabled={busy}
           />
         </div>

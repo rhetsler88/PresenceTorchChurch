@@ -11,10 +11,11 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
-import { UserCog, Fingerprint } from "lucide-react";
-import { api } from "@/api/client";
+import { UserCog, Fingerprint, Lock } from "lucide-react";
+import { api, getAuthErrorMessage } from "@/api/client";
 import { useAuth } from "@/lib/AuthContext";
 import { toast } from "@/lib/toast";
+import { MIN_PASSWORD_LENGTH } from "@/lib/passwordPolicy";
 import {
   clearBiometricCredentials,
   getBiometricLabel,
@@ -23,7 +24,13 @@ import {
   isBiometricSignInEnabled,
 } from "@/lib/biometricAuth";
 
-export default function EditProfileDialog({ open, onOpenChange }) {
+export default function EditProfileDialog({
+  open,
+  onOpenChange,
+  required = false,
+  nameOnly = false,
+  onCompleted,
+}) {
   const { user, checkUserAuth } = useAuth();
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
@@ -31,9 +38,13 @@ export default function EditProfileDialog({ open, onOpenChange }) {
   const [biometricEnabled, setBiometricEnabled] = useState(false);
   const [biometricLabel, setBiometricLabel] = useState("Biometric");
   const [biometricSupported, setBiometricSupported] = useState(false);
+  const [canSetPassword, setCanSetPassword] = useState(false);
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [settingPassword, setSettingPassword] = useState(false);
 
   useEffect(() => {
-    if (!open || !isBiometricPlatform()) return;
+    if (!open || nameOnly || !isBiometricPlatform()) return;
     (async () => {
       const [enabled, supported, label] = await Promise.all([
         isBiometricSignInEnabled(),
@@ -44,7 +55,17 @@ export default function EditProfileDialog({ open, onOpenChange }) {
       setBiometricSupported(supported);
       setBiometricLabel(label);
     })();
-  }, [open]);
+  }, [open, nameOnly]);
+
+  useEffect(() => {
+    if (!open || nameOnly) {
+      setCanSetPassword(false);
+      setNewPassword("");
+      setConfirmPassword("");
+      return;
+    }
+    setCanSetPassword(api.auth.canSetPassword());
+  }, [open, nameOnly, user]);
 
   useEffect(() => {
     if (open && user) {
@@ -67,11 +88,38 @@ export default function EditProfileDialog({ open, onOpenChange }) {
       });
       await checkUserAuth();
       toast.success("Name updated");
+      onCompleted?.();
       onOpenChange(false);
     } catch (err) {
       toast.error("Couldn't update name");
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleSetPassword = async () => {
+    if (newPassword.length < MIN_PASSWORD_LENGTH) {
+      toast.error(`Password must be at least ${MIN_PASSWORD_LENGTH} characters`);
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      toast.error("Passwords do not match");
+      return;
+    }
+
+    setSettingPassword(true);
+    try {
+      await api.auth.linkPasswordForCurrentUser(newPassword);
+      setCanSetPassword(false);
+      setNewPassword("");
+      setConfirmPassword("");
+      toast.success("Password set", {
+        description: "You can now sign in with email and password, or enable biometric sign-in.",
+      });
+    } catch (err) {
+      toast.error(getAuthErrorMessage(err) || "Couldn't set password");
+    } finally {
+      setSettingPassword(false);
     }
   };
 
@@ -82,20 +130,46 @@ export default function EditProfileDialog({ open, onOpenChange }) {
       toast.success(`${biometricLabel} sign-in disabled`);
       return;
     }
+    if (canSetPassword) {
+      toast.message(`Set a password first to enable ${biometricLabel}`, {
+        description: "Biometric sign-in uses your email and password after the first email sign-in.",
+      });
+      return;
+    }
     toast.message(`Sign out and sign in with email to enable ${biometricLabel}`, {
       description: 'Check "Use biometrics for faster sign-in" on the sign-in screen.',
     });
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-sm" onOpenAutoFocus={(e) => e.preventDefault()}>
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        if (required && !next) return;
+        onOpenChange(next);
+      }}
+    >
+      <DialogContent
+        className="max-w-sm"
+        hideCloseButton={required}
+        onOpenAutoFocus={(e) => e.preventDefault()}
+        onPointerDownOutside={(e) => {
+          if (required) e.preventDefault();
+        }}
+        onEscapeKeyDown={(e) => {
+          if (required) e.preventDefault();
+        }}
+      >
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <UserCog className="w-5 h-5 text-primary" />
-            Edit Profile
+            {nameOnly ? "Add your name" : "Edit Profile"}
           </DialogTitle>
-          <DialogDescription>Update your display name.</DialogDescription>
+          <DialogDescription>
+            {nameOnly
+              ? "Enter your name so others can identify you on channels."
+              : "Update your display name and sign-in options."}
+          </DialogDescription>
         </DialogHeader>
         <form onSubmit={handleSave} className="space-y-4 mt-2">
           <div className="space-y-2">
@@ -117,7 +191,60 @@ export default function EditProfileDialog({ open, onOpenChange }) {
               placeholder="D or Doe"
             />
           </div>
-          {biometricSupported && (
+
+          {canSetPassword && !nameOnly && (
+            <div className="border-t border-border pt-4 space-y-3">
+              <div className="flex items-center gap-2">
+                <Lock className="w-4 h-4 text-primary" />
+                <Label>Set a password</Label>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                You signed in with Google. Add a password to sign in with email or enable {biometricLabel.toLowerCase()} sign-in.
+              </p>
+              <div className="space-y-2">
+                <Label htmlFor="editNewPassword">New password</Label>
+                <Input
+                  id="editNewPassword"
+                  type="password"
+                  autoComplete="new-password"
+                  placeholder={`At least ${MIN_PASSWORD_LENGTH} characters`}
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  minLength={MIN_PASSWORD_LENGTH}
+                  disabled={settingPassword}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="editConfirmPassword">Confirm password</Label>
+                <Input
+                  id="editConfirmPassword"
+                  type="password"
+                  autoComplete="new-password"
+                  placeholder="Re-enter your password"
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  minLength={MIN_PASSWORD_LENGTH}
+                  disabled={settingPassword}
+                />
+              </div>
+              <Button
+                type="button"
+                variant="secondary"
+                className="w-full"
+                disabled={
+                  settingPassword ||
+                  newPassword.length < MIN_PASSWORD_LENGTH ||
+                  confirmPassword.length < MIN_PASSWORD_LENGTH ||
+                  newPassword !== confirmPassword
+                }
+                onClick={handleSetPassword}
+              >
+                {settingPassword ? "Setting password..." : "Set password"}
+              </Button>
+            </div>
+          )}
+
+          {biometricSupported && !nameOnly && (
             <div className="border-t border-border pt-4 space-y-2">
               <div className="flex items-center justify-between gap-3">
                 <div className="flex items-center gap-2">
@@ -137,7 +264,7 @@ export default function EditProfileDialog({ open, onOpenChange }) {
           )}
           <DialogFooter>
             <Button type="submit" disabled={saving || !firstName.trim()} className="w-full">
-              {saving ? "Saving..." : "Save name"}
+              {saving ? "Saving..." : nameOnly ? "Continue" : "Save profile"}
             </Button>
           </DialogFooter>
         </form>

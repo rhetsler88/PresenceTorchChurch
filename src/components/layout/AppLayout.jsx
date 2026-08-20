@@ -9,6 +9,8 @@ import { BluetoothPTTProvider } from "@/components/ptt/BluetoothPTTContext";
 import { PassiveMonitorProvider } from "@/components/monitor/PassiveMonitorProvider";
 import { PassiveTalkListenProvider } from "@/components/ptt/PassiveTalkListenProvider";
 import RedAlertBanner from "@/components/ptt/RedAlertBanner";
+import PasswordRotationReminder from "@/components/auth/PasswordRotationReminder";
+import GooglePasswordSetupPrompt from "@/components/auth/GooglePasswordSetupPrompt";
 import useRedAlert from "@/hooks/useRedAlert";
 
 export default function AppLayout() {
@@ -41,9 +43,11 @@ export default function AppLayout() {
       <PassiveTalkListenProvider user={user}>
       <DailyCodeGate user={user} onUserUpdate={checkUserAuth}>
       <RedAlertBanner channelName={alertChannel} onDismiss={dismissAlert} />
+      <PasswordRotationReminder />
+      <GooglePasswordSetupPrompt />
       <UserMenu />
       <div
-        className="flex-1 overflow-auto [scrollbar-gutter:stable]"
+        className="flex-1 overflow-x-hidden overflow-y-auto [scrollbar-gutter:stable]"
         style={{ paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 5rem)" }}
       >
         <Outlet />

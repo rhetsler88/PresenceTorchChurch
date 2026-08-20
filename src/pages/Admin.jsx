@@ -237,8 +237,8 @@ export default function Admin() {
   // Lead-only view: approve membership only
   if (isLeadUser && !isAdmin && !isDirectorUser) {
     return (
-      <div className="min-h-screen safe-top">
-        <div className="px-4 pt-4 pb-4 sm:px-5 sm:pt-6">
+      <div className="w-full max-w-full overflow-x-hidden">
+        <div className="px-4 pt-4 pb-4 sm:px-5 sm:pt-6 max-sm:pr-12 sm:pr-48">
           <div className="flex items-center gap-2 mb-1">
             <Crown className="w-5 h-5 text-purple-400" />
             <h1 className="text-xl font-bold text-foreground">Channel Approvals</h1>
@@ -264,8 +264,8 @@ export default function Admin() {
     const channelMembers = filterUsersInManagedChannels(currentUser, orgUsers, orgChannels);
 
     return (
-      <div className="min-h-screen safe-top">
-        <div className="px-4 pt-4 pb-4 sm:px-5 sm:pt-6">
+      <div className="w-full max-w-full overflow-x-hidden">
+        <div className="px-4 pt-4 pb-4 sm:px-5 sm:pt-6 max-sm:pr-12 sm:pr-48">
           <div className="flex items-center gap-2 mb-1">
             <Shield className="w-5 h-5 text-purple-400" />
             <h1 className="text-xl font-bold text-foreground">Channel Management</h1>
@@ -282,14 +282,14 @@ export default function Admin() {
           onReject={(ch, memberId) => rejectMutation.mutate({ channel: ch, memberId })}
           showEmpty
         />
-        <div className="px-3 pb-24">
+        <div className="px-4 pb-24">
           {isLoading ? (
             <div className="flex justify-center py-16">
               <div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin" />
             </div>
           ) : channelMembers.length > 0 ? (
             <div className="space-y-1">
-              <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest px-4 mb-1">
+              <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest px-1 mb-1">
                 Channel Members ({channelMembers.length})
               </p>
               {channelMembers.map((u) => (
@@ -315,8 +315,8 @@ export default function Admin() {
 
   // Admin view: full user management
   return (
-    <div className="min-h-screen safe-top">
-      <div className="px-4 pt-4 pb-4 sm:px-5 sm:pt-6">
+    <div className="w-full max-w-full overflow-x-hidden">
+      <div className="px-4 pt-4 pb-4 sm:px-5 sm:pt-6 max-sm:pr-12 sm:pr-48">
         <div className="flex items-center gap-2 mb-1">
           <Shield className="w-5 h-5 text-primary" />
           <h1 className="text-xl font-bold text-foreground">User Management</h1>
@@ -328,10 +328,10 @@ export default function Admin() {
         {/* Role legend */}
         <div className="flex flex-wrap gap-2 mt-4">
           {Object.entries(ROLE_CONFIG).map(([role, { label, color, bg, icon: Icon }]) => (
-            <div key={role} className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg ${bg}`}>
-              <Icon className={`w-3.5 h-3.5 ${color}`} />
-              <span className={`text-xs font-semibold ${color}`}>{label}</span>
-              <span className="text-[10px] text-muted-foreground ml-0.5">
+            <div key={role} className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg max-w-full ${bg}`}>
+              <Icon className={`w-3.5 h-3.5 shrink-0 ${color}`} />
+              <span className={`text-xs font-semibold shrink-0 ${color}`}>{label}</span>
+              <span className="text-[10px] text-muted-foreground ml-0.5 hidden sm:inline">
                 {role === "admin" && "— Full control"}
                 {role === "director" && "— Channel lead + assign roles"}
                 {role === "lead" && "— Channel lead"}
@@ -358,7 +358,7 @@ export default function Admin() {
         onReject={(ch, memberId) => rejectMutation.mutate({ channel: ch, memberId })}
       />
 
-      <div className="px-3 pb-24">
+      <div className="px-4 pb-24">
         {isLoading ? (
           <div className="flex justify-center py-16">
             <div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin" />
@@ -368,7 +368,7 @@ export default function Admin() {
             {/* Directors */}
             {directors.length > 0 && (
               <div className="mb-3">
-                <p className="text-[10px] font-bold text-purple-400 uppercase tracking-widest px-4 mb-1">
+                <p className="text-[10px] font-bold text-purple-400 uppercase tracking-widest px-1 mb-1">
                   Directors ({directors.length})
                 </p>
                 {directors.map(u => (
@@ -379,7 +379,7 @@ export default function Admin() {
             {/* Leads */}
             {leads.length > 0 && (
               <div className="mb-3">
-                <p className="text-[10px] font-bold text-purple-400 uppercase tracking-widest px-4 mb-1">
+                <p className="text-[10px] font-bold text-purple-400 uppercase tracking-widest px-1 mb-1">
                   Leads ({leads.length})
                 </p>
                 {leads.map(u => (
@@ -390,7 +390,7 @@ export default function Admin() {
             {/* Monitors */}
             {monitors.length > 0 && (
               <div className="mb-3">
-                <p className="text-[10px] font-bold text-amber-400 uppercase tracking-widest px-4 mb-1">
+                <p className="text-[10px] font-bold text-amber-400 uppercase tracking-widest px-1 mb-1">
                   Monitors ({monitors.length})
                 </p>
                 {monitors.map(u => (
@@ -401,7 +401,7 @@ export default function Admin() {
             {/* Admins */}
             {admins.length > 0 && (
               <div className="mb-3">
-                <p className="text-[10px] font-bold text-red-400 uppercase tracking-widest px-4 mb-1">
+                <p className="text-[10px] font-bold text-red-400 uppercase tracking-widest px-1 mb-1">
                   Admins ({admins.length})
                 </p>
                 {admins.map(u => (
@@ -412,7 +412,7 @@ export default function Admin() {
             {/* Regular users */}
             {regularUsers.length > 0 && (
               <div>
-                <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest px-4 mb-1">
+                <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest px-1 mb-1">
                   Users ({regularUsers.length})
                 </p>
                 {regularUsers.map(u => (

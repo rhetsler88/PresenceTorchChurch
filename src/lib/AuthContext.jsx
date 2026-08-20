@@ -15,8 +15,13 @@ import {
   clearLoginTime,
   getLoginTime,
   SESSION_MAX_MS,
+  isGoogleSignInRedirectPending,
   isNativeGoogleSignInPending,
+  registerImmediateLogoutBridge,
+  unregisterImmediateLogoutBridge,
+  IMMEDIATE_LOGOUT_EVENT,
 } from "@/lib/logoutOnClose";
+import { clearPasswordLoginSession } from "@/lib/passwordRotation";
 import { formatAuthError } from "@/api/client";
 import { syncUserChannelMembership } from "@/lib/channelMembership";
 
@@ -75,6 +80,7 @@ async function hydrateUserWithMembership(firebaseUser, currentUser) {
 async function expireSession() {
   clearLoginTime();
   clearDailyCodeSession();
+  clearPasswordLoginSession();
   await authApi.logout();
 }
 
@@ -472,7 +478,7 @@ export const AuthProvider = ({ children }) => {
 
     const timeoutId = window.setTimeout(() => {
       if (cancelled || authInitSettled || authHandling || listenerHasFired) return;
-      if (isNativeGoogleSignInPending()) return;
+      if (isNativeGoogleSignInPending() || isGoogleSignInRedirectPending()) return;
       console.warn("[Auth] Initialization timed out; showing sign-in.");
       finishSignedOut();
     }, 12000);
@@ -508,6 +514,19 @@ export const AuthProvider = ({ children }) => {
   }, [isAuthenticated]);
 
   useEffect(() => {
+    registerImmediateLogoutBridge();
+    const onImmediateLogout = () => {
+      applySignedOut();
+      void teardownPushNotifications();
+    };
+    window.addEventListener(IMMEDIATE_LOGOUT_EVENT, onImmediateLogout);
+    return () => {
+      unregisterImmediateLogoutBridge();
+      window.removeEventListener(IMMEDIATE_LOGOUT_EVENT, onImmediateLogout);
+    };
+  }, []);
+
+  useEffect(() => {
     if (!isAuthenticated) return undefined;
     return installCloseLogoutHandler();
   }, [isAuthenticated]);
@@ -526,11 +545,17 @@ export const AuthProvider = ({ children }) => {
   }, [isAuthenticated, user]);
 
   const logout = async (shouldRedirect = true) => {
-    setUser(null);
-    setIsAuthenticated(false);
     clearLoginTime();
     clearDailyCodeSession();
-    await authApi.logout(shouldRedirect ? window.location.href : undefined);
+    applySignedOut();
+    try {
+      await authApi.logout();
+    } catch (err) {
+      console.warn("Sign out failed:", err);
+    }
+    if (shouldRedirect) {
+      window.location.href = "/";
+    }
   };
   logoutRef.current = logout;
 

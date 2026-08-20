@@ -18,6 +18,12 @@ export function getDisplayName(user) {
   return "Unknown";
 }
 
+/** True when the user has a first or full name on their profile. */
+export function userHasDisplayName(user) {
+  if (!user) return false;
+  return Boolean(user.first_name?.trim() || user.full_name?.trim());
+}
+
 /**
  * Returns initials from a display name string ("Jane Doe" → "JD", "Jane" → "JA").
  */

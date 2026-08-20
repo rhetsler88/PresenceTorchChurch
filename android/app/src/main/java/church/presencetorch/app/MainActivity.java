@@ -14,6 +14,7 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(HeadsetPTTPlugin.class);
         registerPlugin(BackgroundAudioPlugin.class);
         super.onCreate(savedInstanceState);
+        activeInstance = this;
         if (getBridge() != null && getBridge().getWebView() != null) {
             getBridge().getWebView().post(this::enableWebViewForRecaptcha);
         }
@@ -23,14 +24,71 @@ public class MainActivity extends BridgeActivity {
     public void onPause() {
         super.onPause();
         keepWebViewAliveForBackgroundListen();
+        if (!isFinishing()) {
+            BackgroundLogoutScheduler.schedule(this);
+        }
     }
 
     @Override
     public void onResume() {
         super.onResume();
+        BackgroundLogoutScheduler.cancel(this);
         if (getBridge() != null && getBridge().getWebView() != null) {
             enableWebViewForRecaptcha();
         }
+    }
+
+    /** Called from {@link BackgroundLogoutReceiver} after 6h background timeout. */
+    public static void notifyBackgroundLogoutTimeout() {
+        MainActivity activity = activeInstance;
+        if (activity == null) {
+            return;
+        }
+        activity.runImmediateLogoutOnWebView();
+    }
+
+    private static MainActivity activeInstance;
+
+    private void runImmediateLogoutOnWebView() {
+        if (getBridge() == null || getBridge().getWebView() == null) {
+            return;
+        }
+        getBridge().getWebView().evaluateJavascript(
+            "window.__ptcImmediateLogout && window.__ptcImmediateLogout()",
+            null
+        );
+    }
+
+    @Override
+    protected void onDestroy() {
+        if (activeInstance == this) {
+            activeInstance = null;
+        }
+        triggerImmediateLogoutIfClosing();
+        super.onDestroy();
+    }
+
+    @Override
+    public void onStop() {
+        if (isFinishing()) {
+            BackgroundLogoutScheduler.cancel(this);
+        }
+        triggerImmediateLogoutIfClosing();
+        super.onStop();
+    }
+
+    /** Swipe-away from recents — sign out while the WebView is still alive. */
+    private void triggerImmediateLogoutIfClosing() {
+        if (!isFinishing()) {
+            return;
+        }
+        if (getBridge() == null || getBridge().getWebView() == null) {
+            return;
+        }
+        getBridge().getWebView().evaluateJavascript(
+            "window.__ptcImmediateLogout && window.__ptcImmediateLogout()",
+            null
+        );
     }
 
     /**

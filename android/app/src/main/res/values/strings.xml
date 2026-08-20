@@ -4,7 +4,6 @@
     <string name="title_activity_main">Presence Torch</string>
     <string name="package_name">church.presencetorch.app</string>
     <string name="custom_url_scheme">church.presencetorch.app</string>
-    <string name="default_web_client_id">956501692008-lj14r06gtrg12034uoo362k4qhmfen99.apps.googleusercontent.com</string>
     <string name="background_audio_default_title">Presence Torch</string>
     <string name="background_audio_notification_text">Listening for live broadcasts</string>
     <string name="background_audio_channel_name">Live broadcast listening</string>

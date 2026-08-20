@@ -6,6 +6,7 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
+  DropdownMenuCheckboxItem,
 } from "@/components/ui/dropdown-menu";
 import { Bluetooth, BluetoothConnected, Headphones, UserCog, LogOut, Shield, UserX } from "lucide-react";
 import { useAuth } from "@/lib/AuthContext";
@@ -13,7 +14,6 @@ import { getDisplayName, getInitials } from "@/lib/userUtils";
 import { ADMIN_APP_URL } from "@/lib/appLinks";
 import { useBluetoothPTTContext } from "@/components/ptt/BluetoothPTTContext";
 import usePttSettings from "@/hooks/usePttSettings";
-import { Switch } from "@/components/ui/switch";
 import EditProfileDialog from "@/components/profile/EditProfileDialog";
 import DeleteAccountDialog from "@/components/profile/DeleteAccountDialog";
 
@@ -59,22 +59,25 @@ export default function UserMenu() {
           <DropdownMenuSeparator />
           <DropdownMenuItem onClick={() => setShowEditProfile(true)}>
             <UserCog className="w-4 h-4" />
-            Change name
+            Edit profile
           </DropdownMenuItem>
           <DropdownMenuItem
-            className="flex items-center justify-between gap-3"
-            onSelect={(event) => event.preventDefault()}
+            className="text-red-500 focus:text-red-500 focus:bg-red-500/10 font-semibold"
+            onClick={() => setShowDeleteAccount(true)}
           >
-            <div className="flex items-center gap-2 min-w-0">
-              <Headphones className="w-4 h-4 shrink-0" />
-              <span className="text-sm">Earbud tap-to-talk</span>
-            </div>
-            <Switch
-              checked={earbudToggleMode}
-              onCheckedChange={setEarbudToggleMode}
-              aria-label="Earbud tap-to-talk"
-            />
+            <UserX className="w-4 h-4" />
+            Delete account
           </DropdownMenuItem>
+          <DropdownMenuSeparator />
+          <DropdownMenuCheckboxItem
+            checked={earbudToggleMode}
+            onCheckedChange={setEarbudToggleMode}
+            onSelect={(event) => event.preventDefault()}
+            className="gap-2"
+          >
+            <Headphones className="w-4 h-4" />
+            Earbud tap-to-talk
+          </DropdownMenuCheckboxItem>
           <DropdownMenuLabel className="text-xs text-muted-foreground font-normal leading-snug whitespace-normal">
             Tap once on earbuds to start talking, tap again to stop, or auto-stops after 30 seconds.
             Dedicated PTT buttons still use push-and-hold.
@@ -117,13 +120,6 @@ export default function UserMenu() {
               )}
             </>
           )}
-          <DropdownMenuItem
-            className="text-destructive focus:text-destructive"
-            onClick={() => setShowDeleteAccount(true)}
-          >
-            <UserX className="w-4 h-4" />
-            Delete account
-          </DropdownMenuItem>
           {isPlatformAdmin && (
             <DropdownMenuItem asChild>
               <a href={ADMIN_APP_URL}>

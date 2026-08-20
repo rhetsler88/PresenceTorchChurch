@@ -1,22 +1,42 @@
 /**
- * Session policy (web):
+ * Session policy:
  * - Auto sign-out 48 hours after login (SESSION_MAX_MS).
- * - Sign out when the browser tab/window is closed (next launch only).
- * - Tab refresh keeps the session; switching tabs or backgrounding does not sign out.
- * - Native apps skip tab-close logout; 48-hour limit still applies.
+ * - Background: after 6 hours backgrounded, sign out automatically while still
+ *   in the background (same effect as swipe-away). Native Android uses an exact
+ *   alarm when JS timers are suspended.
+ * - Native swipe-away: immediate sign-out via native lifecycle when possible.
+ * - Web hard close: sign out when the browser tab/window is closed (next visit).
  */
 import { clearDailyCodeSession } from "@/lib/dailyCode";
 import { Capacitor } from "@capacitor/core";
+import { signOut } from "firebase/auth";
+import { auth } from "@/lib/firebase";
+
+export const IMMEDIATE_LOGOUT_EVENT = "ptc-immediate-logout";
 
 export const LOGIN_TIME_KEY = "presence_login_time";
-const CLOSE_LOGOUT_FLAG = "presence_logout_on_next_start";
+/** Web tab/window closed — sign out on the next visit (not subject to the 6h rule). */
+const HARD_CLOSE_LOGOUT_FLAG = "presence_logout_on_next_start";
+/** App/tab backgrounded — sign out after BACKGROUND_LOGOUT_MS. */
+const BACKGROUND_PENDING_FLAG = "presence_background_pending";
+const BACKGROUNDED_AT_KEY = "presence_backgrounded_at";
 const OAUTH_REDIRECT_KEY = "presence_oauth_redirect";
 const TAB_SESSION_KEY = "ptc_tab_session";
 
 /** Maximum session length from login (48 hours). */
 export const SESSION_MAX_MS = 48 * 60 * 60 * 1000;
 
+/** Sign out after this long in the background (6 hours). */
+export const BACKGROUND_LOGOUT_MS = 6 * 60 * 60 * 1000;
+
+const BACKGROUND_LOGOUT_WATCH_MS = 60_000;
+
+let immediateLogoutInFlight = false;
+let backgroundLogoutTimerId = null;
+let backgroundLogoutWatchId = null;
+
 export function recordLoginTime() {
+  immediateLogoutInFlight = false;
   localStorage.setItem(LOGIN_TIME_KEY, Date.now().toString());
 }
 
@@ -71,6 +91,10 @@ function isOAuthRedirectPending() {
   return sessionStorage.getItem(OAUTH_REDIRECT_KEY) === "1";
 }
 
+export function isGoogleSignInRedirectPending() {
+  return isOAuthRedirectPending();
+}
+
 /**
  * sessionStorage survives refresh but is cleared when the tab closes.
  * Returns true when this load is a refresh / same-tab navigation (not a new tab).
@@ -88,52 +112,217 @@ export function markTabSessionAlive() {
   sessionStorage.setItem(TAB_SESSION_KEY, "1");
 }
 
-/** Sync markers so the next app launch forces sign-out even if async logout is cut off. */
-export function markLogoutOnClose() {
-  clearLoginTime();
-  clearDailyCodeSession();
-  localStorage.setItem(CLOSE_LOGOUT_FLAG, "1");
+function getBackgroundedAt() {
+  const raw = localStorage.getItem(BACKGROUNDED_AT_KEY);
+  if (!raw) return null;
+  const ts = parseInt(raw, 10);
+  return Number.isFinite(ts) ? ts : null;
 }
 
-export function consumeCloseLogoutFlag() {
-  if (localStorage.getItem(CLOSE_LOGOUT_FLAG) !== "1") return false;
-  localStorage.removeItem(CLOSE_LOGOUT_FLAG);
+function cancelBackgroundLogoutWatch() {
+  if (backgroundLogoutTimerId != null) {
+    clearTimeout(backgroundLogoutTimerId);
+    backgroundLogoutTimerId = null;
+  }
+  if (backgroundLogoutWatchId != null) {
+    clearInterval(backgroundLogoutWatchId);
+    backgroundLogoutWatchId = null;
+  }
+}
+
+function triggerBackgroundTimeoutLogout() {
+  cancelBackgroundLogoutWatch();
+  if (!isBackgroundPending() || !isBackgroundLogoutDue()) return;
+  performImmediateLogout();
+}
+
+function scheduleBackgroundLogoutWatch() {
+  cancelBackgroundLogoutWatch();
+  if (!isBackgroundPending()) return;
+
+  const backgroundedAt = getBackgroundedAt();
+  if (!backgroundedAt) return;
+
+  const remaining = BACKGROUND_LOGOUT_MS - (Date.now() - backgroundedAt);
+  if (remaining <= 0) {
+    triggerBackgroundTimeoutLogout();
+    return;
+  }
+
+  backgroundLogoutTimerId = setTimeout(() => {
+    backgroundLogoutTimerId = null;
+    triggerBackgroundTimeoutLogout();
+  }, remaining);
+
+  backgroundLogoutWatchId = setInterval(() => {
+    if (isBackgroundLogoutDue()) {
+      triggerBackgroundTimeoutLogout();
+    }
+  }, BACKGROUND_LOGOUT_WATCH_MS);
+}
+
+/** App/tab moved to background. Starts the 6-hour auto sign-out timer. */
+export function markBackgroundPending() {
+  localStorage.setItem(BACKGROUND_PENDING_FLAG, "1");
+  localStorage.setItem(BACKGROUNDED_AT_KEY, Date.now().toString());
+  scheduleBackgroundLogoutWatch();
+}
+
+export function clearBackgroundPending() {
+  cancelBackgroundLogoutWatch();
+  localStorage.removeItem(BACKGROUND_PENDING_FLAG);
+  localStorage.removeItem(BACKGROUNDED_AT_KEY);
+}
+
+export function isBackgroundPending() {
+  return localStorage.getItem(BACKGROUND_PENDING_FLAG) === "1";
+}
+
+export function isBackgroundLogoutDue() {
+  if (!isBackgroundPending()) return false;
+  const backgroundedAt = getBackgroundedAt();
+  if (!backgroundedAt) return false;
+  return Date.now() - backgroundedAt >= BACKGROUND_LOGOUT_MS;
+}
+
+function clearHardCloseLogoutFlag() {
+  localStorage.removeItem(HARD_CLOSE_LOGOUT_FLAG);
+}
+
+function consumeHardCloseLogoutFlag() {
+  if (localStorage.getItem(HARD_CLOSE_LOGOUT_FLAG) !== "1") return false;
+  clearHardCloseLogoutFlag();
   return true;
 }
 
+/** Tab/window closed (web). Next visit signs out immediately. */
+export function markLogoutOnClose() {
+  clearLoginTime();
+  clearDailyCodeSession();
+  localStorage.setItem(HARD_CLOSE_LOGOUT_FLAG, "1");
+}
+
 /**
- * Whether the user closed the tab (vs refreshed). Refresh must NOT sign out.
- * Marks the tab session alive for the next navigation check.
+ * Immediate sign-out (swipe-away, 6h background timeout, or native alarm).
+ * Native code calls window.__ptcImmediateLogout().
+ */
+export function performImmediateLogout() {
+  if (immediateLogoutInFlight) return;
+  immediateLogoutInFlight = true;
+  cancelBackgroundLogoutWatch();
+  clearLoginTime();
+  clearDailyCodeSession();
+  clearBackgroundPending();
+  localStorage.setItem(HARD_CLOSE_LOGOUT_FLAG, "1");
+  void signOut(auth).catch(() => {});
+  window.dispatchEvent(new CustomEvent(IMMEDIATE_LOGOUT_EVENT));
+}
+
+export function registerImmediateLogoutBridge() {
+  if (typeof window === "undefined") return;
+  window.__ptcImmediateLogout = performImmediateLogout;
+}
+
+export function unregisterImmediateLogoutBridge() {
+  if (typeof window === "undefined") return;
+  delete window.__ptcImmediateLogout;
+}
+
+function resolveStartupLogout() {
+  if (consumeHardCloseLogoutFlag()) {
+    clearBackgroundPending();
+    return true;
+  }
+  if (isBackgroundLogoutDue()) {
+    clearBackgroundPending();
+    return true;
+  }
+  if (isBackgroundPending()) {
+    // Backgrounded but never resumed — process/tab was closed (swipe-away, browser kill).
+    clearBackgroundPending();
+    return true;
+  }
+  clearBackgroundPending();
+  return false;
+}
+
+/**
+ * Whether this launch should sign out due to a prior close or long background.
+ * Marks the tab session alive for the next navigation check (web).
  */
 export function shouldLogoutAfterClose() {
-  if (Capacitor.isNativePlatform()) return false;
+  if (Capacitor.isNativePlatform()) {
+    return resolveStartupLogout();
+  }
 
   const isReload = isSameTabReload();
   markTabSessionAlive();
   if (isReload) {
-    localStorage.removeItem(CLOSE_LOGOUT_FLAG);
+    clearHardCloseLogoutFlag();
+    clearBackgroundPending();
     return false;
   }
-  return consumeCloseLogoutFlag();
+  return resolveStartupLogout();
+}
+
+function handleForeground() {
+  cancelBackgroundLogoutWatch();
+  if (isBackgroundLogoutDue()) {
+    // Alarm/timer should already have signed out; fallback if the OS deferred JS.
+    performImmediateLogout();
+    return;
+  }
+  clearBackgroundPending();
 }
 
 /**
- * Sign out when the user closes the tab/app window.
- * Does not run when the app is only backgrounded (tab switch, home button).
- * Refresh is detected on the next load via sessionStorage — do not call logout() here
- * (Firebase signOut during pagehide breaks refresh persistence).
+ * Background timer (6h) + native alarm (Android). Foreground clears the timer.
  */
 export function installCloseLogoutHandler() {
-  if (Capacitor.isNativePlatform()) return () => {};
+  if (isBackgroundPending()) {
+    scheduleBackgroundLogoutWatch();
+  }
+
+  if (Capacitor.isNativePlatform()) {
+    const handlePause = () => {
+      if (isOAuthRedirectPending()) return;
+      markBackgroundPending();
+    };
+    const handleResume = () => {
+      handleForeground();
+    };
+
+    window.addEventListener("pause", handlePause);
+    window.addEventListener("resume", handleResume);
+    return () => {
+      window.removeEventListener("pause", handlePause);
+      window.removeEventListener("resume", handleResume);
+      cancelBackgroundLogoutWatch();
+    };
+  }
+
+  const handleVisibilityChange = () => {
+    if (document.visibilityState === "hidden") {
+      if (isOAuthRedirectPending()) return;
+      markBackgroundPending();
+      return;
+    }
+    if (document.visibilityState === "visible") {
+      handleForeground();
+    }
+  };
 
   const handlePageHide = (event) => {
-    // persisted = page entered back/forward cache; user may return without reopening
     if (event.persisted) return;
-    // OAuth redirect unloads the page; do not treat that as closing the app.
     if (isOAuthRedirectPending()) return;
     markLogoutOnClose();
   };
 
+  document.addEventListener("visibilitychange", handleVisibilityChange);
   window.addEventListener("pagehide", handlePageHide);
-  return () => window.removeEventListener("pagehide", handlePageHide);
+  return () => {
+    document.removeEventListener("visibilitychange", handleVisibilityChange);
+    window.removeEventListener("pagehide", handlePageHide);
+    cancelBackgroundLogoutWatch();
+  };
 }

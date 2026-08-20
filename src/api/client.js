@@ -23,7 +23,11 @@ import {
   createUserWithEmailAndPassword,
   sendPasswordResetEmail,
   updateProfile,
+  updatePassword,
+  reauthenticateWithCredential,
   GoogleAuthProvider,
+  EmailAuthProvider,
+  linkWithCredential,
   signOut,
 } from "firebase/auth";
 import { Capacitor } from "@capacitor/core";
@@ -35,10 +39,16 @@ import { getDownloadURL, ref } from "firebase/storage";
 import seedData from "../../scripts/seed-data.json";
 import { isDefaultSetupComplete } from "@/lib/defaultSeed";
 import { markOAuthRedirectPending, recordLoginTime, clearLoginTime, markNativeGoogleSignInPending, clearNativeGoogleSignInPending } from "@/lib/logoutOnClose";
+import { markPasswordLoginSession } from "@/lib/passwordRotation";
 import { verifyFirebaseConnection } from "@/lib/firebaseConnection";
 import { addUserChannelMembership } from "@/lib/channelMembership";
 import { clearDailyCodeSession } from "@/lib/dailyCode";
 import { clearBiometricCredentials } from "@/lib/biometricAuth";
+import {
+  getPasswordLengthErrorMessage,
+  validateNewPasswordDifferent,
+  validatePasswordLength,
+} from "@/lib/passwordPolicy";
 
 const functions = getFunctions(app, "us-east5");
 
@@ -119,7 +129,11 @@ export function formatAuthError(err) {
     case "auth/user-not-found":
       return "Incorrect email or password.";
     case "auth/weak-password":
-      return "Password must be at least 6 characters.";
+      return getPasswordLengthErrorMessage();
+    case "auth/same-password":
+      return "New password must be different from your current password.";
+    case "auth/requires-recent-login":
+      return "Please sign out, sign in again, and retry changing your password.";
     case "auth/too-many-requests":
       return "Too many attempts. Please wait and try again.";
     case "auth/network-request-failed":
@@ -140,6 +154,10 @@ export function formatAuthError(err) {
       return "This email is already registered with a different sign-in method.";
     case "auth/credential-already-in-use":
       return "This Google account is already linked to another user.";
+    case "auth/no-google-credentials":
+      return "Google Sign-In could not start. Confirm a Google account is on the device, Play App Signing SHA-1 is in Firebase, and you installed the latest closed-testing build.";
+    case "auth/google-developer-error":
+      return "Google Sign-In certificate mismatch. Add Play App Signing SHA-1 in Firebase, replace google-services.json, rebuild, and reinstall from Play.";
     case "firestore/unavailable":
     case "firestore/unknown":
       return err?.message || "Could not reach Firebase. Check your connection and try again.";
@@ -424,6 +442,19 @@ async function getCurrentUser() {
   };
 }
 
+function getAuthProviderIds(firebaseUser = auth.currentUser) {
+  return (firebaseUser?.providerData || []).map((provider) => provider.providerId);
+}
+
+function userHasPasswordProvider(firebaseUser = auth.currentUser) {
+  return getAuthProviderIds(firebaseUser).includes("password");
+}
+
+function userCanSetPassword(firebaseUser = auth.currentUser) {
+  const providers = getAuthProviderIds(firebaseUser);
+  return providers.includes("google.com") && !providers.includes("password");
+}
+
 export const organizationsApi = {
   async list() {
     const snap = await getDocs(collection(db, "organizations"));
@@ -516,7 +547,11 @@ export function getAuthErrorMessage(err) {
     case "auth/invalid-email":
       return "Please enter a valid email address.";
     case "auth/weak-password":
-      return "Password must be at least 6 characters.";
+      return getPasswordLengthErrorMessage();
+    case "auth/same-password":
+      return "New password must be different from your current password.";
+    case "auth/requires-recent-login":
+      return "Please sign out, sign in again, and retry changing your password.";
     case "auth/wrong-password":
     case "auth/invalid-credential":
       return "Incorrect email or password.";
@@ -534,6 +569,10 @@ export function getAuthErrorMessage(err) {
       return "This email is already registered with a different sign-in method.";
     case "auth/credential-already-in-use":
       return "This Google account is already linked to another user.";
+    case "auth/no-google-credentials":
+      return "Google Sign-In could not start. Confirm a Google account is on the device, Play App Signing SHA-1 is in Firebase, and you installed the latest closed-testing build.";
+    case "auth/google-developer-error":
+      return "Google Sign-In certificate mismatch. Add Play App Signing SHA-1 in Firebase, replace google-services.json, rebuild, and reinstall from Play.";
     case "firestore/unavailable":
     case "firestore/unknown":
       return err?.message || "Could not reach Firebase. Check your connection and try again.";
@@ -541,6 +580,35 @@ export function getAuthErrorMessage(err) {
       return err?.message || "Your account is not registered for this app yet.";
     default:
       return err?.message || "Sign-in failed. Please try again.";
+  }
+}
+
+function getNativePluginErrorMessage(err) {
+  return String(err?.message || err?.errorMessage || err?.data?.message || "");
+}
+
+function isGoogleDeveloperError(err) {
+  const message = getNativePluginErrorMessage(err);
+  return /(?:^|\s)10:\s*$/.test(message) || /developer error/i.test(message) || err?.code === "10";
+}
+
+function enrichGoogleSignInError(err) {
+  if (isGoogleDeveloperError(err)) {
+    return Object.assign(
+      new Error(
+        "Google Sign-In certificate mismatch. Confirm Play App Signing SHA-1 (31:AB...) is in Firebase, then reinstall from Play."
+      ),
+      { code: "auth/google-developer-error", cause: err }
+    );
+  }
+  return err;
+}
+
+async function signInWithGoogleNative() {
+  try {
+    return await FirebaseAuthentication.signInWithGoogle({ useCredentialManager: false });
+  } catch (err) {
+    throw enrichGoogleSignInError(err);
   }
 }
 
@@ -564,6 +632,7 @@ export const authApi = {
 
   async logout(redirectUrl) {
     clearLoginTime();
+    clearPasswordLoginSession();
     await signOut(auth);
     if (redirectUrl) {
       window.location.href = "/";
@@ -591,7 +660,7 @@ export const authApi = {
     if (Capacitor.isNativePlatform()) {
       markNativeGoogleSignInPending();
       try {
-        const result = await FirebaseAuthentication.signInWithGoogle();
+        const result = await signInWithGoogleNative();
         const idToken = result.credential?.idToken;
         if (!idToken) {
           throw Object.assign(new Error("Google sign-in was cancelled."), { code: "auth/popup-closed-by-user" });
@@ -638,12 +707,20 @@ export const authApi = {
   async signInWithEmail(email, password, captchaToken) {
     await verifyRecaptchaToken(captchaToken);
     await signInWithEmailAndPassword(auth, email.trim(), password);
+    markPasswordLoginSession();
     recordLoginTime();
   },
 
   async signUpWithEmail(email, password, captchaToken) {
     await verifyRecaptchaToken(captchaToken);
-    await createUserWithEmailAndPassword(auth, email.trim(), password);
+    validatePasswordLength(password);
+    const cred = await createUserWithEmailAndPassword(auth, email.trim(), password);
+    await setDoc(
+      doc(db, "users", cred.user.uid),
+      { password_updated_at: new Date().toISOString() },
+      { merge: true }
+    );
+    markPasswordLoginSession();
     recordLoginTime();
   },
 
@@ -653,6 +730,7 @@ export const authApi = {
     const last = lastName.trim();
     const fullName = [first, last].filter(Boolean).join(" ");
 
+    validatePasswordLength(password);
     const cred = await createUserWithEmailAndPassword(auth, trimmedEmail, password);
 
     if (fullName) {
@@ -672,16 +750,76 @@ export const authApi = {
         broadcast_excluded_channels: [],
         is_monitor: false,
         pending_staff_alerts: false,
+        password_updated_at: new Date().toISOString(),
       },
       { merge: true }
     );
 
+    markPasswordLoginSession();
     recordLoginTime();
     return cred.user;
   },
 
   async resetPassword(email) {
     await sendPasswordResetEmail(auth, email.trim());
+  },
+
+  canSetPassword() {
+    return userCanSetPassword(auth.currentUser);
+  },
+
+  hasPasswordProvider() {
+    return userHasPasswordProvider(auth.currentUser);
+  },
+
+  async linkPasswordForCurrentUser(password) {
+    await waitForFirestoreAuth({ forceRefresh: true });
+    const firebaseUser = auth.currentUser;
+    if (!firebaseUser?.email) {
+      throw Object.assign(new Error("Your account does not have an email address."), {
+        code: "auth/missing-email",
+      });
+    }
+    if (!userCanSetPassword(firebaseUser)) {
+      throw Object.assign(new Error("A password is already set for this account."), {
+        code: "auth/provider-already-linked",
+      });
+    }
+
+    validatePasswordLength(password);
+    const credential = EmailAuthProvider.credential(firebaseUser.email, password);
+    await linkWithCredential(firebaseUser, credential);
+    await updateDoc(doc(db, "users", firebaseUser.uid), {
+      password_updated_at: new Date().toISOString(),
+    });
+    await firebaseUser.reload();
+  },
+
+  async changePasswordForCurrentUser(currentPassword, newPassword) {
+    await waitForFirestoreAuth({ forceRefresh: true });
+    const firebaseUser = auth.currentUser;
+    if (!firebaseUser?.email) {
+      throw Object.assign(new Error("Your account does not have an email address."), {
+        code: "auth/missing-email",
+      });
+    }
+    if (!userHasPasswordProvider(firebaseUser)) {
+      throw Object.assign(new Error("This account does not use a password sign-in method."), {
+        code: "auth/operation-not-allowed",
+      });
+    }
+
+    validatePasswordLength(newPassword);
+    validateNewPasswordDifferent(currentPassword, newPassword);
+
+    const credential = EmailAuthProvider.credential(firebaseUser.email, currentPassword);
+    await reauthenticateWithCredential(firebaseUser, credential);
+    await updatePassword(firebaseUser, newPassword);
+    await updateDoc(doc(db, "users", firebaseUser.uid), {
+      password_updated_at: new Date().toISOString(),
+    });
+    await clearBiometricCredentials();
+    await firebaseUser.reload();
   },
 
   async syncMyChannelAccess() {

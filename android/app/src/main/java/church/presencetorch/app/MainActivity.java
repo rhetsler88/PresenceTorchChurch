@@ -13,6 +13,7 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(BluetoothPermissionsPlugin.class);
         registerPlugin(HeadsetPTTPlugin.class);
         registerPlugin(BackgroundAudioPlugin.class);
+        registerPlugin(SessionGuardPlugin.class);
         super.onCreate(savedInstanceState);
         activeInstance = this;
         if (getBridge() != null && getBridge().getWebView() != null) {
@@ -24,7 +25,7 @@ public class MainActivity extends BridgeActivity {
     public void onPause() {
         super.onPause();
         keepWebViewAliveForBackgroundListen();
-        if (!isFinishing()) {
+        if (!isFinishing() && SessionPrefs.shouldAllowSessionLogout(this)) {
             BackgroundLogoutScheduler.schedule(this);
         }
     }
@@ -50,6 +51,9 @@ public class MainActivity extends BridgeActivity {
     private static MainActivity activeInstance;
 
     private void runImmediateLogoutOnWebView() {
+        if (!SessionPrefs.shouldAllowSessionLogout(this)) {
+            return;
+        }
         if (getBridge() == null || getBridge().getWebView() == null) {
             return;
         }
@@ -80,6 +84,9 @@ public class MainActivity extends BridgeActivity {
     /** Swipe-away from recents — sign out while the WebView is still alive. */
     private void triggerImmediateLogoutIfClosing() {
         if (!isFinishing()) {
+            return;
+        }
+        if (!SessionPrefs.shouldAllowSessionLogout(this)) {
             return;
         }
         if (getBridge() == null || getBridge().getWebView() == null) {

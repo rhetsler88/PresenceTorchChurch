@@ -11,6 +11,7 @@ import { clearDailyCodeSession } from "@/lib/dailyCode";
 import { Capacitor } from "@capacitor/core";
 import { signOut } from "firebase/auth";
 import { auth } from "@/lib/firebase";
+import { syncNativeActiveSession, syncNativeGoogleSignInPending } from "@/lib/sessionGuardNative";
 
 export const IMMEDIATE_LOGOUT_EVENT = "ptc-immediate-logout";
 
@@ -40,10 +41,13 @@ export function recordLoginTime() {
   clearBackgroundPending();
   clearHardCloseLogoutFlag();
   localStorage.setItem(LOGIN_TIME_KEY, Date.now().toString());
+  syncNativeActiveSession(true);
+  void syncNativeGoogleSignInPending(false).catch(() => {});
 }
 
 export function clearLoginTime() {
   localStorage.removeItem(LOGIN_TIME_KEY);
+  void syncNativeActiveSession(false).catch(() => {});
 }
 
 export function getLoginTime() {
@@ -69,15 +73,18 @@ export function getSessionRemainingMs() {
 const NATIVE_GOOGLE_SIGNIN_KEY = "presence_native_google_signin";
 
 export function markNativeGoogleSignInPending() {
-  sessionStorage.setItem(NATIVE_GOOGLE_SIGNIN_KEY, "1");
+  localStorage.setItem(NATIVE_GOOGLE_SIGNIN_KEY, "1");
+  void syncNativeGoogleSignInPending(true).catch(() => {});
+  void syncNativeActiveSession(false).catch(() => {});
 }
 
 export function clearNativeGoogleSignInPending() {
-  sessionStorage.removeItem(NATIVE_GOOGLE_SIGNIN_KEY);
+  localStorage.removeItem(NATIVE_GOOGLE_SIGNIN_KEY);
+  void syncNativeGoogleSignInPending(false).catch(() => {});
 }
 
 export function isNativeGoogleSignInPending() {
-  return sessionStorage.getItem(NATIVE_GOOGLE_SIGNIN_KEY) === "1";
+  return localStorage.getItem(NATIVE_GOOGLE_SIGNIN_KEY) === "1";
 }
 
 /** Set before signInWithRedirect navigates away so pagehide does not force sign-out. */
@@ -211,11 +218,14 @@ export function markLogoutOnClose() {
  */
 export function performImmediateLogout() {
   if (immediateLogoutInFlight) return;
+  if (isNativeGoogleSignInPending() || isOAuthRedirectPending()) return;
+  if (!auth.currentUser && !getLoginTime()) return;
   immediateLogoutInFlight = true;
   cancelBackgroundLogoutWatch();
   clearLoginTime();
   clearDailyCodeSession();
   clearBackgroundPending();
+  clearNativeGoogleSignInPending();
   localStorage.setItem(HARD_CLOSE_LOGOUT_FLAG, "1");
   void signOut(auth).catch(() => {});
   window.dispatchEvent(new CustomEvent(IMMEDIATE_LOGOUT_EVENT));

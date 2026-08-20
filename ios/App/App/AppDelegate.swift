@@ -33,6 +33,9 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     }
 
     private func notifyImmediateLogout() {
+        guard SessionPrefs.shouldAllowSessionLogout() else {
+            return
+        }
         guard let viewController = window?.rootViewController as? CAPBridgeViewController else {
             return
         }

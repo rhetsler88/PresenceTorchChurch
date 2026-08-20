@@ -39,6 +39,7 @@ import { getDownloadURL, ref } from "firebase/storage";
 import seedData from "../../scripts/seed-data.json";
 import { isDefaultSetupComplete } from "@/lib/defaultSeed";
 import { markOAuthRedirectPending, recordLoginTime, clearLoginTime, markNativeGoogleSignInPending, clearNativeGoogleSignInPending } from "@/lib/logoutOnClose";
+import { syncNativeActiveSession, syncNativeGoogleSignInPending } from "@/lib/sessionGuardNative";
 import { markPasswordLoginSession } from "@/lib/passwordRotation";
 import { verifyFirebaseConnection } from "@/lib/firebaseConnection";
 import { addUserChannelMembership } from "@/lib/channelMembership";
@@ -659,6 +660,10 @@ export const authApi = {
 
     if (Capacitor.isNativePlatform()) {
       markNativeGoogleSignInPending();
+      await Promise.all([
+        syncNativeGoogleSignInPending(true),
+        syncNativeActiveSession(false),
+      ]).catch(() => {});
       try {
         const result = await signInWithGoogleNative();
         const idToken = result.credential?.idToken;
@@ -682,6 +687,7 @@ export const authApi = {
         recordLoginTime();
       } finally {
         clearNativeGoogleSignInPending();
+        await syncNativeGoogleSignInPending(false).catch(() => {});
       }
       return;
     }

@@ -401,7 +401,7 @@ export default function Admin() {
             {/* Admins */}
             {admins.length > 0 && (
               <div className="mb-3">
-                <p className="text-[10px] font-bold text-red-400 uppercase tracking-widest px-1 mb-1">
+                <p className="text-[10px] font-bold text-destructive uppercase tracking-widest px-1 mb-1">
                   Admins ({admins.length})
                 </p>
                 {admins.map(u => (

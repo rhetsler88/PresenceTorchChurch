@@ -8,21 +8,19 @@ import {
   DropdownMenuTrigger,
   DropdownMenuCheckboxItem,
 } from "@/components/ui/dropdown-menu";
-import { Bluetooth, BluetoothConnected, Headphones, UserCog, LogOut, Shield, UserX } from "lucide-react";
+import { Bluetooth, BluetoothConnected, Headphones, UserCog, LogOut, Shield } from "lucide-react";
 import { useAuth } from "@/lib/AuthContext";
 import { getDisplayName, getInitials } from "@/lib/userUtils";
 import { ADMIN_APP_URL } from "@/lib/appLinks";
 import { useBluetoothPTTContext } from "@/components/ptt/BluetoothPTTContext";
 import usePttSettings from "@/hooks/usePttSettings";
 import EditProfileDialog from "@/components/profile/EditProfileDialog";
-import DeleteAccountDialog from "@/components/profile/DeleteAccountDialog";
 
 export default function UserMenu() {
   const { user, logout } = useAuth();
   const bluetooth = useBluetoothPTTContext();
   const { earbudToggleMode, setEarbudToggleMode } = usePttSettings();
   const [showEditProfile, setShowEditProfile] = useState(false);
-  const [showDeleteAccount, setShowDeleteAccount] = useState(false);
 
   if (!user) return null;
 
@@ -60,13 +58,6 @@ export default function UserMenu() {
           <DropdownMenuItem onClick={() => setShowEditProfile(true)}>
             <UserCog className="w-4 h-4" />
             Edit profile
-          </DropdownMenuItem>
-          <DropdownMenuItem
-            className="text-red-500 focus:text-red-500 focus:bg-red-500/10 font-semibold"
-            onClick={() => setShowDeleteAccount(true)}
-          >
-            <UserX className="w-4 h-4" />
-            Delete account
           </DropdownMenuItem>
           <DropdownMenuSeparator />
           <DropdownMenuCheckboxItem
@@ -140,7 +131,6 @@ export default function UserMenu() {
       </DropdownMenu>
 
       <EditProfileDialog open={showEditProfile} onOpenChange={setShowEditProfile} />
-      <DeleteAccountDialog open={showDeleteAccount} onOpenChange={setShowDeleteAccount} />
     </>
   );
 }

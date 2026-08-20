@@ -5,9 +5,9 @@ import { getDisplayName } from "@/lib/userUtils";
 
 function StaffAlertRow({ user, onApprove, onReject }) {
   return (
-    <div className="flex items-center gap-3 px-4 py-3 bg-red-500/5 border border-red-500/20 rounded-xl mb-1.5">
-      <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 bg-red-500/10">
-        <Bell className="w-4 h-4 text-red-500" />
+    <div className="flex items-center gap-3 px-4 py-3 bg-destructive/5 border border-destructive/20 rounded-xl mb-1.5">
+      <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 bg-destructive/10">
+        <Bell className="w-4 h-4 text-destructive" />
       </div>
       <div className="flex-1 min-w-0">
         <p className="text-sm font-semibold text-foreground truncate">{getDisplayName(user)}</p>
@@ -42,7 +42,7 @@ export default function StaffAlertRequests({ users = [], onApprove, onReject }) 
 
   return (
     <div className="px-4 mb-4">
-      <p className="text-[10px] font-bold text-red-500 uppercase tracking-widest px-1 mb-2">
+      <p className="text-[10px] font-bold text-destructive uppercase tracking-widest px-1 mb-2">
         Pending Staff Alert Requests ({pending.length})
       </p>
       {pending.map((user) => (

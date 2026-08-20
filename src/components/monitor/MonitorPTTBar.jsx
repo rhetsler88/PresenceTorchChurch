@@ -130,7 +130,7 @@ export default function MonitorPTTBar(props) {
             <button
               type="button"
               onClick={() => onModeChange("multi")}
-              className={"px-2 py-1 rounded-md border text-[10px] font-semibold transition-all " + (mode === "multi" ? "bg-red-500/10 border-red-500/40 text-red-400" : "bg-muted border-border text-muted-foreground")}
+              className={"px-2 py-1 rounded-md border text-[10px] font-semibold transition-all " + (mode === "multi" ? "bg-destructive/10 border-destructive/40 text-destructive" : "bg-muted border-border text-muted-foreground")}
             >
               Broadcast
             </button>
@@ -142,7 +142,7 @@ export default function MonitorPTTBar(props) {
                 type="button"
                 onClick={selectAll}
                 disabled={allSelected}
-                className={"flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-xs font-semibold transition-all " + (allSelected ? "bg-red-500/10 border-red-500/40 text-red-400" : "bg-muted border-border text-muted-foreground hover:text-foreground")}
+                className={"flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-xs font-semibold transition-all " + (allSelected ? "bg-destructive/10 border-destructive/40 text-destructive" : "bg-muted border-border text-muted-foreground hover:text-foreground")}
               >
                 <Megaphone className="w-3.5 h-3.5" />
                 All
@@ -224,10 +224,10 @@ export default function MonitorPTTBar(props) {
               initial={{ opacity: 0, scale: 0.8 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.8 }}
-              className="flex items-center gap-1.5 px-2 py-1 bg-red-500/10 rounded-lg"
+              className="flex items-center gap-1.5 px-2 py-1 bg-destructive/10 rounded-lg"
             >
-              <div className="w-1.5 h-1.5 bg-red-500 rounded-full animate-pulse" />
-              <span className="text-xs font-mono font-bold text-red-400">{fmtTime(duration)}</span>
+              <div className="w-1.5 h-1.5 bg-destructive rounded-full animate-pulse" />
+              <span className="text-xs font-mono font-bold text-destructive">{fmtTime(duration)}</span>
             </motion.div>
           )}
         </AnimatePresence>
@@ -240,7 +240,7 @@ export default function MonitorPTTBar(props) {
                 initial={{ scale: 1, opacity: 0.4 }}
                 animate={{ scale: 2.2, opacity: 0 }}
                 transition={{ duration: 1.2, repeat: Infinity, delay: i * 0.4 }}
-                className={"absolute inset-0 rounded-full " + (useMegaphone ? "bg-red-500/20" : "bg-primary/20")}
+                className={"absolute inset-0 rounded-full " + (useMegaphone ? "bg-destructive/20" : "bg-primary/20")}
               />
             ))}
           </AnimatePresence>
@@ -264,7 +264,7 @@ export default function MonitorPTTBar(props) {
             onTouchCancel={handleEnd}
             whileTap={{ scale: 0.92 }}
             disabled={isSending || !canPTT}
-            className={"relative w-14 h-14 rounded-full flex items-center justify-center transition-all duration-200 select-none touch-none shadow-lg " + (isPressed ? (useMegaphone ? "bg-red-500 text-white shadow-red-500/40" : "bg-primary text-primary-foreground shadow-primary/40") : isReceiving ? "bg-green-600 text-white shadow-green-600/30" : "bg-card border-2 border-border text-foreground hover:border-primary/50 disabled:opacity-40")}
+            className={"relative w-14 h-14 rounded-full flex items-center justify-center transition-all duration-200 select-none touch-none shadow-lg " + (isPressed ? (useMegaphone ? "bg-destructive text-destructive-foreground shadow-destructive/40" : "bg-primary text-primary-foreground shadow-primary/40") : isReceiving ? "bg-green-600 text-white shadow-green-600/30" : "bg-card border-2 border-border text-foreground hover:border-primary/50 disabled:opacity-40")}
           >
             {useMegaphone
               ? <Megaphone className={"w-6 h-6 " + (isPressed ? "animate-pulse" : "")} />

@@ -11,7 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
-import { UserCog, Fingerprint, Lock } from "lucide-react";
+import { UserCog, Fingerprint, Lock, UserX } from "lucide-react";
 import { api, getAuthErrorMessage } from "@/api/client";
 import { useAuth } from "@/lib/AuthContext";
 import { toast } from "@/lib/toast";
@@ -23,6 +23,8 @@ import {
   isBiometricPlatform,
   isBiometricSignInEnabled,
 } from "@/lib/biometricAuth";
+
+import DeleteAccountDialog from "@/components/profile/DeleteAccountDialog";
 
 export default function EditProfileDialog({
   open,
@@ -42,6 +44,7 @@ export default function EditProfileDialog({
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [settingPassword, setSettingPassword] = useState(false);
+  const [showDeleteAccount, setShowDeleteAccount] = useState(false);
 
   useEffect(() => {
     if (!open || nameOnly || !isBiometricPlatform()) return;
@@ -142,6 +145,7 @@ export default function EditProfileDialog({
   };
 
   return (
+    <>
     <Dialog
       open={open}
       onOpenChange={(next) => {
@@ -262,13 +266,26 @@ export default function EditProfileDialog({
               </p>
             </div>
           )}
-          <DialogFooter>
+          <DialogFooter className="flex-col gap-2 sm:flex-col">
             <Button type="submit" disabled={saving || !firstName.trim()} className="w-full">
               {saving ? "Saving..." : nameOnly ? "Continue" : "Save profile"}
             </Button>
+            {!nameOnly && (
+              <Button
+                type="button"
+                variant="ghost"
+                className="w-full text-destructive hover:text-destructive hover:bg-destructive/10 font-semibold"
+                onClick={() => setShowDeleteAccount(true)}
+              >
+                <UserX className="w-4 h-4 mr-2" />
+                Delete account
+              </Button>
+            )}
           </DialogFooter>
         </form>
       </DialogContent>
     </Dialog>
+    <DeleteAccountDialog open={showDeleteAccount} onOpenChange={setShowDeleteAccount} />
+    </>
   );
 }

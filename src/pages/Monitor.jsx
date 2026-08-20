@@ -4,7 +4,7 @@ import { api } from "@/api/client";
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from "@tanstack/react-query";
 import { motion, AnimatePresence } from "framer-motion";
 import { DragDropContext, Droppable, Draggable } from "@hello-pangea/dnd";
-import { Radio, Volume2, VolumeX, Eye, Play, Pause, WifiOff } from "lucide-react";
+import { Radio, Volume2, VolumeX, Eye, Play, Pause, WifiOff, GripVertical } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { etzTime } from "@/lib/etz";
 import { deviceDayKey, deviceDayLabel } from "@/lib/deviceDate";
@@ -55,6 +55,7 @@ function ChannelMonitorCard({
   userMap,
   isMuted,
   onToggleMute,
+  dragHandleProps,
 }) {
   const lastMsg = messages[0];
   const hasActivity = messages.length > 0;
@@ -66,31 +67,36 @@ function ChannelMonitorCard({
         : "border-border"
     }`}>
       {/* Channel header */}
-      <button
-        type="button"
-        onClick={() => onOpenChannel?.(channel.id)}
-        onPointerDown={(e) => e.stopPropagation()}
-        className="w-full px-4 py-3 flex items-center gap-3 border-b border-border text-left hover:bg-muted/30 transition-colors"
-      >
-        <div
-          className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0"
-          style={{ backgroundColor: (channel.color || "#f59e0b") + "20" }}
-        >
-          <Radio className="w-4 h-4" style={{ color: channel.color || "#f59e0b" }} />
-        </div>
-        <div className="flex-1 min-w-0">
-          <p className="text-sm font-semibold text-foreground truncate">{channel.name}</p>
-          <p className="text-[10px] text-muted-foreground">
-            {isMuted ? "Muted" : "Listening"} · {messages.length} messages
-          </p>
-        </div>
+      <div className="w-full px-4 py-3 flex items-center gap-3 border-b border-border">
         <button
           type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            onToggleMute?.(channel.id);
-          }}
-          onPointerDown={(e) => e.stopPropagation()}
+          {...dragHandleProps}
+          className="p-1.5 -ml-1 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/50 touch-none cursor-grab active:cursor-grabbing flex-shrink-0"
+          aria-label={`Reorder ${channel.name}`}
+        >
+          <GripVertical className="w-4 h-4" />
+        </button>
+        <button
+          type="button"
+          onClick={() => onOpenChannel?.(channel.id)}
+          className="flex flex-1 items-center gap-3 min-w-0 text-left hover:opacity-90 transition-opacity"
+        >
+          <div
+            className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0"
+            style={{ backgroundColor: (channel.color || "#f59e0b") + "20" }}
+          >
+            <Radio className="w-4 h-4" style={{ color: channel.color || "#f59e0b" }} />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-semibold text-foreground truncate">{channel.name}</p>
+            <p className="text-[10px] text-muted-foreground">
+              {isMuted ? "Muted" : "Listening"} · {messages.length} messages
+            </p>
+          </div>
+        </button>
+        <button
+          type="button"
+          onClick={() => onToggleMute?.(channel.id)}
           className={`p-2 rounded-lg border transition-colors flex-shrink-0 ${
             isMuted
               ? "border-border text-muted-foreground hover:text-foreground"
@@ -110,7 +116,7 @@ function ChannelMonitorCard({
             <span className="text-[10px] font-semibold">LIVE</span>
           </motion.div>
         )}
-      </button>
+      </div>
 
       {/* Protection level control */}
       <div className="px-4 py-2 border-b border-border">
@@ -228,15 +234,26 @@ export default function Monitor() {
   const sendableChannelIdsRef = useRef([]);
   const queryClient = useQueryClient();
 
-  // Persist channel order to localStorage
-  useEffect(() => {
-    const saved = localStorage.getItem("monitorChannelOrder");
-    if (saved) setChannelOrder(JSON.parse(saved));
-  }, []);
+  const monitorOrderKey = user?.id ? `monitorChannelOrder_${user.id}` : null;
 
   useEffect(() => {
-    localStorage.setItem("monitorChannelOrder", JSON.stringify(channelOrder));
-  }, [channelOrder]);
+    if (!monitorOrderKey) return;
+    const saved = localStorage.getItem(monitorOrderKey);
+    if (saved) {
+      try {
+        setChannelOrder(JSON.parse(saved));
+      } catch {
+        setChannelOrder([]);
+      }
+    } else {
+      setChannelOrder([]);
+    }
+  }, [monitorOrderKey]);
+
+  useEffect(() => {
+    if (!monitorOrderKey) return;
+    localStorage.setItem(monitorOrderKey, JSON.stringify(channelOrder));
+  }, [channelOrder, monitorOrderKey]);
 
   useEffect(() => { api.auth.me().then(setUser); }, []);
 
@@ -887,15 +904,15 @@ export default function Monitor() {
   return (
     <div className="min-h-screen safe-top">
       {/* Header */}
-      <div className="px-4 pt-4 pb-4 border-b border-border sm:px-5 sm:pt-6">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:pr-48">
+      <div className="px-4 pt-4 pb-4 border-b border-border sm:px-5 sm:pt-6 max-sm:pr-12 sm:pr-48">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <div className="flex items-center gap-2">
               <Eye className="w-5 h-5 text-primary" />
               <h1 className="text-lg font-bold text-foreground sm:text-xl">Channel Monitor</h1>
             </div>
             <p className="text-xs text-muted-foreground mt-0.5">
-              Tap the speaker icon to mute channels you do not want to hear
+              Tap the speaker icon to mute channels · hold and drag the grip to reorder
             </p>
           </div>
           <div className="flex items-center gap-2 flex-wrap">
@@ -927,7 +944,7 @@ export default function Monitor() {
       </AnimatePresence>
 
       {/* Channel grid */}
-      <div className="p-3 pb-36 sm:p-4">
+      <div className="p-3 pb-36 sm:p-4 max-sm:pr-12 sm:pr-48">
         {monitorChannels.length === 0 ? (
           <div className="text-center py-16">
             <WifiOff className="w-12 h-12 text-muted-foreground/30 mx-auto mb-3" />
@@ -948,7 +965,6 @@ export default function Monitor() {
                         <div
                           ref={dragProvided.innerRef}
                           {...dragProvided.draggableProps}
-                          {...dragProvided.dragHandleProps}
                         >
                           <ChannelMonitorCard
                             channel={channel}
@@ -960,6 +976,7 @@ export default function Monitor() {
                             userMap={userMap}
                             isMuted={isMuted?.(channel.id)}
                             onToggleMute={toggleMute}
+                            dragHandleProps={dragProvided.dragHandleProps}
                           />
                         </div>
                       )}

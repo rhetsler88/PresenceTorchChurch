@@ -37,6 +37,8 @@ let backgroundLogoutWatchId = null;
 
 export function recordLoginTime() {
   immediateLogoutInFlight = false;
+  clearBackgroundPending();
+  clearHardCloseLogoutFlag();
   localStorage.setItem(LOGIN_TIME_KEY, Date.now().toString());
 }
 
@@ -163,6 +165,7 @@ function scheduleBackgroundLogoutWatch() {
 
 /** App/tab moved to background. Starts the 6-hour auto sign-out timer. */
 export function markBackgroundPending() {
+  if (isOAuthRedirectPending() || isNativeGoogleSignInPending()) return;
   localStorage.setItem(BACKGROUND_PENDING_FLAG, "1");
   localStorage.setItem(BACKGROUNDED_AT_KEY, Date.now().toString());
   scheduleBackgroundLogoutWatch();
@@ -237,11 +240,6 @@ function resolveStartupLogout() {
     clearBackgroundPending();
     return true;
   }
-  if (isBackgroundPending()) {
-    // Backgrounded but never resumed — process/tab was closed (swipe-away, browser kill).
-    clearBackgroundPending();
-    return true;
-  }
   clearBackgroundPending();
   return false;
 }
@@ -285,7 +283,8 @@ export function installCloseLogoutHandler() {
 
   if (Capacitor.isNativePlatform()) {
     const handlePause = () => {
-      if (isOAuthRedirectPending()) return;
+      if (isOAuthRedirectPending() || isNativeGoogleSignInPending()) return;
+      if (!auth.currentUser) return;
       markBackgroundPending();
     };
     const handleResume = () => {
@@ -303,7 +302,8 @@ export function installCloseLogoutHandler() {
 
   const handleVisibilityChange = () => {
     if (document.visibilityState === "hidden") {
-      if (isOAuthRedirectPending()) return;
+      if (isOAuthRedirectPending() || isNativeGoogleSignInPending()) return;
+      if (!auth.currentUser) return;
       markBackgroundPending();
       return;
     }

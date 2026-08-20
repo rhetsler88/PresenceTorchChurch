@@ -12,8 +12,8 @@ import MonitorBroadcastControls from "@/components/admin/MonitorBroadcastControl
 import { getInitials } from "@/lib/userUtils";
 
 export const ROLE_CONFIG = {
-  super_admin: { label: "Super Admin", color: "text-red-400", bg: "bg-red-500/10", icon: Shield },
-  admin: { label: "Admin", color: "text-red-400", bg: "bg-red-500/10", icon: Shield },
+  super_admin: { label: "Super Admin", color: "text-destructive", bg: "bg-destructive/10", icon: Shield },
+  admin: { label: "Admin", color: "text-destructive", bg: "bg-destructive/10", icon: Shield },
   director: { label: "Director", color: "text-purple-400", bg: "bg-purple-500/10", icon: Shield },
   lead: { label: "Lead", color: "text-purple-400", bg: "bg-purple-500/10", icon: Crown },
   monitor: { label: "Monitor", color: "text-amber-400", bg: "bg-amber-500/10", icon: Eye },
@@ -87,7 +87,7 @@ export default function UserRow({
             size="sm"
             className={`h-8 px-2.5 ${
               user.receives_staff_alerts
-                ? "bg-red-500 text-white hover:bg-red-600 border-red-500"
+                ? "bg-destructive text-destructive-foreground hover:bg-destructive/90 border-destructive"
                 : "text-muted-foreground"
             }`}
             onClick={() => onToggleStaffAlerts?.(user)}

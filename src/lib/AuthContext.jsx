@@ -8,6 +8,8 @@ import { initPushNotifications, teardownPushNotifications, refreshWebPushAfterIn
 import { clearDailyCodeSession } from "@/lib/dailyCode";
 import {
   clearOAuthRedirectPending,
+  clearNativeGoogleSignInPending,
+  clearBackgroundPending,
   installCloseLogoutHandler,
   shouldLogoutAfterClose,
   isSessionExpired,
@@ -407,8 +409,11 @@ export const AuthProvider = ({ children }) => {
 
         if (!getLoginTime()) {
           recordLoginTime();
+        } else {
+          clearBackgroundPending();
         }
 
+        clearNativeGoogleSignInPending();
         applyAuthenticatedUser(currentUser);
         void refreshAuthCustomClaims(firebaseUser);
         void initPushNotifications(firebaseUser.uid, currentUser).catch((err) => {

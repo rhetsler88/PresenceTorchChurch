@@ -14,6 +14,7 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(HeadsetPTTPlugin.class);
         registerPlugin(BackgroundAudioPlugin.class);
         registerPlugin(SessionGuardPlugin.class);
+        registerPlugin(MicrophonePermissionsPlugin.class);
         super.onCreate(savedInstanceState);
         activeInstance = this;
         if (getBridge() != null && getBridge().getWebView() != null) {
@@ -24,7 +25,6 @@ public class MainActivity extends BridgeActivity {
     @Override
     public void onPause() {
         super.onPause();
-        keepWebViewAliveForBackgroundListen();
         if (!isFinishing() && SessionPrefs.shouldAllowSessionLogout(this)) {
             BackgroundLogoutScheduler.schedule(this);
         }
@@ -96,22 +96,6 @@ public class MainActivity extends BridgeActivity {
             "window.__ptcImmediateLogout && window.__ptcImmediateLogout()",
             null
         );
-    }
-
-    /**
-     * Capacitor pauses the WebView on background, which stops relay/Agora audio with the screen off.
-     * Counteract that while the foreground listen service is active.
-     */
-    private void keepWebViewAliveForBackgroundListen() {
-        if (!BackgroundAudioService.isSessionActive()) {
-            return;
-        }
-        if (getBridge() == null || getBridge().getWebView() == null) {
-            return;
-        }
-        WebView webView = getBridge().getWebView();
-        webView.onResume();
-        webView.resumeTimers();
     }
 
     private void enableWebViewForRecaptcha() {

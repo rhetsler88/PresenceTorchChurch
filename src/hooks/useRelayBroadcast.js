@@ -1,6 +1,9 @@
 import { useState, useCallback, useRef } from "react";
+import { Capacitor } from "@capacitor/core";
 import { api } from "@/api/client";
 import { uploadPublicAudio, uploadPrivateAudio } from "@/api/storage";
+import { ensureMicrophonePermission } from "@/lib/microphonePermissions";
+import { stopBackgroundAudio } from "@/lib/backgroundAudio";
 
 const CHUNK_MS = 1000;
 
@@ -114,6 +117,11 @@ export default function useRelayBroadcast({ channelId, userId, userName }) {
       startTimeRef.current = Date.now();
     } else {
       try {
+        if (Capacitor.isNativePlatform()) {
+          await stopBackgroundAudio().catch(() => {});
+          const permitted = await ensureMicrophonePermission();
+          if (!permitted) return false;
+        }
         const stream = await navigator.mediaDevices.getUserMedia({
           audio: {
             echoCancellation: true,

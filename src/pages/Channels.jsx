@@ -2,7 +2,7 @@ import React, { useState, useEffect } from "react";
 import { api } from "@/api/client";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
-import { Plus, Radio, MessageSquare } from "lucide-react";
+import { Plus, Radio } from "lucide-react";
 import SetAllProtectionLevel from "@/components/monitor/SetAllProtectionLevel";
 import ChannelCard from "../components/channels/ChannelCard";
 import CreateChannelDialog from "../components/channels/CreateChannelDialog";
@@ -142,22 +142,17 @@ export default function Channels() {
   return (
     <div className="w-full max-w-full overflow-x-hidden">
       <div className="px-4 pt-4 pb-4 sm:px-5 sm:pt-6 max-sm:pr-12 sm:pr-48">
-        <div className="flex items-center justify-between mb-1">
-          <div>
-            <div className="flex items-center gap-2">
-              <MessageSquare className="w-5 h-5 text-primary" />
-              <h1 className="text-xl font-bold text-foreground">Channels</h1>
-            </div>
+        <div className="flex items-center justify-between gap-3 mb-1">
+          <div className="min-w-0">
+            <h1 className="text-xl font-bold text-foreground">Channels</h1>
             <p className="text-xs text-muted-foreground mt-0.5">{channels.length} channels</p>
           </div>
-          <div className="flex items-center gap-2">
-            {showCreateButton && (
-              <Button size="sm" onClick={() => setShowCreate(true)} className="gap-1.5">
-                <Plus className="w-4 h-4" />
-                New
-              </Button>
-            )}
-          </div>
+          {showCreateButton && (
+            <Button size="sm" onClick={() => setShowCreate(true)} className="gap-1.5 shrink-0">
+              <Plus className="w-4 h-4" />
+              New
+            </Button>
+          )}
         </div>
         {canManageAnyProtection && channels.length > 0 && (
           <div className="mt-4">
@@ -171,7 +166,7 @@ export default function Channels() {
         )}
       </div>
 
-      <div className="px-4 pb-24 max-sm:pr-12 sm:pr-48">
+      <div className="px-4 pb-24">
         {isLoading ? (
           <div className="flex justify-center py-16">
             <div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin" />

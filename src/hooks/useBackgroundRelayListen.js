@@ -1,54 +1,48 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { Capacitor } from "@capacitor/core";
 import { startBackgroundAudio, stopBackgroundAudio } from "@/lib/backgroundAudio";
 import { ensureAudioReady } from "@/lib/pttTones";
 
-function installNativeBackgroundKeepAlive() {
-  if (!Capacitor.isNativePlatform()) {
-    return () => {};
-  }
-
-  const onBackground = () => {
-    ensureAudioReady();
-  };
-
-  const onForeground = () => {
-    ensureAudioReady();
-  };
-
-  window.addEventListener("pause", onBackground);
-  window.addEventListener("resume", onForeground);
-
-  return () => {
-    window.removeEventListener("pause", onBackground);
-    window.removeEventListener("resume", onForeground);
-  };
-}
-
 /**
  * Keeps native iOS/Android audio sessions alive for Storage-relay PTT receive
- * while the user is on Talk or Monitor. Does not touch Agora live audio.
+ * only while the app is backgrounded — avoids fighting the mic during PTT transmit.
  */
 export default function useBackgroundRelayListen({ enabled, title, silent = false }) {
-  useEffect(() => installNativeBackgroundKeepAlive(), []);
+  const sessionActiveRef = useRef(false);
 
   useEffect(() => {
-    if (!enabled) return undefined;
+    if (!enabled || !Capacitor.isNativePlatform()) {
+      return undefined;
+    }
 
-    let cancelled = false;
-
-    (async () => {
+    const startSession = async () => {
+      if (sessionActiveRef.current) return;
       ensureAudioReady();
       await startBackgroundAudio({ title: title || "Presence Torch", silent });
-      ensureAudioReady();
-      if (cancelled) {
-        await stopBackgroundAudio();
-      }
-    })();
+      sessionActiveRef.current = true;
+    };
+
+    const stopSession = async () => {
+      if (!sessionActiveRef.current) return;
+      sessionActiveRef.current = false;
+      await stopBackgroundAudio().catch(() => {});
+    };
+
+    const onPause = () => {
+      void startSession();
+    };
+
+    const onResume = () => {
+      void stopSession();
+    };
+
+    window.addEventListener("pause", onPause);
+    window.addEventListener("resume", onResume);
 
     return () => {
-      cancelled = true;
-      stopBackgroundAudio().catch(() => {});
+      window.removeEventListener("pause", onPause);
+      window.removeEventListener("resume", onResume);
+      void stopSession();
     };
   }, [enabled, title, silent]);
 }

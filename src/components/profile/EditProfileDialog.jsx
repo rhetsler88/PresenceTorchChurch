@@ -22,7 +22,10 @@ import {
   isBiometricHardwareAvailable,
   isBiometricPlatform,
   isBiometricSignInEnabled,
+  saveBiometricCredentials,
 } from "@/lib/biometricAuth";
+import { auth } from "@/lib/firebase";
+import { EmailAuthProvider, reauthenticateWithCredential } from "firebase/auth";
 
 import DeleteAccountDialog from "@/components/profile/DeleteAccountDialog";
 
@@ -45,6 +48,9 @@ export default function EditProfileDialog({
   const [confirmPassword, setConfirmPassword] = useState("");
   const [settingPassword, setSettingPassword] = useState(false);
   const [showDeleteAccount, setShowDeleteAccount] = useState(false);
+  const [showBiometricSetup, setShowBiometricSetup] = useState(false);
+  const [biometricPassword, setBiometricPassword] = useState("");
+  const [enablingBiometric, setEnablingBiometric] = useState(false);
 
   useEffect(() => {
     if (!open || nameOnly || !isBiometricPlatform()) return;
@@ -65,6 +71,8 @@ export default function EditProfileDialog({
       setCanSetPassword(false);
       setNewPassword("");
       setConfirmPassword("");
+      setShowBiometricSetup(false);
+      setBiometricPassword("");
       return;
     }
     setCanSetPassword(api.auth.canSetPassword());
@@ -130,6 +138,8 @@ export default function EditProfileDialog({
     if (!checked) {
       await clearBiometricCredentials();
       setBiometricEnabled(false);
+      setShowBiometricSetup(false);
+      setBiometricPassword("");
       toast.success(`${biometricLabel} sign-in disabled`);
       return;
     }
@@ -139,9 +149,32 @@ export default function EditProfileDialog({
       });
       return;
     }
-    toast.message(`Sign out and sign in with email to enable ${biometricLabel}`, {
-      description: 'Check "Use biometrics for faster sign-in" on the sign-in screen.',
-    });
+    setShowBiometricSetup(true);
+  };
+
+  const handleEnableBiometric = async () => {
+    const email = user?.email || auth.currentUser?.email;
+    if (!email || !biometricPassword) {
+      toast.error("Enter your password to enable biometric sign-in");
+      return;
+    }
+
+    setEnablingBiometric(true);
+    try {
+      const firebaseUser = auth.currentUser;
+      if (!firebaseUser) throw new Error("Not signed in");
+      const credential = EmailAuthProvider.credential(email, biometricPassword);
+      await reauthenticateWithCredential(firebaseUser, credential);
+      await saveBiometricCredentials(email, biometricPassword);
+      setBiometricEnabled(true);
+      setShowBiometricSetup(false);
+      setBiometricPassword("");
+      toast.success(`${biometricLabel} sign-in enabled`);
+    } catch (err) {
+      toast.error(getAuthErrorMessage(err) || "Couldn't enable biometric sign-in");
+    } finally {
+      setEnablingBiometric(false);
+    }
   };
 
   return (
@@ -262,8 +295,29 @@ export default function EditProfileDialog({
                 />
               </div>
               <p className="text-xs text-muted-foreground">
-                Sign in quickly with {biometricLabel.toLowerCase()} after your first email sign-in.
+                Sign in quickly with {biometricLabel.toLowerCase()} using your email and password.
               </p>
+              {showBiometricSetup && !biometricEnabled && (
+                <div className="space-y-2 pt-2">
+                  <Label htmlFor="biometricPassword">Confirm your password</Label>
+                  <Input
+                    id="biometricPassword"
+                    type="password"
+                    autoComplete="current-password"
+                    value={biometricPassword}
+                    onChange={(e) => setBiometricPassword(e.target.value)}
+                    disabled={enablingBiometric}
+                  />
+                  <Button
+                    type="button"
+                    className="w-full"
+                    disabled={enablingBiometric || !biometricPassword}
+                    onClick={handleEnableBiometric}
+                  >
+                    {enablingBiometric ? "Enabling..." : `Enable ${biometricLabel}`}
+                  </Button>
+                </div>
+              )}
             </div>
           )}
           <DialogFooter className="flex-col gap-2 sm:flex-col">

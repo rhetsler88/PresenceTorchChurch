@@ -904,8 +904,8 @@ export default function Monitor() {
   return (
     <div className="min-h-screen safe-top">
       {/* Header */}
-      <div className="px-4 pt-4 pb-4 border-b border-border sm:px-5 sm:pt-6 max-sm:pr-12 sm:pr-48">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+      <div className="px-4 pt-4 pb-4 border-b border-border sm:px-5 sm:pt-6">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between max-sm:pr-12 sm:pr-48">
           <div>
             <div className="flex items-center gap-2">
               <Eye className="w-5 h-5 text-primary" />
@@ -944,7 +944,7 @@ export default function Monitor() {
       </AnimatePresence>
 
       {/* Channel grid */}
-      <div className="p-3 pb-36 sm:p-4 max-sm:pr-12 sm:pr-48">
+      <div className="p-3 pb-36 sm:p-4">
         {monitorChannels.length === 0 ? (
           <div className="text-center py-16">
             <WifiOff className="w-12 h-12 text-muted-foreground/30 mx-auto mb-3" />

@@ -53,6 +53,25 @@ export async function hasBiometricSignIn() {
 
 export async function saveBiometricCredentials(email, password) {
   if (!isBiometricPlatform()) return;
+
+  const available = await isBiometricHardwareAvailable();
+  if (!available) {
+    throw new Error("Biometric hardware is not available on this device.");
+  }
+
+  try {
+    await NativeBiometric.deleteCredentials({ server: BIOMETRIC_SERVER });
+  } catch {
+    /* ignore missing prior credentials */
+  }
+
+  await NativeBiometric.verifyIdentity({
+    reason: "Confirm your identity to enable biometric sign-in",
+    title: "Enable sign-in",
+    subtitle: email.trim(),
+    description: "Use biometrics to store your credentials securely",
+  });
+
   await NativeBiometric.setCredentials({
     username: email.trim(),
     password,

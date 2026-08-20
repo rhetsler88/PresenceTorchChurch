@@ -140,39 +140,38 @@ export default function Channels() {
   };
 
   return (
-    <div className="w-full max-w-full overflow-x-hidden">
-      <div className="px-4 pt-4 pb-4 sm:px-5 sm:pt-6 max-sm:pr-12 sm:pr-48">
-        <div className="flex items-center justify-between gap-3 mb-1">
+    <div className="min-h-screen safe-top">
+      <div className="px-4 pt-4 pb-4 border-b border-border sm:px-5 sm:pt-6">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between max-sm:pr-12 sm:pr-48">
           <div className="min-w-0">
-            <h1 className="text-xl font-bold text-foreground">Channels</h1>
-            <p className="text-xs text-muted-foreground mt-0.5">{channels.length} channels</p>
+            <h1 className="text-lg font-bold text-foreground sm:text-xl">Channels</h1>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              {canManageAnyProtection
+                ? `${channels.length} channels · tap to open Talk`
+                : `${channels.length} channels · tap to request access`}
+            </p>
           </div>
-          {showCreateButton && (
-            <Button size="sm" onClick={() => setShowCreate(true)} className="gap-1.5 shrink-0">
-              <Plus className="w-4 h-4" />
-              New
-            </Button>
-          )}
+          <div className="flex items-center gap-2 flex-wrap shrink-0">
+            {canManageAnyProtection && channels.length > 0 && (
+              <SetAllProtectionLevel onApply={(level) => setAllProtectionMutation.mutateAsync(level)} />
+            )}
+            {showCreateButton && (
+              <Button size="sm" onClick={() => setShowCreate(true)} className="gap-1.5">
+                <Plus className="w-4 h-4" />
+                New
+              </Button>
+            )}
+          </div>
         </div>
-        {canManageAnyProtection && channels.length > 0 && (
-          <div className="mt-4">
-            <SetAllProtectionLevel onApply={(level) => setAllProtectionMutation.mutateAsync(level)} />
-          </div>
-        )}
-        {!canManageAnyProtection && channels.length > 0 && (
-          <p className="text-xs text-muted-foreground mt-3">
-            Tap a channel to request full PTT access.
-          </p>
-        )}
       </div>
 
-      <div className="px-4 pb-24">
+      <div className="p-3 pb-36 sm:p-4">
         {isLoading ? (
           <div className="flex justify-center py-16">
             <div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin" />
           </div>
         ) : channels.length > 0 ? (
-          <div className="space-y-2">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
             {channels.map((channel) => (
               <ChannelCard
                 key={channel.id}

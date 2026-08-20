@@ -3,7 +3,7 @@ import { Capacitor } from "@capacitor/core";
 import { api } from "@/api/client";
 import { uploadPublicAudio, uploadPrivateAudio } from "@/api/storage";
 import { ensureMicrophonePermission } from "@/lib/microphonePermissions";
-import { stopBackgroundAudio } from "@/lib/backgroundAudio";
+import { forceStopBackgroundAudio } from "@/lib/backgroundAudio";
 
 const CHUNK_MS = 1000;
 
@@ -18,11 +18,29 @@ function isUploadPermissionError(err) {
 }
 
 function getSupportedMime() {
-  const types = ["audio/webm;codecs=opus", "audio/webm", "audio/ogg;codecs=opus", "audio/mp4"];
-  for (const t of types) {
-    if (MediaRecorder.isTypeSupported(t)) return t;
+  const isAndroid = Capacitor.getPlatform() === "android";
+  const types = isAndroid
+    ? ["audio/mp4", "audio/webm;codecs=opus", "audio/webm", "audio/ogg;codecs=opus", "audio/3gpp"]
+    : ["audio/webm;codecs=opus", "audio/webm", "audio/ogg;codecs=opus", "audio/mp4"];
+  for (const type of types) {
+    if (MediaRecorder.isTypeSupported(type)) return type;
   }
   return "";
+}
+
+function createMediaRecorder(stream, mimeType) {
+  try {
+    return mimeType
+      ? new MediaRecorder(stream, { mimeType })
+      : new MediaRecorder(stream);
+  } catch (err) {
+    console.warn("MediaRecorder init failed, retrying without mimeType:", mimeType, err);
+    return new MediaRecorder(stream);
+  }
+}
+
+function shouldUseSingleRecorder() {
+  return Capacitor.isNativePlatform();
 }
 
 async function stopMediaRecorder(recorder) {
@@ -112,13 +130,16 @@ export default function useRelayBroadcast({ channelId, userId, userName }) {
     archiveOnlyRef.current = archiveOnly;
     ownsStreamRef.current = ownsStream ?? !sharedStream;
 
+    if (Capacitor.isNativePlatform()) {
+      await forceStopBackgroundAudio();
+    }
+
     if (sharedStream) {
       streamRef.current = sharedStream;
       startTimeRef.current = Date.now();
     } else {
       try {
         if (Capacitor.isNativePlatform()) {
-          await stopBackgroundAudio().catch(() => {});
           const permitted = await ensureMicrophonePermission();
           if (!permitted) return false;
         }
@@ -147,34 +168,84 @@ export default function useRelayBroadcast({ channelId, userId, userName }) {
 
     const mimeType = getSupportedMime();
     mimeRef.current = mimeType || "audio/webm";
-    const recorderOptions = mimeType ? { mimeType } : {};
+    const useSingleRecorder = shouldUseSingleRecorder();
 
-    if (!archiveOnly) {
-      const relayRecorder = new MediaRecorder(streamRef.current, recorderOptions);
-      relayRecorder.ondataavailable = (event) => {
-        if (!event.data || event.data.size === 0) return;
-
-        let uploadBlob;
-        if (!initSegmentRef.current) {
-          initSegmentRef.current = event.data;
-          uploadBlob = event.data;
-        } else {
-          uploadBlob = new Blob([initSegmentRef.current, event.data], { type: mimeRef.current });
-        }
-        queueChunkUpload(uploadBlob, isStoppingRef.current);
-      };
-      relayRecorderRef.current = relayRecorder;
-      relayRecorder.start(CHUNK_MS);
-    }
-
-    const fullRecorder = new MediaRecorder(streamRef.current, recorderOptions);
-    fullRecorder.ondataavailable = (event) => {
+    const appendArchiveChunk = (event) => {
       if (event.data?.size > 0) {
         fullChunksRef.current.push(event.data);
       }
     };
-    fullRecorderRef.current = fullRecorder;
-    fullRecorder.start(archiveOnly || sharedStream ? CHUNK_MS : undefined);
+
+    const appendRelayChunk = (event, isFinalChunk) => {
+      if (!event.data || event.data.size === 0) return;
+      if (archiveOnlyRef.current) return;
+
+      let uploadBlob;
+      if (!initSegmentRef.current) {
+        initSegmentRef.current = event.data;
+        uploadBlob = event.data;
+      } else {
+        uploadBlob = new Blob([initSegmentRef.current, event.data], { type: mimeRef.current });
+      }
+      queueChunkUpload(uploadBlob, isFinalChunk);
+    };
+
+    if (useSingleRecorder) {
+      const recorder = createMediaRecorder(streamRef.current, mimeType);
+      recorder.onerror = (event) => {
+        console.error("MediaRecorder error:", event);
+      };
+      recorder.ondataavailable = (event) => {
+        appendArchiveChunk(event);
+        appendRelayChunk(event, isStoppingRef.current);
+      };
+      relayRecorderRef.current = recorder;
+      fullRecorderRef.current = null;
+    } else if (!archiveOnly) {
+      const relayRecorder = createMediaRecorder(streamRef.current, mimeType);
+      relayRecorder.onerror = (event) => {
+        console.error("Relay MediaRecorder error:", event);
+      };
+      relayRecorder.ondataavailable = (event) => {
+        appendRelayChunk(event, isStoppingRef.current);
+      };
+      relayRecorderRef.current = relayRecorder;
+
+      const fullRecorder = createMediaRecorder(streamRef.current, mimeType);
+      fullRecorder.onerror = (event) => {
+        console.error("Archive MediaRecorder error:", event);
+      };
+      fullRecorder.ondataavailable = appendArchiveChunk;
+      fullRecorderRef.current = fullRecorder;
+    } else {
+      const fullRecorder = createMediaRecorder(streamRef.current, mimeType);
+      fullRecorder.onerror = (event) => {
+        console.error("Archive MediaRecorder error:", event);
+      };
+      fullRecorder.ondataavailable = appendArchiveChunk;
+      fullRecorderRef.current = fullRecorder;
+    }
+
+    try {
+      if (useSingleRecorder) {
+        relayRecorderRef.current.start(CHUNK_MS);
+      } else if (!archiveOnly) {
+        relayRecorderRef.current.start(CHUNK_MS);
+        fullRecorderRef.current.start(sharedStream ? CHUNK_MS : undefined);
+      } else {
+        fullRecorderRef.current.start(CHUNK_MS);
+      }
+    } catch (err) {
+      console.error("MediaRecorder.start failed:", err);
+      activeRef.current = false;
+      relayRecorderRef.current = null;
+      fullRecorderRef.current = null;
+      if (streamRef.current && ownsStreamRef.current) {
+        streamRef.current.getTracks().forEach((track) => track.stop());
+      }
+      streamRef.current = null;
+      return false;
+    }
 
     setIsRecording(true);
     return true;

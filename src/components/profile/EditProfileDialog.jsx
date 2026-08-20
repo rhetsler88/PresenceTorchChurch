@@ -25,8 +25,6 @@ import {
   isBiometricSignInEnabled,
   saveBiometricCredentials,
 } from "@/lib/biometricAuth";
-import { auth } from "@/lib/firebase";
-import { EmailAuthProvider, reauthenticateWithCredential } from "firebase/auth";
 
 import DeleteAccountDialog from "@/components/profile/DeleteAccountDialog";
 
@@ -154,7 +152,7 @@ export default function EditProfileDialog({
   };
 
   const handleEnableBiometric = async () => {
-    const email = user?.email || auth.currentUser?.email;
+    const email = user?.email;
     if (!email || !biometricPassword) {
       toast.error("Enter your password to enable biometric sign-in");
       return;
@@ -162,10 +160,7 @@ export default function EditProfileDialog({
 
     setEnablingBiometric(true);
     try {
-      const firebaseUser = auth.currentUser;
-      if (!firebaseUser) throw new Error("Not signed in");
-      const credential = EmailAuthProvider.credential(email, biometricPassword);
-      await reauthenticateWithCredential(firebaseUser, credential);
+      await api.auth.verifyCurrentUserPassword(biometricPassword);
       await saveBiometricCredentials(email, biometricPassword);
       setBiometricEnabled(true);
       setShowBiometricSetup(false);

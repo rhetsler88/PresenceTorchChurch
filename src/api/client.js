@@ -848,6 +848,24 @@ export const authApi = {
     await firebaseUser.reload();
   },
 
+  async verifyCurrentUserPassword(password) {
+    await waitForFirestoreAuth({ forceRefresh: true });
+    const firebaseUser = auth.currentUser;
+    if (!firebaseUser?.email) {
+      throw Object.assign(new Error("Your account does not have an email address."), {
+        code: "auth/missing-email",
+      });
+    }
+    if (!userHasPasswordProvider(firebaseUser)) {
+      throw Object.assign(new Error("Set a password on your account before using this feature."), {
+        code: "auth/operation-not-allowed",
+      });
+    }
+
+    const credential = EmailAuthProvider.credential(firebaseUser.email, password);
+    await reauthenticateWithCredential(firebaseUser, credential);
+  },
+
   async syncMyChannelAccess() {
     await waitForFirestoreAuth({ forceRefresh: true });
     const callable = httpsCallable(functions, "syncMyChannelAccess");

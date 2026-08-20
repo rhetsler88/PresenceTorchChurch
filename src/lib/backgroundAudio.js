@@ -36,3 +36,11 @@ export async function stopBackgroundAudio() {
     activeTitle = "Presence Torch";
   }
 }
+
+/** Stop native background listen before mic capture — ignores ref count. */
+export async function forceStopBackgroundAudio() {
+  if (!isBackgroundAudioAvailable()) return;
+  sessionRefCount = 0;
+  activeTitle = "Presence Torch";
+  await BackgroundAudio.stopSession().catch(() => {});
+}

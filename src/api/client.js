@@ -46,6 +46,11 @@ import { addUserChannelMembership } from "@/lib/channelMembership";
 import { clearDailyCodeSession } from "@/lib/dailyCode";
 import { clearBiometricCredentials } from "@/lib/biometricAuth";
 import {
+  filterAppVisibleUsers,
+  filterAppVisibleMessages,
+  registerHiddenAppUserIds,
+} from "@/lib/userUtils";
+import {
   getPasswordLengthErrorMessage,
   validateNewPasswordDifferent,
   validatePasswordLength,
@@ -498,11 +503,26 @@ export const entities = {
     ...createEntityApi("users"),
     async list() {
       const snap = await getDocs(collection(db, "users"));
-      return snap.docs.map(docToObject);
+      const allUsers = snap.docs.map(docToObject);
+      registerHiddenAppUserIds(allUsers);
+      return filterAppVisibleUsers(allUsers);
     },
   },
   VoiceMessage: {
-    ...createEntityApi("voiceMessages"),
+    ...(() => {
+      const voiceMessagesApi = createEntityApi("voiceMessages");
+      return {
+        ...voiceMessagesApi,
+        async list(sortField, limitCount) {
+          const items = await voiceMessagesApi.list(sortField, limitCount);
+          return filterAppVisibleMessages(items);
+        },
+        async filter(filters, sortField, limitCount) {
+          const items = await voiceMessagesApi.filter(filters, sortField, limitCount);
+          return filterAppVisibleMessages(items);
+        },
+      };
+    })(),
     async deleteAsModerator(messageIds) {
       await waitForFirestoreAuth({ forceRefresh: true });
       const callable = httpsCallable(functions, "deleteVoiceMessages");

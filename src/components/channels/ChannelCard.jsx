@@ -2,9 +2,10 @@ import React from "react";
 import { Radio, Users, ChevronRight, Pencil, Shield } from "lucide-react";
 import ProtectionLevelControl from "@/components/monitor/ProtectionLevelControl";
 import { PROTECTION_LEVELS } from "@/components/ptt/ProtectionLevelBadge";
+import { getVisibleChannelMemberEntries } from "@/lib/userUtils";
 
 export default function ChannelCard({ channel, isActive, isPending, onSelect, canRename, onRename, canManageProtection, protectionLevel, onProtectionChange }) {
-  const memberCount = channel.members?.length || 0;
+  const memberCount = getVisibleChannelMemberEntries(channel).length;
   const protConfig = PROTECTION_LEVELS[protectionLevel] || PROTECTION_LEVELS.green;
 
   return (

@@ -8,6 +8,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { PasswordInput } from "@/components/ui/password-input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
@@ -240,9 +241,8 @@ export default function EditProfileDialog({
               </p>
               <div className="space-y-2">
                 <Label htmlFor="editNewPassword">New password</Label>
-                <Input
+                <PasswordInput
                   id="editNewPassword"
-                  type="password"
                   autoComplete="new-password"
                   placeholder={`At least ${MIN_PASSWORD_LENGTH} characters`}
                   value={newPassword}
@@ -253,9 +253,8 @@ export default function EditProfileDialog({
               </div>
               <div className="space-y-2">
                 <Label htmlFor="editConfirmPassword">Confirm password</Label>
-                <Input
+                <PasswordInput
                   id="editConfirmPassword"
-                  type="password"
                   autoComplete="new-password"
                   placeholder="Re-enter your password"
                   value={confirmPassword}
@@ -300,9 +299,8 @@ export default function EditProfileDialog({
               {showBiometricSetup && !biometricEnabled && (
                 <div className="space-y-2 pt-2">
                   <Label htmlFor="biometricPassword">Confirm your password</Label>
-                  <Input
+                  <PasswordInput
                     id="biometricPassword"
-                    type="password"
                     autoComplete="current-password"
                     value={biometricPassword}
                     onChange={(e) => setBiometricPassword(e.target.value)}

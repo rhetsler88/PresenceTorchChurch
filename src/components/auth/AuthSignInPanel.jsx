@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from "react";
 import { Fingerprint } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { PasswordInput } from "@/components/ui/password-input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Separator } from "@/components/ui/separator";
@@ -209,9 +210,8 @@ export default function AuthSignInPanel({ googleButtonLabel = "Sign in with Goog
         </div>
         <div className="space-y-2">
           <Label htmlFor="auth-password">Password</Label>
-          <Input
+          <PasswordInput
             id="auth-password"
-            type="password"
             autoComplete={mode === "sign-in" ? "current-password" : "new-password"}
             placeholder={mode === "sign-in" ? "Your password" : `At least ${MIN_PASSWORD_LENGTH} characters`}
             value={password}

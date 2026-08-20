@@ -72,6 +72,54 @@ export function isDirector(user) {
   return user?.role === "director";
 }
 
+export const PLAY_REVIEWER_EMAIL = "playstore-reviewer@presencetorch.net";
+
+let hiddenAppUserIds = new Set();
+
+/** Play Store review account — hidden from in-app user lists and activity. */
+export function isPlayReviewerAccount(user) {
+  if (!user) return false;
+  if (user.play_reviewer_account) return true;
+  return user.email?.trim().toLowerCase() === PLAY_REVIEWER_EMAIL;
+}
+
+/** Cache hidden user ids whenever the full user list is loaded. */
+export function registerHiddenAppUserIds(users) {
+  hiddenAppUserIds = new Set(
+    (users || []).filter(isPlayReviewerAccount).map((user) => user.id).filter(Boolean),
+  );
+}
+
+export function isHiddenAppUserId(userId) {
+  return Boolean(userId && hiddenAppUserIds.has(userId));
+}
+
+export function filterAppVisibleUsers(users) {
+  return (users || []).filter((user) => !isPlayReviewerAccount(user));
+}
+
+export function isPlayReviewerMessage(message) {
+  if (!message) return false;
+  if (message.created_by_id && isHiddenAppUserId(message.created_by_id)) return true;
+  const email = message.sender_email?.trim().toLowerCase();
+  if (email === PLAY_REVIEWER_EMAIL) return true;
+  return message.sender_name?.trim() === "Play Store Reviewer";
+}
+
+export function filterAppVisibleMessages(messages) {
+  return (messages || []).filter((message) => !isPlayReviewerMessage(message));
+}
+
+/** Channel member entries that should not appear in app member counts. */
+export function getVisibleChannelMemberEntries(channel) {
+  return (channel?.members || []).filter((entry) => {
+    if (typeof entry === "string" && entry.includes("@")) {
+      return entry.trim().toLowerCase() !== PLAY_REVIEWER_EMAIL;
+    }
+    return !isHiddenAppUserId(entry);
+  });
+}
+
 export function isLead(user) {
   return user?.role === "lead";
 }

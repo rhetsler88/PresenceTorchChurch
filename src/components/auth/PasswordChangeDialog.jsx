@@ -7,7 +7,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
+import { PasswordInput } from "@/components/ui/password-input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Lock } from "lucide-react";
@@ -77,9 +77,8 @@ export default function PasswordChangeDialog({ open, onOpenChange, onPasswordCha
         <form onSubmit={handleSubmit} className="space-y-4 mt-2">
           <div className="space-y-2">
             <Label htmlFor="current-password">Current password</Label>
-            <Input
+            <PasswordInput
               id="current-password"
-              type="password"
               autoComplete="current-password"
               value={currentPassword}
               onChange={(event) => setCurrentPassword(event.target.value)}
@@ -89,9 +88,8 @@ export default function PasswordChangeDialog({ open, onOpenChange, onPasswordCha
           </div>
           <div className="space-y-2">
             <Label htmlFor="new-password">New password</Label>
-            <Input
+            <PasswordInput
               id="new-password"
-              type="password"
               autoComplete="new-password"
               placeholder={`At least ${MIN_PASSWORD_LENGTH} characters`}
               value={newPassword}
@@ -103,9 +101,8 @@ export default function PasswordChangeDialog({ open, onOpenChange, onPasswordCha
           </div>
           <div className="space-y-2">
             <Label htmlFor="confirm-new-password">Confirm new password</Label>
-            <Input
+            <PasswordInput
               id="confirm-new-password"
-              type="password"
               autoComplete="new-password"
               value={confirmPassword}
               onChange={(event) => setConfirmPassword(event.target.value)}

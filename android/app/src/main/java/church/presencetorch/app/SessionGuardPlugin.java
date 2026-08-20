@@ -21,4 +21,11 @@ public class SessionGuardPlugin extends Plugin {
         SessionPrefs.setActiveSession(getContext(), active);
         call.resolve();
     }
+
+    @PluginMethod
+    public void setSensitiveOperationPending(PluginCall call) {
+        boolean pending = call.getBoolean("pending", false);
+        SessionPrefs.setSensitiveOperationPending(getContext(), pending);
+        call.resolve();
+    }
 }

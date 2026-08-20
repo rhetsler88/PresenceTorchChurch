@@ -4,6 +4,7 @@ import { api } from "@/api/client";
 import { uploadPublicAudio, uploadPrivateAudio } from "@/api/storage";
 import { ensureMicrophonePermission } from "@/lib/microphonePermissions";
 import { forceStopBackgroundAudio } from "@/lib/backgroundAudio";
+import { beginSensitiveOperation, endSensitiveOperation } from "@/lib/sensitiveOperation";
 
 const CHUNK_MS = 1000;
 
@@ -39,11 +40,36 @@ function createMediaRecorder(stream, mimeType) {
   }
 }
 
-function shouldUseSingleRecorder() {
-  return Capacitor.isNativePlatform();
+function shouldUseRequestDataMode() {
+  return Capacitor.getPlatform() === "android";
 }
 
-async function stopMediaRecorder(recorder) {
+function startRecorderTiming(recorder, chunkIntervalRef) {
+  if (shouldUseRequestDataMode()) {
+    recorder.start();
+    chunkIntervalRef.current = setInterval(() => {
+      if (recorder.state !== "recording") return;
+      try {
+        recorder.requestData();
+      } catch (err) {
+        console.error("MediaRecorder.requestData failed:", err);
+      }
+    }, CHUNK_MS);
+    return;
+  }
+
+  recorder.start(CHUNK_MS);
+}
+
+function clearRecorderTiming(chunkIntervalRef) {
+  if (chunkIntervalRef.current) {
+    clearInterval(chunkIntervalRef.current);
+    chunkIntervalRef.current = null;
+  }
+}
+
+async function stopMediaRecorder(recorder, chunkIntervalRef) {
+  clearRecorderTiming(chunkIntervalRef);
   if (!recorder || recorder.state === "inactive") return;
   if (recorder.state === "recording") {
     try {
@@ -86,6 +112,20 @@ export default function useRelayBroadcast({ channelId, userId, userName }) {
   const initSegmentRef = useRef(null);
   const pendingUploadsRef = useRef([]);
   const heardBroadcastsRef = useRef(new Set());
+  const chunkIntervalRef = useRef(null);
+  const sensitiveOpRef = useRef(false);
+
+  const releaseSensitiveOperation = useCallback(() => {
+    if (!sensitiveOpRef.current) return;
+    sensitiveOpRef.current = false;
+    endSensitiveOperation();
+  }, []);
+
+  const beginRecordingSensitiveOperation = useCallback(() => {
+    if (sensitiveOpRef.current) return;
+    sensitiveOpRef.current = true;
+    beginSensitiveOperation();
+  }, []);
 
   const uploadChunk = useCallback(async (blob, seq, isFinal) => {
     const { channelId, userId, userName } = paramsRef.current;
@@ -110,11 +150,20 @@ export default function useRelayBroadcast({ channelId, userId, userName }) {
   const queueChunkUpload = useCallback((blob, isFinal) => {
     const seq = sequenceRef.current;
     sequenceRef.current += 1;
-    const uploadP = uploadChunk(blob, seq, isFinal).catch((err) => {
-      console.error("Relay chunk upload failed:", err);
-    });
-    pendingUploadsRef.current.push(uploadP);
-    return uploadP;
+    const scheduleUpload = () => {
+      const uploadP = uploadChunk(blob, seq, isFinal).catch((err) => {
+        console.error("Relay chunk upload failed:", err);
+      });
+      pendingUploadsRef.current.push(uploadP);
+      return uploadP;
+    };
+
+    if (Capacitor.isNativePlatform()) {
+      setTimeout(scheduleUpload, 0);
+      return Promise.resolve();
+    }
+
+    return scheduleUpload();
   }, [uploadChunk]);
 
   const startRecording = useCallback(async ({
@@ -126,6 +175,8 @@ export default function useRelayBroadcast({ channelId, userId, userName }) {
     const { channelId, userId } = paramsRef.current;
     if (!channelId || !userId) return false;
     if (activeRef.current) return true;
+
+    beginRecordingSensitiveOperation();
 
     archiveOnlyRef.current = archiveOnly;
     ownsStreamRef.current = ownsStream ?? !sharedStream;
@@ -141,7 +192,10 @@ export default function useRelayBroadcast({ channelId, userId, userName }) {
       try {
         if (Capacitor.isNativePlatform()) {
           const permitted = await ensureMicrophonePermission();
-          if (!permitted) return false;
+          if (!permitted) {
+            releaseSensitiveOperation();
+            return false;
+          }
         }
         const stream = await navigator.mediaDevices.getUserMedia({
           audio: {
@@ -154,6 +208,7 @@ export default function useRelayBroadcast({ channelId, userId, userName }) {
         startTimeRef.current = Date.now();
       } catch (err) {
         console.error("Microphone access denied:", err);
+        releaseSensitiveOperation();
         return false;
       }
     }
@@ -168,7 +223,7 @@ export default function useRelayBroadcast({ channelId, userId, userName }) {
 
     const mimeType = getSupportedMime();
     mimeRef.current = mimeType || "audio/webm";
-    const useSingleRecorder = shouldUseSingleRecorder();
+    const useSingleRecorder = Capacitor.isNativePlatform();
 
     const appendArchiveChunk = (event) => {
       if (event.data?.size > 0) {
@@ -228,41 +283,48 @@ export default function useRelayBroadcast({ channelId, userId, userName }) {
 
     try {
       if (useSingleRecorder) {
-        relayRecorderRef.current.start(CHUNK_MS);
+        startRecorderTiming(relayRecorderRef.current, chunkIntervalRef);
       } else if (!archiveOnly) {
-        relayRecorderRef.current.start(CHUNK_MS);
-        fullRecorderRef.current.start(sharedStream ? CHUNK_MS : undefined);
+        startRecorderTiming(relayRecorderRef.current, chunkIntervalRef);
+        if (shouldUseRequestDataMode()) {
+          startRecorderTiming(fullRecorderRef.current, chunkIntervalRef);
+        } else {
+          fullRecorderRef.current.start(sharedStream ? CHUNK_MS : undefined);
+        }
       } else {
-        fullRecorderRef.current.start(CHUNK_MS);
+        startRecorderTiming(fullRecorderRef.current, chunkIntervalRef);
       }
     } catch (err) {
       console.error("MediaRecorder.start failed:", err);
       activeRef.current = false;
       relayRecorderRef.current = null;
       fullRecorderRef.current = null;
+      clearRecorderTiming(chunkIntervalRef);
       if (streamRef.current && ownsStreamRef.current) {
         streamRef.current.getTracks().forEach((track) => track.stop());
       }
       streamRef.current = null;
+      releaseSensitiveOperation();
       return false;
     }
 
     setIsRecording(true);
     return true;
-  }, [queueChunkUpload]);
+  }, [queueChunkUpload, beginRecordingSensitiveOperation, releaseSensitiveOperation]);
 
   const stopLiveRelay = useCallback(async () => {
     if (!relayRecorderRef.current) return;
     if (relayRecorderRef.current.state === "recording") {
       isStoppingRef.current = true;
     }
-    await stopMediaRecorder(relayRecorderRef.current);
+    await stopMediaRecorder(relayRecorderRef.current, chunkIntervalRef);
     isStoppingRef.current = false;
     relayRecorderRef.current = null;
   }, []);
 
   const stopRecording = useCallback(async () => {
     if (!activeRef.current && !relayRecorderRef.current && !fullRecorderRef.current) {
+      releaseSensitiveOperation();
       return null;
     }
 
@@ -273,14 +335,14 @@ export default function useRelayBroadcast({ channelId, userId, userName }) {
       isStoppingRef.current = true;
     }
 
-    await stopMediaRecorder(relayRecorderRef.current);
+    await stopMediaRecorder(relayRecorderRef.current, chunkIntervalRef);
     isStoppingRef.current = false;
     relayRecorderRef.current = null;
 
     if (fullRecorderRef.current?.state === "recording") {
       fullRecorderRef.current.requestData();
     }
-    await stopMediaRecorder(fullRecorderRef.current);
+    await stopMediaRecorder(fullRecorderRef.current, chunkIntervalRef);
     fullRecorderRef.current = null;
 
     void Promise.allSettled(pendingUploadsRef.current);
@@ -292,6 +354,7 @@ export default function useRelayBroadcast({ channelId, userId, userName }) {
     streamRef.current = null;
     ownsStreamRef.current = true;
     archiveOnlyRef.current = false;
+    releaseSensitiveOperation();
 
     const duration = (Date.now() - startTimeRef.current) / 1000;
     const broadcastId = broadcastIdRef.current;
@@ -328,7 +391,7 @@ export default function useRelayBroadcast({ channelId, userId, userName }) {
         cause: err,
       });
     }
-  }, []);
+  }, [releaseSensitiveOperation]);
 
   const getMediaStream = useCallback(() => streamRef.current, []);
 

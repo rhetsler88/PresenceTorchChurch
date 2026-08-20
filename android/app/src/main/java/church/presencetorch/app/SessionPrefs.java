@@ -7,6 +7,7 @@ public final class SessionPrefs {
     private static final String PREFS = "presence_session";
     private static final String KEY_GOOGLE_SIGNIN = "google_signin_pending";
     private static final String KEY_ACTIVE_SESSION = "active_session";
+    private static final String KEY_SENSITIVE_OPERATION = "sensitive_operation_pending";
 
     private SessionPrefs() {}
 
@@ -24,10 +25,20 @@ public final class SessionPrefs {
             .apply();
     }
 
+    public static void setSensitiveOperationPending(Context context, boolean pending) {
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .edit()
+            .putBoolean(KEY_SENSITIVE_OPERATION, pending)
+            .apply();
+    }
+
     /** Immediate logout / background alarms only when a signed-in session exists and OAuth is idle. */
     public static boolean shouldAllowSessionLogout(Context context) {
         Context app = context.getApplicationContext();
         var prefs = app.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
+        if (prefs.getBoolean(KEY_SENSITIVE_OPERATION, false)) {
+            return false;
+        }
         if (prefs.getBoolean(KEY_GOOGLE_SIGNIN, false)) {
             return false;
         }

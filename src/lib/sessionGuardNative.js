@@ -11,3 +11,8 @@ export async function syncNativeActiveSession(active) {
   if (!Capacitor.isNativePlatform()) return;
   await SessionGuard.setActiveSession({ active });
 }
+
+export async function syncNativeSensitiveOperation(pending) {
+  if (!Capacitor.isNativePlatform()) return;
+  await SessionGuard.setSensitiveOperationPending({ pending });
+}

@@ -12,6 +12,7 @@ import { Capacitor } from "@capacitor/core";
 import { signOut } from "firebase/auth";
 import { auth } from "@/lib/firebase";
 import { syncNativeActiveSession, syncNativeGoogleSignInPending } from "@/lib/sessionGuardNative";
+import { isSensitiveOperationActive } from "@/lib/sensitiveOperation";
 
 export const IMMEDIATE_LOGOUT_EVENT = "ptc-immediate-logout";
 
@@ -173,6 +174,7 @@ function scheduleBackgroundLogoutWatch() {
 /** App/tab moved to background. Starts the 6-hour auto sign-out timer. */
 export function markBackgroundPending() {
   if (isOAuthRedirectPending() || isNativeGoogleSignInPending()) return;
+  if (isSensitiveOperationActive()) return;
   localStorage.setItem(BACKGROUND_PENDING_FLAG, "1");
   localStorage.setItem(BACKGROUNDED_AT_KEY, Date.now().toString());
   scheduleBackgroundLogoutWatch();
@@ -219,6 +221,7 @@ export function markLogoutOnClose() {
 export function performImmediateLogout() {
   if (immediateLogoutInFlight) return;
   if (isNativeGoogleSignInPending() || isOAuthRedirectPending()) return;
+  if (isSensitiveOperationActive()) return;
   if (!auth.currentUser && !getLoginTime()) return;
   immediateLogoutInFlight = true;
   cancelBackgroundLogoutWatch();
@@ -294,6 +297,7 @@ export function installCloseLogoutHandler() {
   if (Capacitor.isNativePlatform()) {
     const handlePause = () => {
       if (isOAuthRedirectPending() || isNativeGoogleSignInPending()) return;
+      if (isSensitiveOperationActive()) return;
       if (!auth.currentUser) return;
       markBackgroundPending();
     };

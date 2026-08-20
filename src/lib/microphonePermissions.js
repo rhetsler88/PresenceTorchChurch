@@ -1,14 +1,11 @@
-import { Capacitor, registerPlugin } from "@capacitor/core";
+import { Capacitor } from "@capacitor/core";
 
-const MicrophonePermissions = registerPlugin("MicrophonePermissions");
-
+/**
+ * On native, mic access is handled by WebView getUserMedia → Capacitor
+ * BridgeWebChromeClient.onPermissionRequest (RECORD_AUDIO + MODIFY_AUDIO_SETTINGS).
+ * Do not pre-request via a custom plugin — that bypasses WebView and breaks recording.
+ */
 export async function ensureMicrophonePermission() {
   if (!Capacitor.isNativePlatform()) return true;
-  if (!Capacitor.isPluginAvailable("MicrophonePermissions")) return true;
-  try {
-    await MicrophonePermissions.request();
-    return true;
-  } catch {
-    return false;
-  }
+  return true;
 }

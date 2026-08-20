@@ -1,9 +1,13 @@
 import { Capacitor } from "@capacitor/core";
 import { Preferences } from "@capacitor/preferences";
 import { NativeBiometric, AccessControl, BiometryType } from "@capgo/capacitor-native-biometric";
+import { beginSensitiveOperation, endSensitiveOperation } from "@/lib/sensitiveOperation";
 
 const BIOMETRIC_SERVER = "church.presencetorch.app";
 const BIOMETRIC_ENABLED_KEY = "biometric_sign_in_enabled";
+
+/** Android only: Keystore validity window avoids BiometricPrompt CryptoObject (TEE crash on some devices). */
+const ANDROID_AUTH_VALIDITY_SECONDS = 10;
 
 export function isBiometricPlatform() {
   return Capacitor.isNativePlatform();
@@ -51,6 +55,19 @@ export async function hasBiometricSignIn() {
   return isBiometricHardwareAvailable();
 }
 
+function secureCredentialOptions() {
+  const options = {
+    server: BIOMETRIC_SERVER,
+    accessControl: AccessControl.BIOMETRY_ANY,
+    title: "Sign in",
+    negativeButtonText: "Cancel",
+  };
+  if (Capacitor.getPlatform() === "android") {
+    options.authValidityDuration = ANDROID_AUTH_VALIDITY_SECONDS;
+  }
+  return options;
+}
+
 export async function saveBiometricCredentials(email, password) {
   if (!isBiometricPlatform()) return;
 
@@ -59,26 +76,24 @@ export async function saveBiometricCredentials(email, password) {
     throw new Error("Biometric hardware is not available on this device.");
   }
 
+  beginSensitiveOperation();
   try {
-    await NativeBiometric.deleteCredentials({ server: BIOMETRIC_SERVER });
-  } catch {
-    /* ignore missing prior credentials */
+    try {
+      await NativeBiometric.deleteCredentials({ server: BIOMETRIC_SERVER });
+    } catch {
+      /* ignore missing prior credentials */
+    }
+
+    await NativeBiometric.setCredentials({
+      username: email.trim(),
+      password,
+      ...secureCredentialOptions(),
+      title: "Enable sign-in",
+    });
+    await Preferences.set({ key: BIOMETRIC_ENABLED_KEY, value: "true" });
+  } finally {
+    endSensitiveOperation();
   }
-
-  await NativeBiometric.verifyIdentity({
-    reason: "Confirm your identity to enable biometric sign-in",
-    title: "Enable sign-in",
-    subtitle: email.trim(),
-    description: "Use biometrics to store your credentials securely",
-  });
-
-  await NativeBiometric.setCredentials({
-    username: email.trim(),
-    password,
-    server: BIOMETRIC_SERVER,
-    accessControl: AccessControl.BIOMETRY_ANY,
-  });
-  await Preferences.set({ key: BIOMETRIC_ENABLED_KEY, value: "true" });
 }
 
 export async function clearBiometricCredentials() {
@@ -96,16 +111,20 @@ export async function signInWithBiometric() {
     throw new Error("Biometric sign-in is only available in the mobile app.");
   }
 
-  const credentials = await NativeBiometric.getSecureCredentials({
-    server: BIOMETRIC_SERVER,
-    reason: "Sign in to Presence Torch",
-    title: "Sign in",
-    subtitle: "Confirm your identity",
-    description: "Use biometrics to sign in quickly",
-  });
+  beginSensitiveOperation();
+  try {
+    const credentials = await NativeBiometric.getSecureCredentials({
+      ...secureCredentialOptions(),
+      reason: "Sign in to Presence Torch",
+      subtitle: "Confirm your identity",
+      description: "Use biometrics to sign in quickly",
+    });
 
-  return {
-    email: credentials.username,
-    password: credentials.password,
-  };
+    return {
+      email: credentials.username,
+      password: credentials.password,
+    };
+  } finally {
+    endSensitiveOperation();
+  }
 }

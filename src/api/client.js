@@ -862,8 +862,8 @@ export const authApi = {
       });
     }
 
-    const credential = EmailAuthProvider.credential(firebaseUser.email, password);
-    await reauthenticateWithCredential(firebaseUser, credential);
+    // Reauthenticate can destabilize Capacitor Firebase on native; sign-in validates the password.
+    await signInWithEmailAndPassword(auth, firebaseUser.email, password);
   },
 
   async syncMyChannelAccess() {

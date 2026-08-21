@@ -9,6 +9,7 @@ public final class SessionPrefs {
     private static final String KEY_ACTIVE_SESSION = "active_session";
     private static final String KEY_SENSITIVE_OPERATION = "sensitive_operation_pending";
     private static final String KEY_IDLE_LOGOUT_DEADLINE = "idle_logout_deadline_ms";
+    private static final String KEY_FORCE_LOGOUT = "force_logout_on_next_start";
 
     private SessionPrefs() {}
 
@@ -44,6 +45,37 @@ public final class SessionPrefs {
         return context.getApplicationContext()
             .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             .getLong(KEY_IDLE_LOGOUT_DEADLINE, 0L);
+    }
+
+    /** Durable swipe-away / kill flag — survives WebView teardown and backup restore checks. */
+    public static void markForceLogoutOnNextStart(Context context) {
+        context.getApplicationContext()
+            .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .edit()
+            .putBoolean(KEY_FORCE_LOGOUT, true)
+            .putBoolean(KEY_ACTIVE_SESSION, false)
+            .putLong(KEY_IDLE_LOGOUT_DEADLINE, 0L)
+            .commit();
+    }
+
+    public static boolean consumeForceLogoutOnNextStart(Context context) {
+        var prefs = context.getApplicationContext().getSharedPreferences(PREFS, Context.MODE_PRIVATE);
+        if (!prefs.getBoolean(KEY_FORCE_LOGOUT, false)) {
+            return false;
+        }
+        prefs.edit()
+            .remove(KEY_FORCE_LOGOUT)
+            .putBoolean(KEY_ACTIVE_SESSION, false)
+            .commit();
+        return true;
+    }
+
+    public static void clearForceLogoutOnNextStart(Context context) {
+        context.getApplicationContext()
+            .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .edit()
+            .remove(KEY_FORCE_LOGOUT)
+            .commit();
     }
 
     /** Immediate logout / background alarms only when a signed-in session exists and OAuth is idle. */

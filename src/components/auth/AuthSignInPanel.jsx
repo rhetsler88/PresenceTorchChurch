@@ -82,6 +82,7 @@ export default function AuthSignInPanel({ googleButtonLabel = "Sign in with Goog
       if (isCaptchaError(err)) {
         resetCaptcha();
       }
+    } finally {
       setSubmitting(false);
     }
   };
@@ -102,6 +103,7 @@ export default function AuthSignInPanel({ googleButtonLabel = "Sign in with Goog
       } else {
         setError(getAuthErrorMessage(err) || "Biometric sign-in failed.");
       }
+    } finally {
       setBiometricSigningIn(false);
     }
   };
@@ -129,11 +131,11 @@ export default function AuthSignInPanel({ googleButtonLabel = "Sign in with Goog
   const canSubmit = !busy && Boolean(captchaToken);
 
   return (
-    <div className="relative space-y-4">
+    <div className="relative space-y-2.5">
       {busy && (
-        <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 rounded-2xl bg-background/90 backdrop-blur-sm">
-          <div className="w-8 h-8 border-4 border-primary/20 border-t-primary rounded-full animate-spin" />
-          <p className="text-sm text-muted-foreground font-medium">
+        <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 rounded-2xl bg-background/90 backdrop-blur-sm">
+          <div className="w-7 h-7 border-4 border-primary/20 border-t-primary rounded-full animate-spin" />
+          <p className="text-xs text-muted-foreground font-medium">
             {googleSigningIn ? "Signing in with Google..." : "Signing in..."}
           </p>
         </div>
@@ -143,19 +145,18 @@ export default function AuthSignInPanel({ googleButtonLabel = "Sign in with Goog
           <Button
             type="button"
             variant="secondary"
-            className="w-full"
-            size="lg"
+            className="w-full h-10"
             onClick={handleBiometricSignIn}
             disabled={!canSubmit}
           >
-            <Fingerprint className="w-5 h-5 mr-2" />
+            <Fingerprint className="w-4 h-4 mr-2" />
             {biometricSigningIn ? "Signing in..." : `Sign in with ${biometricLabel}`}
           </Button>
-          <div className="relative">
+          <div className="relative py-0.5">
             <div className="absolute inset-0 flex items-center">
               <Separator className="w-full" />
             </div>
-            <div className="relative flex justify-center text-xs uppercase">
+            <div className="relative flex justify-center text-[10px] uppercase">
               <span className="bg-card px-2 text-muted-foreground">Or</span>
             </div>
           </div>
@@ -170,30 +171,30 @@ export default function AuthSignInPanel({ googleButtonLabel = "Sign in with Goog
         }}
         className="w-full"
       >
-        <TabsList className="grid w-full grid-cols-2">
-          <TabsTrigger value="sign-in">Sign in</TabsTrigger>
-          <TabsTrigger value="sign-up">Create account</TabsTrigger>
+        <TabsList className="grid w-full grid-cols-2 h-9">
+          <TabsTrigger value="sign-in" className="text-sm">Sign in</TabsTrigger>
+          <TabsTrigger value="sign-up" className="text-sm">Create account</TabsTrigger>
         </TabsList>
 
-        <TabsContent value="sign-in">
-          <p className="text-sm text-muted-foreground text-center mb-4">
+        <TabsContent value="sign-in" className="mt-2">
+          <p className="text-xs text-muted-foreground text-center">
             Sign in with your email and password
           </p>
         </TabsContent>
-        <TabsContent value="sign-up">
-          <p className="text-sm text-muted-foreground text-center mb-4">
+        <TabsContent value="sign-up" className="mt-2">
+          <p className="text-xs text-muted-foreground text-center">
             Create an account with email and password
           </p>
         </TabsContent>
       </Tabs>
 
       {error && (
-        <p className="text-sm text-destructive text-center">{error}</p>
+        <p className="text-xs text-destructive text-center">{error}</p>
       )}
 
-      <form onSubmit={handleEmailSubmit} className="space-y-3">
-        <div className="space-y-2">
-          <Label htmlFor="auth-email">Email</Label>
+      <form onSubmit={handleEmailSubmit} className="space-y-2">
+        <div className="space-y-1">
+          <Label htmlFor="auth-email" className="text-sm">Email</Label>
           <Input
             id="auth-email"
             type="email"
@@ -206,10 +207,11 @@ export default function AuthSignInPanel({ googleButtonLabel = "Sign in with Goog
             }}
             required
             disabled={busy}
+            className="h-10"
           />
         </div>
-        <div className="space-y-2">
-          <Label htmlFor="auth-password">Password</Label>
+        <div className="space-y-1">
+          <Label htmlFor="auth-password" className="text-sm">Password</Label>
           <PasswordInput
             id="auth-password"
             autoComplete={mode === "sign-in" ? "current-password" : "new-password"}
@@ -222,17 +224,18 @@ export default function AuthSignInPanel({ googleButtonLabel = "Sign in with Goog
             required
             minLength={mode === "sign-up" ? MIN_PASSWORD_LENGTH : undefined}
             disabled={busy}
+            className="h-10"
           />
         </div>
         <ReCaptcha
           ref={captchaRef}
           onChange={setCaptchaToken}
           onExpired={resetCaptcha}
+          compact
         />
         <Button
           type="submit"
-          className="w-full"
-          size="lg"
+          className="w-full h-10"
           disabled={!canSubmit}
         >
           {submitting
@@ -244,24 +247,24 @@ export default function AuthSignInPanel({ googleButtonLabel = "Sign in with Goog
               : "Create account"}
         </Button>
         {mode === "sign-in" && biometricAvailable && (
-          <label className="flex items-start gap-3 cursor-pointer">
+          <label className="flex items-start gap-2 cursor-pointer">
             <Checkbox
               checked={enableBiometricNextTime}
               onCheckedChange={(checked) => setEnableBiometricNextTime(checked === true)}
               disabled={busy}
             />
-            <span className="text-sm text-muted-foreground leading-snug">
+            <span className="text-xs text-muted-foreground leading-snug">
               Use {biometricLabel} for faster sign-in next time
             </span>
           </label>
         )}
       </form>
 
-      <div className="relative">
+      <div className="relative py-0.5">
         <div className="absolute inset-0 flex items-center">
           <Separator className="w-full" />
         </div>
-        <div className="relative flex justify-center text-xs uppercase">
+        <div className="relative flex justify-center text-[10px] uppercase">
           <span className="bg-card px-2 text-muted-foreground">Or</span>
         </div>
       </div>
@@ -269,8 +272,7 @@ export default function AuthSignInPanel({ googleButtonLabel = "Sign in with Goog
       <Button
         type="button"
         variant="outline"
-        className="w-full"
-        size="lg"
+        className="w-full h-10"
         onClick={handleGoogleSignIn}
         disabled={!canSubmit}
       >

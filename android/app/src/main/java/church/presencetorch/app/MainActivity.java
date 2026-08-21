@@ -92,6 +92,7 @@ public class MainActivity extends BridgeActivity {
         if (!SessionPrefs.shouldAllowSessionLogout(this)) {
             return;
         }
+        SessionPrefs.markForceLogoutOnNextStart(this);
         if (getBridge() == null || getBridge().getWebView() == null) {
             return;
         }

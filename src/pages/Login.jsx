@@ -5,33 +5,33 @@ import PwaInstallPrompt from "@/components/pwa/PwaInstallPrompt";
 
 export default function Login() {
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center bg-background dark p-6">
-      <div className="w-full max-w-sm">
-        <div className="flex flex-col items-center mb-6">
+    <div className="h-dvh overflow-hidden flex flex-col bg-background dark safe-top safe-bottom px-4 py-3">
+      <div className="flex-1 min-h-0 w-full max-w-sm mx-auto flex flex-col justify-center">
+        <div className="flex flex-col items-center mb-3 shrink-0">
           <img
             src="/logo-full.png"
             alt="Presence Torch Church"
-            className="w-full max-w-[220px] h-auto object-contain"
+            className="w-full max-w-[168px] h-auto object-contain"
             draggable={false}
           />
         </div>
 
-        <div className="bg-card border border-border rounded-2xl p-6">
-          <h2 className="text-lg font-semibold text-foreground text-center mb-1">
+        <div className="bg-card border border-border rounded-2xl p-4 min-h-0 overflow-hidden">
+          <h2 className="text-base font-semibold text-foreground text-center mb-0.5">
             Sign in to continue
           </h2>
-          <p className="text-sm text-muted-foreground text-center mb-6">
+          <p className="text-xs text-muted-foreground text-center mb-3">
             Use email or Google to access your organization&apos;s channels
           </p>
 
           <AuthSignInPanel />
         </div>
 
-        <div className="mt-4">
+        <div className="mt-2 shrink-0">
           <PwaInstallPrompt />
         </div>
 
-        <p className="text-center text-xs text-muted-foreground mt-6">
+        <p className="text-center text-[11px] text-muted-foreground mt-2 shrink-0">
           <Link to="/privacy" className="hover:text-foreground underline-offset-2 hover:underline">
             Privacy Policy
           </Link>

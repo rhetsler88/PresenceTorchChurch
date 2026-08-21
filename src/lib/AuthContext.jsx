@@ -29,6 +29,7 @@ import { clearLastAppRoute } from "@/lib/lastAppRoute";
 import { clearPasswordLoginSession } from "@/lib/passwordRotation";
 import { formatAuthError } from "@/api/client";
 import { syncUserChannelMembership } from "@/lib/channelMembership";
+import { consumeNativeForceLogoutPending } from "@/lib/sessionGuardNative";
 
 const AuthContext = createContext(null);
 
@@ -362,6 +363,8 @@ export const AuthProvider = ({ children }) => {
     let authInitSettled = false;
     let authHandling = false;
     let listenerHasFired = false;
+    let pendingAuthUser = undefined;
+    let hasPendingAuthUser = false;
 
     const settleAuthInit = () => {
       authInitSettled = true;
@@ -373,7 +376,12 @@ export const AuthProvider = ({ children }) => {
     };
 
     const handleAuthUser = async (firebaseUser) => {
-      if (cancelled || authHandling) return;
+      if (cancelled) return;
+      if (authHandling) {
+        pendingAuthUser = firebaseUser;
+        hasPendingAuthUser = true;
+        return;
+      }
       if (manualLogoutRef.current || isImmediateLogoutInFlight()) {
         if (!firebaseUser) {
           void teardownPushNotifications();
@@ -438,11 +446,23 @@ export const AuthProvider = ({ children }) => {
       } finally {
         authHandling = false;
         if (!authInitSettled) settleAuthInit();
+        if (hasPendingAuthUser) {
+          hasPendingAuthUser = false;
+          const nextUser = pendingAuthUser;
+          pendingAuthUser = undefined;
+          void handleAuthUser(nextUser);
+        }
       }
     };
 
     const initAuth = async () => {
       setIsLoadingAuth(true);
+
+      if (Capacitor.isNativePlatform()) {
+        if (await consumeNativeForceLogoutPending()) {
+          pendingCloseLogout = true;
+        }
+      }
 
       unsub = onAuthStateChanged(auth, (firebaseUser) => {
         listenerHasFired = true;

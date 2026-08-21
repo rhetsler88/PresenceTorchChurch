@@ -39,7 +39,7 @@ import { getDownloadURL, ref } from "firebase/storage";
 import seedData from "../../scripts/seed-data.json";
 import { isDefaultSetupComplete } from "@/lib/defaultSeed";
 import { markOAuthRedirectPending, recordLoginTime, clearLoginTime, markNativeGoogleSignInPending, clearNativeGoogleSignInPending } from "@/lib/logoutOnClose";
-import { syncNativeActiveSession, syncNativeGoogleSignInPending } from "@/lib/sessionGuardNative";
+import { syncNativeActiveSession, syncNativeGoogleSignInPending, revokeNativeGoogleSignInSession } from "@/lib/sessionGuardNative";
 import { markPasswordLoginSession } from "@/lib/passwordRotation";
 import { verifyFirebaseConnection } from "@/lib/firebaseConnection";
 import { addUserChannelMembership } from "@/lib/channelMembership";
@@ -627,6 +627,8 @@ function enrichGoogleSignInError(err) {
 
 async function signInWithGoogleNative() {
   try {
+    await revokeNativeGoogleSignInSession().catch(() => {});
+    await FirebaseAuthentication.signOut().catch(() => {});
     return await FirebaseAuthentication.signInWithGoogle({ useCredentialManager: false });
   } catch (err) {
     throw enrichGoogleSignInError(err);
@@ -653,6 +655,10 @@ export const authApi = {
 
   async logout() {
     clearPasswordLoginSession();
+    if (Capacitor.isNativePlatform()) {
+      await revokeNativeGoogleSignInSession().catch(() => {});
+      await FirebaseAuthentication.signOut().catch(() => {});
+    }
     await signOut(auth);
   },
 

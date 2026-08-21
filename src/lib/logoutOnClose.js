@@ -10,11 +10,7 @@ import { clearDailyCodeSession } from "@/lib/dailyCode";
 import { Capacitor } from "@capacitor/core";
 import { signOut } from "firebase/auth";
 import { auth } from "@/lib/firebase";
-import {
-  syncNativeActiveSession,
-  syncNativeGoogleSignInPending,
-  syncNativeIdleLogoutDeadline,
-} from "@/lib/sessionGuardNative";
+import { syncNativeActiveSession, syncNativeGoogleSignInPending, syncNativeIdleLogoutDeadline } from "@/lib/sessionGuardNative";
 import { isSensitiveOperationActive, resetSensitiveOperation } from "@/lib/sensitiveOperation";
 
 export const IMMEDIATE_LOGOUT_EVENT = "ptc-immediate-logout";
@@ -238,6 +234,7 @@ export function performImmediateLogout() {
   clearDailyCodeSession();
   clearNativeGoogleSignInPending();
   localStorage.setItem(HARD_CLOSE_LOGOUT_FLAG, "1");
+  void syncNativeActiveSession(false).catch(() => {});
   void signOut(auth).catch(() => {});
   window.dispatchEvent(new CustomEvent(IMMEDIATE_LOGOUT_EVENT));
 }

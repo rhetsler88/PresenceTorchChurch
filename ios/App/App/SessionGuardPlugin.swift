@@ -38,6 +38,8 @@ public class SessionGuardPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "setActiveSession", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "setSensitiveOperationPending", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "setIdleLogoutDeadline", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "consumeForceLogoutOnNextStart", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "revokeGoogleSignInSession", returnType: CAPPluginReturnPromise),
     ]
 
     @objc func setGoogleSignInPending(_ call: CAPPluginCall) {
@@ -59,6 +61,14 @@ public class SessionGuardPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     @objc func setIdleLogoutDeadline(_ call: CAPPluginCall) {
+        call.resolve()
+    }
+
+    @objc func consumeForceLogoutOnNextStart(_ call: CAPPluginCall) {
+        call.resolve(["pending": false])
+    }
+
+    @objc func revokeGoogleSignInSession(_ call: CAPPluginCall) {
         call.resolve()
     }
 }

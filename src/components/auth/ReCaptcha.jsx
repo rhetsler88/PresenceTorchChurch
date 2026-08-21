@@ -4,7 +4,7 @@ import ReCAPTCHA from "react-google-recaptcha";
 const siteKey = import.meta.env.VITE_RECAPTCHA_SITE_KEY;
 const LOAD_TIMEOUT_MS = 15000;
 
-const ReCaptcha = forwardRef(function ReCaptcha({ onChange, onExpired }, ref) {
+const ReCaptcha = forwardRef(function ReCaptcha({ onChange, onExpired, compact = false }, ref) {
   const [scriptReady, setScriptReady] = useState(false);
   const [scriptError, setScriptError] = useState(false);
 
@@ -32,7 +32,7 @@ const ReCaptcha = forwardRef(function ReCaptcha({ onChange, onExpired }, ref) {
   }
 
   return (
-    <div className="w-full min-h-[84px] flex flex-col items-center justify-center gap-2 py-1">
+    <div className={`w-full flex flex-col items-center justify-center gap-1 ${compact ? "min-h-[68px]" : "min-h-[84px] py-1"}`}>
       {!scriptReady && !scriptError && (
         <p className="text-sm text-muted-foreground">Loading verification...</p>
       )}
@@ -44,6 +44,7 @@ const ReCaptcha = forwardRef(function ReCaptcha({ onChange, onExpired }, ref) {
       <ReCAPTCHA
         ref={ref}
         sitekey={siteKey}
+        size={compact ? "compact" : "normal"}
         onChange={onChange}
         onExpired={onExpired}
         asyncScriptOnLoad={handleScriptLoad}

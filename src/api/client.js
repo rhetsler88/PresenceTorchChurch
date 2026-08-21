@@ -651,13 +651,9 @@ export const authApi = {
     return getCurrentUser();
   },
 
-  async logout(redirectUrl) {
-    clearLoginTime();
+  async logout() {
     clearPasswordLoginSession();
     await signOut(auth);
-    if (redirectUrl) {
-      window.location.href = "/";
-    }
   },
 
   async deleteAccount() {

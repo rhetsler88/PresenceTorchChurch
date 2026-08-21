@@ -12,7 +12,7 @@ import { Capacitor } from "@capacitor/core";
 import { signOut } from "firebase/auth";
 import { auth } from "@/lib/firebase";
 import { syncNativeActiveSession, syncNativeGoogleSignInPending } from "@/lib/sessionGuardNative";
-import { isSensitiveOperationActive } from "@/lib/sensitiveOperation";
+import { isSensitiveOperationActive, resetSensitiveOperation } from "@/lib/sensitiveOperation";
 
 export const IMMEDIATE_LOGOUT_EVENT = "ptc-immediate-logout";
 
@@ -218,6 +218,10 @@ export function markLogoutOnClose() {
  * Immediate sign-out (swipe-away, 6h background timeout, or native alarm).
  * Native code calls window.__ptcImmediateLogout().
  */
+export function isImmediateLogoutInFlight() {
+  return immediateLogoutInFlight;
+}
+
 export function performImmediateLogout() {
   if (immediateLogoutInFlight) return;
   if (isNativeGoogleSignInPending() || isOAuthRedirectPending()) return;
@@ -277,6 +281,7 @@ export function shouldLogoutAfterClose() {
 }
 
 function handleForeground() {
+  resetSensitiveOperation();
   cancelBackgroundLogoutWatch();
   if (isBackgroundLogoutDue()) {
     // Alarm/timer should already have signed out; fallback if the OS deferred JS.

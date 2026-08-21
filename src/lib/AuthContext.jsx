@@ -22,7 +22,9 @@ import {
   registerImmediateLogoutBridge,
   unregisterImmediateLogoutBridge,
   IMMEDIATE_LOGOUT_EVENT,
+  isImmediateLogoutInFlight,
 } from "@/lib/logoutOnClose";
+import { clearLastAppRoute } from "@/lib/lastAppRoute";
 import { clearPasswordLoginSession } from "@/lib/passwordRotation";
 import { formatAuthError } from "@/api/client";
 import { syncUserChannelMembership } from "@/lib/channelMembership";
@@ -241,6 +243,7 @@ export const AuthProvider = ({ children }) => {
     id: "presence-torch-church",
   });
   const logoutRef = useRef(null);
+  const manualLogoutRef = useRef(false);
 
   const applyAuthenticatedUser = (currentUser) => {
     setUser(currentUser);
@@ -370,6 +373,13 @@ export const AuthProvider = ({ children }) => {
 
     const handleAuthUser = async (firebaseUser) => {
       if (cancelled || authHandling) return;
+      if (manualLogoutRef.current || isImmediateLogoutInFlight()) {
+        if (!firebaseUser) {
+          void teardownPushNotifications();
+          finishSignedOut();
+        }
+        return;
+      }
       authHandling = true;
 
       try {
@@ -550,16 +560,25 @@ export const AuthProvider = ({ children }) => {
   }, [isAuthenticated, user]);
 
   const logout = async (shouldRedirect = true) => {
-    clearLoginTime();
-    clearDailyCodeSession();
-    applySignedOut();
+    if (manualLogoutRef.current) return;
+    manualLogoutRef.current = true;
+    setIsLoadingAuth(true);
     try {
+      clearLoginTime();
+      clearDailyCodeSession();
+      clearBackgroundPending();
+      clearLastAppRoute();
+      await teardownPushNotifications();
       await authApi.logout();
+      applySignedOut();
     } catch (err) {
       console.warn("Sign out failed:", err);
-    }
-    if (shouldRedirect) {
-      window.location.href = "/";
+      applySignedOut();
+    } finally {
+      manualLogoutRef.current = false;
+      if (shouldRedirect && !Capacitor.isNativePlatform()) {
+        window.location.href = "/";
+      }
     }
   };
   logoutRef.current = logout;

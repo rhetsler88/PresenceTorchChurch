@@ -1,5 +1,5 @@
-import React from "react";
-import { Outlet, Link, useLocation } from "react-router-dom";
+import React, { useEffect, useRef } from "react";
+import { Outlet, Link, useLocation, useNavigate } from "react-router-dom";
 import { Radio, MessageSquare, FileText, Eye, Shield, Crown } from "lucide-react";
 import { useAuth } from "@/lib/AuthContext";
 import DailyCodeGate from "@/components/dailycode/DailyCodeGate";
@@ -12,9 +12,12 @@ import RedAlertBanner from "@/components/ptt/RedAlertBanner";
 import PasswordRotationReminder from "@/components/auth/PasswordRotationReminder";
 import GooglePasswordSetupPrompt from "@/components/auth/GooglePasswordSetupPrompt";
 import useRedAlert from "@/hooks/useRedAlert";
+import { getLastAppRoute, saveLastAppRoute } from "@/lib/lastAppRoute";
 
 export default function AppLayout() {
   const location = useLocation();
+  const navigate = useNavigate();
+  const restoredRouteRef = useRef(false);
   const { user, checkUserAuth } = useAuth();
   const { alertChannel, dismiss: dismissAlert } = useRedAlert(user);
 
@@ -35,6 +38,28 @@ export default function AppLayout() {
       : []),
     { path: "/channels", icon: MessageSquare, label: "Channels" },
   ];
+
+  useEffect(() => {
+    if (restoredRouteRef.current) return;
+    restoredRouteRef.current = true;
+    const saved = getLastAppRoute();
+    const current = location.pathname + location.search;
+    if (saved && saved !== current) {
+      navigate(saved, { replace: true });
+    }
+  }, [location.pathname, location.search, navigate]);
+
+  useEffect(() => {
+    saveLastAppRoute(location.pathname + location.search);
+  }, [location.pathname, location.search]);
+
+  useEffect(() => {
+    const onPause = () => {
+      saveLastAppRoute(location.pathname + location.search);
+    };
+    window.addEventListener("pause", onPause);
+    return () => window.removeEventListener("pause", onPause);
+  }, [location.pathname, location.search]);
 
   return (
     <div className="h-dvh bg-background flex flex-col safe-top">

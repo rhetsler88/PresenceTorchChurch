@@ -22,6 +22,13 @@ export function isSensitiveOperationActive() {
   return depth > 0;
 }
 
+/** Safety reset if mic/biometric UI ended without clearing the guard (e.g. WebView reload). */
+export function resetSensitiveOperation() {
+  if (depth === 0) return;
+  depth = 0;
+  void syncNativeSensitiveOperation(false).catch(() => {});
+}
+
 export function isNativePlatform() {
   return Capacitor.isNativePlatform();
 }

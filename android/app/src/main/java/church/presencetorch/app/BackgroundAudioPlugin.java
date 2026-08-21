@@ -49,6 +49,12 @@ public class BackgroundAudioPlugin extends Plugin {
     @PluginMethod
     public void stopSession(PluginCall call) {
         Intent intent = new Intent(getContext(), BackgroundAudioService.class);
+        if (!BackgroundAudioService.isSessionActive()) {
+            getContext().stopService(intent);
+            call.resolve();
+            return;
+        }
+
         intent.setAction(BackgroundAudioService.ACTION_STOP);
         getContext().startService(intent);
         call.resolve();

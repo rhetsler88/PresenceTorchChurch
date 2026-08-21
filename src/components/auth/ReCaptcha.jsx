@@ -1,12 +1,16 @@
-import React, { forwardRef, useCallback, useEffect, useState } from "react";
+import React, { forwardRef, useCallback, useEffect, useRef, useState } from "react";
 import ReCAPTCHA from "react-google-recaptcha";
 
 const siteKey = import.meta.env.VITE_RECAPTCHA_SITE_KEY;
 const LOAD_TIMEOUT_MS = 15000;
+const WIDGET_WIDTH = 304;
+const WIDGET_HEIGHT = 78;
 
-const ReCaptcha = forwardRef(function ReCaptcha({ onChange, onExpired, compact = false }, ref) {
+const ReCaptcha = forwardRef(function ReCaptcha({ onChange, onExpired }, ref) {
+  const containerRef = useRef(null);
   const [scriptReady, setScriptReady] = useState(false);
   const [scriptError, setScriptError] = useState(false);
+  const [scale, setScale] = useState(1);
 
   const handleScriptLoad = useCallback(() => {
     setScriptReady(true);
@@ -23,6 +27,23 @@ const ReCaptcha = forwardRef(function ReCaptcha({ onChange, onExpired, compact =
     return () => window.clearTimeout(timeoutId);
   }, [scriptReady, scriptError]);
 
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return undefined;
+
+    const updateScale = () => {
+      const width = container.clientWidth;
+      if (width > 0) {
+        setScale(width / WIDGET_WIDTH);
+      }
+    };
+
+    updateScale();
+    const observer = new ResizeObserver(updateScale);
+    observer.observe(container);
+    return () => observer.disconnect();
+  }, []);
+
   if (!siteKey) {
     return (
       <p className="text-sm text-destructive text-center">
@@ -31,8 +52,14 @@ const ReCaptcha = forwardRef(function ReCaptcha({ onChange, onExpired, compact =
     );
   }
 
+  const scaledHeight = Math.ceil(WIDGET_HEIGHT * scale);
+
   return (
-    <div className={`w-full flex flex-col items-center justify-center gap-1 ${compact ? "min-h-[68px]" : "min-h-[84px] py-1"}`}>
+    <div
+      ref={containerRef}
+      className="w-full flex flex-col justify-center gap-1"
+      style={{ minHeight: scaledHeight + 8 }}
+    >
       {!scriptReady && !scriptError && (
         <p className="text-sm text-muted-foreground">Loading verification...</p>
       )}
@@ -41,14 +68,22 @@ const ReCaptcha = forwardRef(function ReCaptcha({ onChange, onExpired, compact =
           Could not load reCAPTCHA. Check your internet connection, then fully close and reopen the app.
         </p>
       )}
-      <ReCAPTCHA
-        ref={ref}
-        sitekey={siteKey}
-        size={compact ? "compact" : "normal"}
-        onChange={onChange}
-        onExpired={onExpired}
-        asyncScriptOnLoad={handleScriptLoad}
-      />
+      <div
+        className="origin-top-left overflow-hidden"
+        style={{
+          width: WIDGET_WIDTH,
+          height: WIDGET_HEIGHT,
+          transform: `scale(${scale})`,
+        }}
+      >
+        <ReCAPTCHA
+          ref={ref}
+          sitekey={siteKey}
+          onChange={onChange}
+          onExpired={onExpired}
+          asyncScriptOnLoad={handleScriptLoad}
+        />
+      </div>
     </div>
   );
 });

@@ -231,7 +231,6 @@ export default function AuthSignInPanel({ googleButtonLabel = "Sign in with Goog
           ref={captchaRef}
           onChange={setCaptchaToken}
           onExpired={resetCaptcha}
-          compact
         />
         <Button
           type="submit"

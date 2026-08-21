@@ -58,6 +58,11 @@ public class BackgroundAudioService extends Service {
 
         String action = intent.getAction();
         if (ACTION_STOP.equals(action)) {
+            // stopSession may be delivered as a foreground-service start on newer Android;
+            // satisfy the FGS contract before tearing down if we never promoted.
+            if (!sessionActive) {
+                satisfyForegroundServiceRequirement();
+            }
             stopForegroundSession();
             return START_NOT_STICKY;
         }
@@ -99,10 +104,14 @@ public class BackgroundAudioService extends Service {
 
     private void startForegroundSession(String title) {
         createNotificationChannel();
+        promoteToForeground(title);
         acquireWakeLock();
         requestAudioFocus();
         startSilentLoop();
+    }
 
+    /** Must run before any slow setup when started via startForegroundService(). */
+    private void promoteToForeground(String title) {
         Notification notification = buildNotification(title);
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             startForeground(
@@ -114,6 +123,23 @@ public class BackgroundAudioService extends Service {
             startForeground(NOTIFICATION_ID, notification);
         }
         sessionActive = true;
+    }
+
+    private void satisfyForegroundServiceRequirement() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
+            return;
+        }
+
+        String title = currentTitle;
+        if (title == null || title.isEmpty()) {
+            title = getString(R.string.background_audio_default_title);
+        }
+        if (currentBody == null || currentBody.isEmpty()) {
+            currentBody = getString(R.string.background_audio_notification_text);
+        }
+
+        createNotificationChannel();
+        promoteToForeground(title);
     }
 
     private void stopForegroundSession() {

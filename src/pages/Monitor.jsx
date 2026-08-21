@@ -9,15 +9,14 @@ import { Button } from "@/components/ui/button";
 import { etzTime } from "@/lib/etz";
 import { deviceDayKey, deviceDayLabel } from "@/lib/deviceDate";
 import { getDisplayName, getInitials, getInitialsFromName, getMonitorChannels, getReadableVoiceChannels, canSendOnChannelForChannel } from "@/lib/userUtils";
-import { playClearTone, playBusyTone, unlockAudioForPTT, playTextMessageTone } from "@/lib/pttTones";
-import { isProtectionLevelChangeMessage } from "@/lib/protectionLevelHistory";
+import { playClearTone, playBusyTone, unlockAudioForPTT } from "@/lib/pttTones";
 import { auth } from "@/lib/firebase";
 import { cleanupStalePTTSignals, claimPttChannels, releasePttSignals } from "@/lib/pttSignals";
 import { playAudioUrl, stopAudio } from "@/lib/audioPlayer";
 import usePttBroadcast from "../hooks/usePttBroadcast";
 import { usePassiveMonitor } from "../components/monitor/PassiveMonitorProvider";
 import MonitorPTTBar from "../components/monitor/MonitorPTTBar";
-import useExternalPTT from "../hooks/useExternalPTT";
+import { useRegisterPagePTTHandlers } from "@/components/ptt/PTTHandlerProvider";
 import ProtectionLevelControl from "../components/monitor/ProtectionLevelControl";
 import SetAllProtectionLevel from "../components/monitor/SetAllProtectionLevel";
 import { toast } from "@/lib/toast";
@@ -549,15 +548,6 @@ export default function Monitor() {
         }, ...prev].slice(0, 20));
         return;
       }
-
-      if (
-        event.data?.text_content
-        && !event.data?.audio_url
-        && event.data.created_by_id !== user.id
-        && !isProtectionLevelChangeMessage(event.data)
-      ) {
-        playTextMessageTone();
-      }
     };
 
     const unsub = api.entities.VoiceMessage.subscribeMany(
@@ -894,7 +884,7 @@ export default function Monitor() {
     finishPttStop();
   }, [isPTTPressed, finishPttStop]);
 
-  useExternalPTT({
+  useRegisterPagePTTHandlers({
     onPress: handlePTTStart,
     onRelease: handlePTTStop,
   });

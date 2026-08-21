@@ -1,48 +1,36 @@
-import { useEffect, useRef } from "react";
+import { useEffect } from "react";
 import { Capacitor } from "@capacitor/core";
 import { startBackgroundAudio, stopBackgroundAudio } from "@/lib/backgroundAudio";
+import { formatActiveChannelsBody } from "@/lib/backgroundAudioNotification";
 import { ensureAudioReady } from "@/lib/pttTones";
 
 /**
  * Keeps native iOS/Android audio sessions alive for Storage-relay PTT receive
- * only while the app is backgrounded — avoids fighting the mic during PTT transmit.
+ * while passive listen is active (foreground and background).
  */
-export default function useBackgroundRelayListen({ enabled, title, silent = false }) {
-  const sessionActiveRef = useRef(false);
-
+export default function useBackgroundRelayListen({
+  enabled,
+  title,
+  channelCount = 1,
+  silent = false,
+}) {
   useEffect(() => {
     if (!enabled || !Capacitor.isNativePlatform()) {
+      void stopBackgroundAudio();
       return undefined;
     }
 
-    const startSession = async () => {
-      if (sessionActiveRef.current) return;
-      ensureAudioReady();
-      await startBackgroundAudio({ title: title || "Presence Torch", silent });
-      sessionActiveRef.current = true;
-    };
-
-    const stopSession = async () => {
-      if (!sessionActiveRef.current) return;
-      sessionActiveRef.current = false;
-      await stopBackgroundAudio().catch(() => {});
-    };
-
-    const onPause = () => {
-      void startSession();
-    };
-
-    const onResume = () => {
-      void stopSession();
-    };
-
-    window.addEventListener("pause", onPause);
-    window.addEventListener("resume", onResume);
+    ensureAudioReady();
+    const body = formatActiveChannelsBody(channelCount);
+    void startBackgroundAudio({
+      title: title || "Presence Torch",
+      body,
+      channelCount,
+      silent,
+    });
 
     return () => {
-      window.removeEventListener("pause", onPause);
-      window.removeEventListener("resume", onResume);
-      void stopSession();
+      void stopBackgroundAudio();
     };
-  }, [enabled, title, silent]);
+  }, [enabled, title, channelCount, silent]);
 }

@@ -13,6 +13,7 @@ const { google } = require("googleapis");
 const { RtcTokenBuilder, RtcRole } = require("agora-access-token");
 const {
   buildRedAlertTokenSets,
+  buildTextMessageTokenSet,
   removeStaleTokensFromUserData,
 } = require("./alertRecipients");
 const {
@@ -773,6 +774,109 @@ exports.transcribeOnVoiceMessage = onDocumentCreated(
     const data = snapshot.data();
     if (!data?.audio_url || data.text_content || data.is_transcribed) return;
     await transcribeAndUpdate(event.params.messageId, data.audio_url);
+  }
+);
+
+exports.sendTextMessagePush = onDocumentCreated(
+  { document: "voiceMessages/{messageId}" },
+  async (event) => {
+    const snapshot = event.data;
+    if (!snapshot) return;
+    const data = snapshot.data();
+    if (!data?.text_content || data?.audio_url) return;
+    if (data.message_type === "protection_level_change") return;
+
+    const channelId = data.channel_id;
+    const senderId = data.created_by_id || data.sender_id;
+    if (!channelId || !senderId) return;
+
+    const db = getFirestore();
+    const channelSnap = await db.collection("channels").doc(channelId).get();
+    if (!channelSnap.exists) return;
+
+    const channelData = channelSnap.data() || {};
+    const channelName = channelData.name || "Channel";
+    const senderName = data.sender_name || "Someone";
+    const preview = String(data.text_content).trim().slice(0, 120);
+
+    const usersSnap = await db.collection("users").get();
+    const tokens = buildTextMessageTokenSet(usersSnap, channelData, senderId);
+    if (tokens.length === 0) return;
+
+    const messaging = getMessaging();
+    const chunkSize = 500;
+    const staleTokens = new Set();
+
+    const pushPayload = {
+      notification: {
+        title: channelName,
+        body: `${senderName}: ${preview}`,
+      },
+      data: {
+        type: "text_message",
+        channelId,
+        channelName,
+        messageId: event.params.messageId,
+      },
+      android: {
+        priority: "high",
+        notification: {
+          channelId: "text_messages",
+          sound: "default",
+          defaultVibrateTimings: true,
+          priority: "high",
+        },
+      },
+      apns: {
+        payload: {
+          aps: {
+            sound: "default",
+            contentAvailable: true,
+          },
+        },
+      },
+      webpush: {
+        notification: {
+          title: channelName,
+          body: `${senderName}: ${preview}`,
+          icon: "https://app.presencetorch.net/icons/icon-192.png",
+        },
+        fcmOptions: {
+          link: "https://app.presencetorch.net/",
+        },
+      },
+    };
+
+    for (let i = 0; i < tokens.length; i += chunkSize) {
+      const chunk = tokens.slice(i, i + chunkSize);
+      const response = await messaging.sendEachForMulticast({
+        tokens: chunk,
+        ...pushPayload,
+      });
+
+      response.responses.forEach((result, index) => {
+        if (result.success) return;
+        const code = result.error?.code;
+        if (
+          code === "messaging/registration-token-not-registered"
+          || code === "messaging/invalid-registration-token"
+        ) {
+          staleTokens.add(chunk[index]);
+        }
+      });
+    }
+
+    if (staleTokens.size > 0) {
+      const batch = db.batch();
+      usersSnap.forEach((doc) => {
+        const { data: cleaned, changed } = removeStaleTokensFromUserData(
+          doc.data(),
+          staleTokens
+        );
+        if (changed) batch.update(doc.ref, cleaned);
+      });
+      await batch.commit();
+    }
   }
 );
 

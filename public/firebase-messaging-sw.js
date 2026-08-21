@@ -15,21 +15,35 @@ const messaging = firebase.messaging();
 
 messaging.onBackgroundMessage((payload) => {
   const data = payload?.data || {};
-  if (data.type !== "red_alert") return;
+  if (data.type === "red_alert") {
+    const channelName = data.channelName || data.channel_name || "A channel";
+    const title = payload.notification?.title || "RED ALERT";
+    const body =
+      payload.notification?.body || `Code Red — ${channelName} — Secure Now`;
 
-  const channelName = data.channelName || data.channel_name || "A channel";
-  const title = payload.notification?.title || "RED ALERT";
-  const body =
-    payload.notification?.body || `Code Red — ${channelName} — Secure Now`;
+    self.registration.showNotification(title, {
+      body,
+      icon: "/icons/icon-192.png",
+      badge: "/icons/icon-192.png",
+      tag: `red_alert_${data.channelId || channelName}`,
+      renotify: true,
+      data,
+    });
+    return;
+  }
 
-  self.registration.showNotification(title, {
-    body,
-    icon: "/icons/icon-192.png",
-    badge: "/icons/icon-192.png",
-    tag: `red_alert_${data.channelId || channelName}`,
-    renotify: true,
-    data,
-  });
+  if (data.type === "text_message") {
+    const title = payload.notification?.title || data.channelName || "New message";
+    const body = payload.notification?.body || "New text message";
+    self.registration.showNotification(title, {
+      body,
+      icon: "/icons/icon-192.png",
+      badge: "/icons/icon-192.png",
+      tag: `text_message_${data.messageId || data.channelId || title}`,
+      renotify: true,
+      data,
+    });
+  }
 });
 
 self.addEventListener("notificationclick", (event) => {

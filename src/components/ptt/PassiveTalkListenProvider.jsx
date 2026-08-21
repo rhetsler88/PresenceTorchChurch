@@ -19,6 +19,7 @@ import useAgoraMultiListen from "@/hooks/useAgoraMultiListen";
 import usePttReceiver from "@/hooks/usePttReceiver";
 import useBackgroundRelayListen from "@/hooks/useBackgroundRelayListen";
 import { playClearTone } from "@/lib/pttTones";
+import { maybePlayTextMessageTone } from "@/lib/textMessageNotifications";
 import { cleanupStalePTTSignals } from "@/lib/pttSignals";
 
 const PassiveTalkListenContext = createContext(null);
@@ -70,7 +71,6 @@ export function PassiveTalkListenProvider({ user, children }) {
     ? registration.channelId
     : fallbackChannelId;
 
-  const listenTitle = registration.title || "Talk";
   const passiveListenActive =
     enabled && Boolean(listenChannelId) && !registration.listenPaused;
 
@@ -91,8 +91,9 @@ export function PassiveTalkListenProvider({ user, children }) {
 
   useBackgroundRelayListen({
     enabled: passiveListenActive,
-    silent: true,
-    title: listenTitle,
+    silent: false,
+    title: "Presence Torch",
+    channelCount: listenChannelId ? 1 : 0,
   });
 
   const isLiveReceiving = passiveListenActive && (agoraReceiving || relayReceiving);
@@ -124,6 +125,20 @@ export function PassiveTalkListenProvider({ user, children }) {
       channelId: listenChannelId,
       excludeSenderId: user.id,
     }).catch(() => {});
+  }, [passiveListenActive, listenChannelId, user?.id]);
+
+  useEffect(() => {
+    if (!passiveListenActive || !user?.id || !listenChannelId) return undefined;
+
+    const unsub = api.entities.VoiceMessage.subscribe(
+      (event) => {
+        if (event.data?.channel_id !== listenChannelId) return;
+        maybePlayTextMessageTone(event, user.id, heardBroadcastsRef.current);
+      },
+      { channel_id: listenChannelId }
+    );
+
+    return unsub;
   }, [passiveListenActive, listenChannelId, user?.id]);
 
   const setTalkListen = useCallback((next) => {

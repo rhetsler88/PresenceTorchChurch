@@ -23,8 +23,10 @@ import androidx.core.app.NotificationCompat;
 public class BackgroundAudioService extends Service {
 
     public static final String ACTION_START = "church.presencetorch.app.action.START_BACKGROUND_AUDIO";
+    public static final String ACTION_UPDATE = "church.presencetorch.app.action.UPDATE_BACKGROUND_AUDIO";
     public static final String ACTION_STOP = "church.presencetorch.app.action.STOP_BACKGROUND_AUDIO";
     public static final String EXTRA_TITLE = "title";
+    public static final String EXTRA_BODY = "body";
     public static final String EXTRA_SILENT = "silent";
 
     private static final int NOTIFICATION_ID = 41001;
@@ -40,6 +42,8 @@ public class BackgroundAudioService extends Service {
     private PowerManager.WakeLock wakeLock;
     private AudioTrack silentTrack;
     private boolean silentNotification = false;
+    private String currentTitle;
+    private String currentBody;
 
     public static boolean isSessionActive() {
         return sessionActive;
@@ -58,12 +62,37 @@ public class BackgroundAudioService extends Service {
             return START_NOT_STICKY;
         }
 
+        if (ACTION_UPDATE.equals(action)) {
+            if (!sessionActive) {
+                return START_NOT_STICKY;
+            }
+            String title = intent.getStringExtra(EXTRA_TITLE);
+            String body = intent.getStringExtra(EXTRA_BODY);
+            if (title != null && !title.isEmpty()) {
+                currentTitle = title;
+            }
+            if (body != null && !body.isEmpty()) {
+                currentBody = body;
+            }
+            NotificationManager manager = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+            if (manager != null) {
+                manager.notify(NOTIFICATION_ID, buildNotification(currentTitle));
+            }
+            return START_STICKY;
+        }
+
         String title = intent.getStringExtra(EXTRA_TITLE);
+        String body = intent.getStringExtra(EXTRA_BODY);
         silentNotification = intent.getBooleanExtra(EXTRA_SILENT, false);
         if (title == null || title.isEmpty()) {
             title = getString(R.string.background_audio_default_title);
         }
+        if (body == null || body.isEmpty()) {
+            body = getString(R.string.background_audio_notification_text);
+        }
 
+        currentTitle = title;
+        currentBody = body;
         startForegroundSession(title);
         return START_STICKY;
     }
@@ -125,7 +154,8 @@ public class BackgroundAudioService extends Service {
         } else {
             builder
                 .setContentTitle(title)
-                .setContentText(getString(R.string.background_audio_notification_text));
+                .setContentText(currentBody != null ? currentBody : getString(R.string.background_audio_notification_text))
+                .setPriority(NotificationCompat.PRIORITY_LOW);
         }
 
         return builder.build();

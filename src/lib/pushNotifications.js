@@ -3,6 +3,7 @@ import { PushNotifications } from "@capacitor/push-notifications";
 import { getToken, isSupported, onMessage } from "firebase/messaging";
 import { getFirebaseMessaging } from "@/lib/firebase";
 import { triggerRedAlert, ensureRedAlertNotificationChannel } from "@/lib/redAlertActions";
+import { playTextMessageTone } from "@/lib/pttTones";
 import { isStaffAlertRecipient } from "@/lib/channelAlerts";
 import {
   getOrCreateDeviceId,
@@ -12,6 +13,7 @@ import {
 import { removePushRegistration, upsertPushRegistration } from "@/lib/pushRegistrationStore";
 
 const PUSH_CHANNEL_ID = "red_alerts";
+const TEXT_MESSAGE_CHANNEL_ID = "text_messages";
 const VAPID_KEY = import.meta.env.VITE_FIREBASE_VAPID_KEY;
 
 let initialized = false;
@@ -50,6 +52,10 @@ async function removeSessionRegistration(uid, registrationKey) {
   }
 }
 
+function handleTextMessagePayload(data) {
+  playTextMessageTone();
+}
+
 async function initNativePush(uid, userProfile) {
   await ensureRedAlertNotificationChannel();
 
@@ -58,6 +64,14 @@ async function initNativePush(uid, userProfile) {
       id: PUSH_CHANNEL_ID,
       name: "Red Alerts",
       importance: 5,
+      vibration: true,
+      visibility: 1,
+      sound: "default",
+    });
+    await PushNotifications.createChannel({
+      id: TEXT_MESSAGE_CHANNEL_ID,
+      name: "Text Messages",
+      importance: 4,
       vibration: true,
       visibility: 1,
       sound: "default",
@@ -84,6 +98,10 @@ async function initNativePush(uid, userProfile) {
     const data = notification?.data || {};
     if (data.type === "red_alert") {
       handleRedAlertPayload(data);
+      return;
+    }
+    if (data.type === "text_message") {
+      handleTextMessagePayload(data);
     }
   });
 
@@ -91,6 +109,10 @@ async function initNativePush(uid, userProfile) {
     const data = action?.notification?.data || {};
     if (data.type === "red_alert") {
       handleRedAlertPayload(data);
+      return;
+    }
+    if (data.type === "text_message") {
+      handleTextMessagePayload(data);
     }
   });
 
@@ -149,6 +171,10 @@ async function initWebPush(uid, userProfile) {
     const data = payload?.data || {};
     if (data.type === "red_alert") {
       handleRedAlertPayload(data);
+      return;
+    }
+    if (data.type === "text_message") {
+      handleTextMessagePayload(data);
     }
   });
 }

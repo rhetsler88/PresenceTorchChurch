@@ -12,9 +12,8 @@ import {
   usePassiveTalkListen,
   usePassiveTalkListenRegistration,
 } from "../components/ptt/PassiveTalkListenProvider";
-import useExternalPTT from "../hooks/useExternalPTT";
-import { playClearTone, playBusyTone, unlockAudioForPTT, playTextMessageTone } from "@/lib/pttTones";
-import { isProtectionLevelChangeMessage } from "@/lib/protectionLevelHistory";
+import { useRegisterPagePTTHandlers } from "@/components/ptt/PTTHandlerProvider";
+import { playClearTone, playBusyTone, unlockAudioForPTT } from "@/lib/pttTones";
 import { cleanupStalePTTSignals, claimPttChannels, releasePttSignals } from "@/lib/pttSignals";
 import { playAudioUrl, stopAudio } from "@/lib/audioPlayer";
 import { deviceDayKey } from "@/lib/deviceDate";
@@ -343,17 +342,6 @@ export default function Talk() {
           mergeChannelMessage(event.data);
           queryClient.invalidateQueries({ queryKey: ["all-messages"] });
           queryClient.invalidateQueries({ queryKey: ["all-channel-messages"] });
-        }
-
-        // Ding for incoming text messages from other users
-        if (
-          event.type === "create"
-          && event.data?.text_content
-          && !event.data?.audio_url
-          && event.data?.created_by_id !== user.id
-          && !isProtectionLevelChangeMessage(event.data)
-        ) {
-          playTextMessageTone();
         }
       },
       { channel_id: effectiveChannelId }
@@ -791,7 +779,7 @@ export default function Talk() {
     finishPttStop();
   }, [isPTTPressed, finishPttStop]);
 
-  useExternalPTT({
+  useRegisterPagePTTHandlers({
     onPress: handlePTTStart,
     onRelease: handlePTTStop,
   });

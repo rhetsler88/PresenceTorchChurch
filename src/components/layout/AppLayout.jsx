@@ -8,6 +8,7 @@ import { isPlatformAdmin, canAccessMonitorPage, isDirector, isLead } from "@/lib
 import { BluetoothPTTProvider } from "@/components/ptt/BluetoothPTTContext";
 import { PassiveMonitorProvider } from "@/components/monitor/PassiveMonitorProvider";
 import { PassiveTalkListenProvider } from "@/components/ptt/PassiveTalkListenProvider";
+import GlobalPTTBridge from "@/components/ptt/GlobalPTTBridge";
 import RedAlertBanner from "@/components/ptt/RedAlertBanner";
 import PasswordRotationReminder from "@/components/auth/PasswordRotationReminder";
 import GooglePasswordSetupPrompt from "@/components/auth/GooglePasswordSetupPrompt";
@@ -66,6 +67,7 @@ export default function AppLayout() {
       <BluetoothPTTProvider>
       <PassiveMonitorProvider user={user}>
       <PassiveTalkListenProvider user={user}>
+      <GlobalPTTBridge>
       <DailyCodeGate user={user} onUserUpdate={checkUserAuth}>
       <RedAlertBanner channelName={alertChannel} onDismiss={dismissAlert} />
       <PasswordRotationReminder />
@@ -104,6 +106,7 @@ export default function AppLayout() {
         </div>
       </nav>
       </DailyCodeGate>
+      </GlobalPTTBridge>
       </PassiveTalkListenProvider>
       </PassiveMonitorProvider>
       </BluetoothPTTProvider>

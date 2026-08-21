@@ -24,6 +24,7 @@ import useAgoraMultiListen from "@/hooks/useAgoraMultiListen";
 import usePttReceiver from "@/hooks/usePttReceiver";
 import useBackgroundRelayListen from "@/hooks/useBackgroundRelayListen";
 import { playClearTone } from "@/lib/pttTones";
+import { maybePlayTextMessageTone } from "@/lib/textMessageNotifications";
 import { cleanupStalePTTSignals } from "@/lib/pttSignals";
 
 const PassiveMonitorContext = createContext(null);
@@ -99,7 +100,9 @@ export function PassiveMonitorProvider({ user, children }) {
 
   useBackgroundRelayListen({
     enabled: passiveListenActive,
-    silent: true,
+    silent: false,
+    title: "Presence Torch",
+    channelCount: listenChannelIds.length,
   });
 
   const isLiveReceiving = passiveListenActive && (agoraReceiving || relayReceiving);
@@ -133,6 +136,22 @@ export function PassiveMonitorProvider({ user, children }) {
       channelIds: listenChannelIds,
       excludeSenderId: user.id,
     }).catch(() => {});
+  }, [passiveListenActive, listenChannelKey, listenChannelIds, user?.id]);
+
+  useEffect(() => {
+    if (!passiveListenActive || !user?.id || listenChannelIds.length === 0) return undefined;
+
+    const unsub = api.entities.VoiceMessage.subscribeMany(
+      (event) => {
+        const channelId = event.data?.channel_id;
+        if (!listenChannelIds.includes(channelId)) return;
+        const heard = heardBroadcastsRef.current;
+        maybePlayTextMessageTone(event, user.id, heard);
+      },
+      listenChannelIds.map((channelId) => ({ channel_id: channelId }))
+    );
+
+    return unsub;
   }, [passiveListenActive, listenChannelKey, listenChannelIds, user?.id]);
 
   const isMuted = useCallback(

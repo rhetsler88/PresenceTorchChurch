@@ -9,18 +9,35 @@ public class BackgroundAudioPlugin: CAPPlugin, CAPBridgedPlugin {
     public let jsName = "BackgroundAudio"
     public let pluginMethods: [CAPPluginMethod] = [
         CAPPluginMethod(name: "startSession", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "updateSession", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "stopSession", returnType: CAPPluginReturnPromise),
     ]
 
     private var sessionActive = false
+    private var currentBody = "1 channel active"
     private var silentEngine: AVAudioEngine?
     private var silentPlayer: AVAudioPlayerNode?
 
     @objc func startSession(_ call: CAPPluginCall) {
         let title = call.getString("title") ?? "Presence Torch"
+        let body = call.getString("body") ?? "1 channel active"
 
         DispatchQueue.main.async {
+            self.currentBody = body
             self.activatePlaybackSession(title: title)
+            call.resolve()
+        }
+    }
+
+    @objc func updateSession(_ call: CAPPluginCall) {
+        let title = call.getString("title") ?? "Presence Torch"
+        let body = call.getString("body") ?? self.currentBody
+
+        DispatchQueue.main.async {
+            self.currentBody = body
+            if self.sessionActive {
+                self.updateNowPlayingInfo(title: title)
+            }
             call.resolve()
         }
     }
@@ -73,7 +90,7 @@ public class BackgroundAudioPlugin: CAPPlugin, CAPBridgedPlugin {
     private func updateNowPlayingInfo(title: String) {
         var info = [String: Any]()
         info[MPMediaItemPropertyTitle] = title
-        info[MPMediaItemPropertyArtist] = "Listening for live broadcasts"
+        info[MPMediaItemPropertyArtist] = currentBody
         info[MPNowPlayingInfoPropertyPlaybackRate] = 1.0
         info[MPNowPlayingInfoPropertyElapsedPlaybackTime] = 0.0
         MPNowPlayingInfoCenter.default().nowPlayingInfo = info

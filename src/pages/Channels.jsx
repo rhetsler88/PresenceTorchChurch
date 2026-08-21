@@ -141,10 +141,10 @@ export default function Channels() {
   };
 
   const channelsSubtitle = canManageAnyProtection
-    ? `${channels.length} channels · tap to open Talk`
+    ? `${channels.length} channels · Select a channel to open in Talk`
     : hasAssignedChannel
-      ? `${channels.length} channels · tap yours to open Talk`
-      : `${channels.length} channels · request access to join a channel`;
+      ? `${channels.length} channels · Assigned channels open in Talk`
+      : `${channels.length} channels · Request access to join a channel`;
 
   return (
     <div className="min-h-screen safe-top">

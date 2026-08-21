@@ -31,10 +31,39 @@ public final class BackgroundLogoutScheduler {
             return;
         }
 
+        scheduleAlarmSafely(alarmManager, triggerAtMs, pendingIntent);
+    }
+
+    private static void scheduleAlarmSafely(AlarmManager alarmManager, long triggerAtMs, PendingIntent pendingIntent) {
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && !alarmManager.canScheduleExactAlarms()) {
+                setInexactWhileIdle(alarmManager, triggerAtMs, pendingIntent);
+                return;
+            }
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAtMs, pendingIntent);
+            } else {
+                alarmManager.setExact(AlarmManager.RTC_WAKEUP, triggerAtMs, pendingIntent);
+            }
+        } catch (SecurityException ex) {
+            try {
+                setInexactWhileIdle(alarmManager, triggerAtMs, pendingIntent);
+            } catch (SecurityException ignored) {
+                // JS idle timer remains the fallback when exact alarms are unavailable.
+            }
+        }
+    }
+
+    private static void setInexactWhileIdle(
+        AlarmManager alarmManager,
+        long triggerAtMs,
+        PendingIntent pendingIntent
+    ) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAtMs, pendingIntent);
+            alarmManager.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAtMs, pendingIntent);
         } else {
-            alarmManager.setExact(AlarmManager.RTC_WAKEUP, triggerAtMs, pendingIntent);
+            alarmManager.set(AlarmManager.RTC_WAKEUP, triggerAtMs, pendingIntent);
         }
     }
 

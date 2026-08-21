@@ -5,6 +5,7 @@ ext {
     rgcfaIncludeGoogle = true
     androidxCredentialsVersion = '1.3.0'
     librariesIdentityGoogleidVersion = '1.1.1'
+    playServicesAuthVersion = '20.7.0'
     androidxActivityVersion = '1.11.0'
     androidxAppCompatVersion = '1.7.1'
     androidxCoordinatorLayoutVersion = '1.3.0'

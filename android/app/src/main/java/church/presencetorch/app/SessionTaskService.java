@@ -18,7 +18,6 @@ public class SessionTaskService extends Service {
     public void onTaskRemoved(Intent rootIntent) {
         if (SessionPrefs.shouldAllowSessionLogout(this)) {
             SessionPrefs.markForceLogoutOnNextStart(this);
-            MainActivity.notifyBackgroundLogoutTimeout();
         }
         stopSelf();
         super.onTaskRemoved(rootIntent);

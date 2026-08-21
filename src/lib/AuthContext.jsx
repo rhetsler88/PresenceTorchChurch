@@ -432,14 +432,15 @@ export const AuthProvider = ({ children }) => {
           ensureIdleLogoutWatch();
         }
 
-        clearNativeGoogleSignInPending();
         applyAuthenticatedUser(currentUser);
         void refreshAuthCustomClaims(firebaseUser);
         void initPushNotifications(firebaseUser.uid, currentUser).catch((err) => {
           console.error("Push notification init failed:", err);
+          clearNativeGoogleSignInPending();
         });
       } catch (error) {
         console.error("Auth state error:", error);
+        clearNativeGoogleSignInPending();
         setAuthError({ type: "unknown", message: error.message });
         setIsLoadingAuth(false);
         setAuthChecked(true);

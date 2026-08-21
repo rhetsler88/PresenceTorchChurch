@@ -163,7 +163,6 @@ const NATIVE_GOOGLE_SIGNIN_KEY = "presence_native_google_signin";
 export function markNativeGoogleSignInPending() {
   localStorage.setItem(NATIVE_GOOGLE_SIGNIN_KEY, "1");
   void syncNativeGoogleSignInPending(true).catch(() => {});
-  void syncNativeActiveSession(false).catch(() => {});
 }
 
 export function clearNativeGoogleSignInPending() {

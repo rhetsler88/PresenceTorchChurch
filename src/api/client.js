@@ -628,7 +628,6 @@ function enrichGoogleSignInError(err) {
 async function signInWithGoogleNative() {
   try {
     await revokeNativeGoogleSignInSession().catch(() => {});
-    await FirebaseAuthentication.signOut().catch(() => {});
     return await FirebaseAuthentication.signInWithGoogle({ useCredentialManager: false });
   } catch (err) {
     throw enrichGoogleSignInError(err);
@@ -682,10 +681,7 @@ export const authApi = {
 
     if (Capacitor.isNativePlatform()) {
       markNativeGoogleSignInPending();
-      await Promise.all([
-        syncNativeGoogleSignInPending(true),
-        syncNativeActiveSession(false),
-      ]).catch(() => {});
+      await syncNativeGoogleSignInPending(true).catch(() => {});
       try {
         const result = await signInWithGoogleNative();
         const idToken = result.credential?.idToken;
@@ -707,9 +703,11 @@ export const authApi = {
         await firebaseUser.getIdToken(true);
         await verifyFirebaseConnection();
         recordLoginTime();
-      } finally {
+        await syncNativeActiveSession(true).catch(() => {});
+      } catch (err) {
         clearNativeGoogleSignInPending();
         await syncNativeGoogleSignInPending(false).catch(() => {});
+        throw err;
       }
       return;
     }

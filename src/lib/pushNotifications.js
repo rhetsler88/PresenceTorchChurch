@@ -11,12 +11,16 @@ import {
   getWebPushSurface,
 } from "@/lib/pushDevice";
 import { removePushRegistration, upsertPushRegistration } from "@/lib/pushRegistrationStore";
+import { beginSensitiveOperation, endSensitiveOperation } from "@/lib/sensitiveOperation";
+import { clearNativeGoogleSignInPending } from "@/lib/logoutOnClose";
 
 const PUSH_CHANNEL_ID = "red_alerts";
 const TEXT_MESSAGE_CHANNEL_ID = "text_messages";
 const VAPID_KEY = import.meta.env.VITE_FIREBASE_VAPID_KEY;
+const NATIVE_PUSH_INIT_DELAY_MS = 2000;
 
 let initialized = false;
+let nativeListenersRegistered = false;
 let currentUid = null;
 let currentToken = null;
 let currentRegistrationKey = null;
@@ -56,29 +60,9 @@ function handleTextMessagePayload(data) {
   playTextMessageTone();
 }
 
-async function initNativePush(uid, userProfile) {
-  await ensureRedAlertNotificationChannel();
-
-  try {
-    await PushNotifications.createChannel({
-      id: PUSH_CHANNEL_ID,
-      name: "Red Alerts",
-      importance: 5,
-      vibration: true,
-      visibility: 1,
-      sound: "default",
-    });
-    await PushNotifications.createChannel({
-      id: TEXT_MESSAGE_CHANNEL_ID,
-      name: "Text Messages",
-      importance: 4,
-      vibration: true,
-      visibility: 1,
-      sound: "default",
-    });
-  } catch {
-    /* ignore */
-  }
+async function registerNativePushListeners(uid) {
+  if (nativeListenersRegistered) return;
+  nativeListenersRegistered = true;
 
   await PushNotifications.addListener("registration", async (token) => {
     currentToken = token.value;
@@ -115,13 +99,53 @@ async function initNativePush(uid, userProfile) {
       handleTextMessagePayload(data);
     }
   });
+}
 
-  let perm = await PushNotifications.checkPermissions();
-  if (perm.receive === "prompt") {
-    perm = await PushNotifications.requestPermissions();
-  }
-  if (perm.receive === "granted") {
-    await PushNotifications.register();
+async function initNativePush(uid, userProfile) {
+  try {
+    await ensureRedAlertNotificationChannel();
+
+    try {
+      await PushNotifications.createChannel({
+        id: PUSH_CHANNEL_ID,
+        name: "Red Alerts",
+        importance: 5,
+        vibration: true,
+        visibility: 1,
+        sound: "default",
+      });
+      await PushNotifications.createChannel({
+        id: TEXT_MESSAGE_CHANNEL_ID,
+        name: "Text Messages",
+        importance: 4,
+        vibration: true,
+        visibility: 1,
+        sound: "default",
+      });
+    } catch {
+      /* ignore */
+    }
+
+    await registerNativePushListeners(uid);
+
+    beginSensitiveOperation();
+    let perm;
+    try {
+      perm = await PushNotifications.checkPermissions();
+      if (perm.receive === "prompt") {
+        perm = await PushNotifications.requestPermissions();
+      }
+    } finally {
+      endSensitiveOperation();
+    }
+
+    if (perm?.receive === "granted") {
+      await PushNotifications.register();
+    }
+  } catch (err) {
+    console.error("Native push init failed:", err);
+  } finally {
+    clearNativeGoogleSignInPending();
   }
 }
 
@@ -179,6 +203,12 @@ async function initWebPush(uid, userProfile) {
   });
 }
 
+function scheduleNativePushInit(uid, userProfile) {
+  window.setTimeout(() => {
+    void initNativePush(uid, userProfile);
+  }, NATIVE_PUSH_INIT_DELAY_MS);
+}
+
 export async function initPushNotifications(uid, userProfile = null) {
   if (!uid) return;
 
@@ -200,7 +230,7 @@ export async function initPushNotifications(uid, userProfile = null) {
   initialized = true;
 
   if (Capacitor.isNativePlatform()) {
-    await initNativePush(uid, userProfile);
+    scheduleNativePushInit(uid, userProfile);
     return;
   }
 
@@ -237,6 +267,7 @@ export async function teardownPushNotifications() {
   currentRegistrationKey = null;
   staffAlertsEnabled = false;
   initialized = false;
+  nativeListenersRegistered = false;
 }
 
 /** Re-register web push after PWA install (browser → standalone storage context). */

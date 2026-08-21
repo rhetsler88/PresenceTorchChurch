@@ -120,6 +120,12 @@
   .pb-safe {
     padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 0.5rem);
   }
+  .bottom-tab-bar-offset {
+    bottom: calc(env(safe-area-inset-bottom, 0px) + 4.25rem);
+  }
+  .pb-talk-controls {
+    padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 13rem);
+  }
   .h-dvh {
     height: 100vh;
     height: 100dvh;

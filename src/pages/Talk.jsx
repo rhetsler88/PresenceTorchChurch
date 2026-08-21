@@ -899,7 +899,7 @@ export default function Talk() {
         </div>
       )}
 
-      <div className="flex-1 overflow-auto overscroll-contain">
+      <div className="flex-1 overflow-auto overscroll-contain pb-talk-controls">
         <MessageFeed
           messages={sortedMessages}
           currentUser={user}
@@ -915,7 +915,7 @@ export default function Talk() {
       </div>
 
       {selectionMode ? (
-        <div className="flex items-center justify-between gap-3 px-4 py-3 bg-card border-t border-border">
+        <div className="fixed inset-x-0 z-40 bottom-tab-bar-offset flex items-center justify-between gap-3 px-4 py-2 bg-card border-t border-border">
           <span className="text-sm font-medium text-foreground">
             {selectedIds.size} selected · tap to toggle · hold to select
           </span>
@@ -936,7 +936,7 @@ export default function Talk() {
           </div>
         </div>
       ) : (
-        <div className="pb-safe pt-3 flex flex-col items-center gap-3 bg-gradient-to-t from-background via-background to-transparent">
+        <div className="fixed inset-x-0 z-40 bottom-tab-bar-offset flex flex-col items-center gap-1.5 px-4 pt-1 pb-0.5 bg-gradient-to-t from-background from-70% via-background/95 to-transparent">
           <PTTButton
             isPressed={isPTTPressed}
             onStart={handlePTTStart}

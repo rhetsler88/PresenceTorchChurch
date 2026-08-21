@@ -73,7 +73,7 @@ export default function PTTButton({ isPressed, isConnected, isReceiving, isChann
   };
 
   return (
-    <div className="flex flex-col items-center gap-4">
+    <div className="flex flex-col items-center gap-2">
       <AnimatePresence>
         {showPressed && (
           <motion.div

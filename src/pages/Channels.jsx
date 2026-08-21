@@ -123,12 +123,13 @@ export default function Channels() {
 
   const showCreateButton = canCreateChannel(user);
   const canManageAnyProtection = channels.some((ch) => canManageChannelProtection(user, ch));
+  const hasAssignedChannel = channels.some((ch) => canAccessChannel(user, ch));
 
-  const handleSelect = (channel) => {
-    if (canAccessChannel(user, channel)) {
-      navigate(`/?channel=${channel.id}`);
-      return;
-    }
+  const handleOpenTalk = (channel) => {
+    navigate(`/?channel=${channel.id}`);
+  };
+
+  const handleRequestAccess = (channel) => {
     if (
       channel.pending_members?.includes(user?.id) ||
       channel.pending_members?.includes(user?.email)
@@ -139,6 +140,12 @@ export default function Channels() {
     setJoinChannel(channel);
   };
 
+  const channelsSubtitle = canManageAnyProtection
+    ? `${channels.length} channels · tap to open Talk`
+    : hasAssignedChannel
+      ? `${channels.length} channels · tap yours to open Talk`
+      : `${channels.length} channels · request access to join a channel`;
+
   return (
     <div className="min-h-screen safe-top">
       <div className="px-4 pt-4 pb-4 border-b border-border sm:px-5 sm:pt-6">
@@ -146,9 +153,7 @@ export default function Channels() {
           <div className="min-w-0">
             <h1 className="text-lg font-bold text-foreground sm:text-xl">Channels</h1>
             <p className="text-xs text-muted-foreground mt-0.5">
-              {canManageAnyProtection
-                ? `${channels.length} channels · tap to open Talk`
-                : `${channels.length} channels · tap to request access`}
+              {channelsSubtitle}
             </p>
           </div>
           <div className="flex items-center gap-2 flex-wrap shrink-0">
@@ -182,7 +187,8 @@ export default function Channels() {
                   (channel.pending_members?.includes(user?.id) ||
                     channel.pending_members?.includes(user?.email))
                 }
-                onSelect={handleSelect}
+                onOpenTalk={handleOpenTalk}
+                onRequestAccess={handleRequestAccess}
                 canRename={canEditAssignedChannel(user, channel)}
                 onRename={(ch) => setRenameChannel(ch)}
                 canManageProtection={canManageChannelProtection(user, channel)}

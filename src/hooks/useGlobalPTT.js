@@ -17,6 +17,7 @@ import { playBusyTone, playClearTone, unlockAudioForPTT } from "@/lib/pttTones";
 import { claimPttChannels, cleanupStalePTTSignals, releasePttSignals } from "@/lib/pttSignals";
 import { deviceDayKey } from "@/lib/deviceDate";
 import { toast } from "@/lib/toast";
+import { recordSessionInteraction } from "@/lib/logoutOnClose";
 
 function resolveGlobalPttChannel(user, channels, passiveTalkChannelId) {
   if (!user?.id || !channels?.length) return null;
@@ -149,6 +150,7 @@ export default function useGlobalPTT() {
       return;
     }
 
+    recordSessionInteraction();
     unlockAudioForPTT();
     playClearTone();
     isPTTPressedRef.current = true;

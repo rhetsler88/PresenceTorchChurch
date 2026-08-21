@@ -6,14 +6,13 @@ import android.content.Context;
 import android.content.Intent;
 import android.os.Build;
 
-/** Schedules native background sign-out after {@link #BACKGROUND_LOGOUT_MS}. */
+/** Schedules native idle sign-out at a JS-computed deadline. */
 public final class BackgroundLogoutScheduler {
-    static final long BACKGROUND_LOGOUT_MS = 6L * 60L * 60L * 1000L;
     private static final int REQUEST_CODE = 44006;
 
     private BackgroundLogoutScheduler() {}
 
-    public static void schedule(Context context) {
+    public static void scheduleAt(Context context, long triggerAtMs) {
         AlarmManager alarmManager = (AlarmManager) context.getSystemService(Context.ALARM_SERVICE);
         if (alarmManager == null) {
             return;
@@ -27,11 +26,15 @@ public final class BackgroundLogoutScheduler {
             PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE
         );
 
-        long triggerAt = System.currentTimeMillis() + BACKGROUND_LOGOUT_MS;
+        if (triggerAtMs <= System.currentTimeMillis()) {
+            alarmManager.cancel(pendingIntent);
+            return;
+        }
+
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAt, pendingIntent);
+            alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAtMs, pendingIntent);
         } else {
-            alarmManager.setExact(AlarmManager.RTC_WAKEUP, triggerAt, pendingIntent);
+            alarmManager.setExact(AlarmManager.RTC_WAKEUP, triggerAtMs, pendingIntent);
         }
     }
 

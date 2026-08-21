@@ -25,6 +25,7 @@ import usePttReceiver from "@/hooks/usePttReceiver";
 import useBackgroundRelayListen from "@/hooks/useBackgroundRelayListen";
 import { playClearTone } from "@/lib/pttTones";
 import { maybePlayTextMessageTone } from "@/lib/textMessageNotifications";
+import { recordSessionInteraction } from "@/lib/logoutOnClose";
 import { cleanupStalePTTSignals } from "@/lib/pttSignals";
 
 const PassiveMonitorContext = createContext(null);
@@ -163,6 +164,7 @@ export function PassiveMonitorProvider({ user, children }) {
     (channelId) => {
       if (!user?.id || !channelId) return;
       setMutedChannelIds((prev) => toggleMutedChannelId(user.id, channelId, prev));
+      recordSessionInteraction();
     },
     [user?.id]
   );

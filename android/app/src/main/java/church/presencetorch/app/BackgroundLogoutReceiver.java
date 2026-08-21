@@ -5,7 +5,7 @@ import android.content.Context;
 import android.content.Intent;
 
 /**
- * Fires after 6 hours in the background — notifies a live WebView to sign out via JS.
+ * Fires at the idle logout deadline — notifies a live WebView to sign out via JS.
  * If the process was killed, auth init signs out on the next cold start from the stored timestamp.
  */
 public class BackgroundLogoutReceiver extends BroadcastReceiver {

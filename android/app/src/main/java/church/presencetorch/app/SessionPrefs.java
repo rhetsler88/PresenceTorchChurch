@@ -8,6 +8,7 @@ public final class SessionPrefs {
     private static final String KEY_GOOGLE_SIGNIN = "google_signin_pending";
     private static final String KEY_ACTIVE_SESSION = "active_session";
     private static final String KEY_SENSITIVE_OPERATION = "sensitive_operation_pending";
+    private static final String KEY_IDLE_LOGOUT_DEADLINE = "idle_logout_deadline_ms";
 
     private SessionPrefs() {}
 
@@ -30,6 +31,19 @@ public final class SessionPrefs {
             .edit()
             .putBoolean(KEY_SENSITIVE_OPERATION, pending)
             .apply();
+    }
+
+    public static void setIdleLogoutDeadlineMs(Context context, long deadlineMs) {
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .edit()
+            .putLong(KEY_IDLE_LOGOUT_DEADLINE, deadlineMs)
+            .apply();
+    }
+
+    public static long getIdleLogoutDeadlineMs(Context context) {
+        return context.getApplicationContext()
+            .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .getLong(KEY_IDLE_LOGOUT_DEADLINE, 0L);
     }
 
     /** Immediate logout / background alarms only when a signed-in session exists and OAuth is idle. */

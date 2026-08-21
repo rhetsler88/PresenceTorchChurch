@@ -35,6 +35,7 @@ import {
 } from "@/lib/channelMembership";
 import { auth } from "@/lib/firebase";
 import { toast } from "@/lib/toast";
+import { recordSessionInteraction } from "@/lib/logoutOnClose";
 import { Button } from "@/components/ui/button";
 import { Clock, Trash2, CheckSquare } from "lucide-react";
 
@@ -562,6 +563,7 @@ export default function Talk() {
     },
     onSuccess: (msg) => {
       if (!msg) return;
+      recordSessionInteraction();
       mergeChannelMessage(msg);
       queryClient.invalidateQueries({ queryKey: messagesQueryKey });
       queryClient.invalidateQueries({ queryKey: ["all-messages"] });
@@ -645,6 +647,7 @@ export default function Talk() {
       return;
     }
 
+    recordSessionInteraction();
     unlockAudioForPTT();
     playClearTone();
 

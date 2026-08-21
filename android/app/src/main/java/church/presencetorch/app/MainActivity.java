@@ -26,7 +26,10 @@ public class MainActivity extends BridgeActivity {
     public void onPause() {
         super.onPause();
         if (!isFinishing() && SessionPrefs.shouldAllowSessionLogout(this)) {
-            BackgroundLogoutScheduler.schedule(this);
+            long deadline = SessionPrefs.getIdleLogoutDeadlineMs(this);
+            if (deadline > System.currentTimeMillis()) {
+                BackgroundLogoutScheduler.scheduleAt(this, deadline);
+            }
         }
     }
 

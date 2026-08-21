@@ -1,9 +1,8 @@
 /**
  * Session policy:
  * - Auto sign-out 48 hours after login (SESSION_MAX_MS).
- * - Background: after 6 hours backgrounded, sign out automatically while still
- *   in the background (same effect as swipe-away). Native Android uses an exact
- *   alarm when JS timers are suspended.
+ * - Idle: after 15 minutes without interaction, an 8-hour foreground timer starts;
+ *   sign out when that timer expires (works in foreground and background).
  * - Native swipe-away: immediate sign-out via native lifecycle when possible.
  * - Web hard close: sign out when the browser tab/window is closed (next visit).
  */
@@ -11,43 +10,136 @@ import { clearDailyCodeSession } from "@/lib/dailyCode";
 import { Capacitor } from "@capacitor/core";
 import { signOut } from "firebase/auth";
 import { auth } from "@/lib/firebase";
-import { syncNativeActiveSession, syncNativeGoogleSignInPending } from "@/lib/sessionGuardNative";
+import {
+  syncNativeActiveSession,
+  syncNativeGoogleSignInPending,
+  syncNativeIdleLogoutDeadline,
+} from "@/lib/sessionGuardNative";
 import { isSensitiveOperationActive, resetSensitiveOperation } from "@/lib/sensitiveOperation";
 
 export const IMMEDIATE_LOGOUT_EVENT = "ptc-immediate-logout";
 
 export const LOGIN_TIME_KEY = "presence_login_time";
-/** Web tab/window closed — sign out on the next visit (not subject to the 6h rule). */
 const HARD_CLOSE_LOGOUT_FLAG = "presence_logout_on_next_start";
-/** App/tab backgrounded — sign out after BACKGROUND_LOGOUT_MS. */
-const BACKGROUND_PENDING_FLAG = "presence_background_pending";
-const BACKGROUNDED_AT_KEY = "presence_backgrounded_at";
+const LAST_INTERACTION_AT_KEY = "presence_last_interaction_at";
 const OAUTH_REDIRECT_KEY = "presence_oauth_redirect";
 const TAB_SESSION_KEY = "ptc_tab_session";
 
 /** Maximum session length from login (48 hours). */
 export const SESSION_MAX_MS = 48 * 60 * 60 * 1000;
 
-/** Sign out after this long in the background (6 hours). */
-export const BACKGROUND_LOGOUT_MS = 6 * 60 * 60 * 1000;
+/** No interaction for this long before the idle logout timer starts (15 minutes). */
+export const IDLE_GRACE_MS = 15 * 60 * 1000;
 
-const BACKGROUND_LOGOUT_WATCH_MS = 60_000;
+/** Sign out after this long once the idle timer has started (8 hours). */
+export const IDLE_LOGOUT_MS = 8 * 60 * 60 * 1000;
+
+/** @deprecated Use IDLE_GRACE_MS + IDLE_LOGOUT_MS */
+export const BACKGROUND_LOGOUT_MS = IDLE_GRACE_MS + IDLE_LOGOUT_MS;
+
+const IDLE_LOGOUT_WATCH_MS = 60_000;
 
 let immediateLogoutInFlight = false;
-let backgroundLogoutTimerId = null;
-let backgroundLogoutWatchId = null;
+let idleLogoutTimerId = null;
+let idleLogoutWatchId = null;
+
+export function getLastInteractionAt() {
+  const raw = localStorage.getItem(LAST_INTERACTION_AT_KEY);
+  if (!raw) return null;
+  const ts = parseInt(raw, 10);
+  return Number.isFinite(ts) ? ts : null;
+}
+
+export function getIdleLogoutDeadlineMs(lastInteractionAt = getLastInteractionAt()) {
+  if (!lastInteractionAt) return null;
+  return lastInteractionAt + IDLE_GRACE_MS + IDLE_LOGOUT_MS;
+}
+
+export function isIdleLogoutDue() {
+  const deadline = getIdleLogoutDeadlineMs();
+  if (!deadline) return false;
+  return Date.now() >= deadline;
+}
+
+function cancelIdleLogoutWatch() {
+  if (idleLogoutTimerId != null) {
+    clearTimeout(idleLogoutTimerId);
+    idleLogoutTimerId = null;
+  }
+  if (idleLogoutWatchId != null) {
+    clearInterval(idleLogoutWatchId);
+    idleLogoutWatchId = null;
+  }
+}
+
+function triggerIdleTimeoutLogout() {
+  cancelIdleLogoutWatch();
+  if (!isIdleLogoutDue()) return;
+  performImmediateLogout();
+}
+
+function scheduleIdleLogoutWatch() {
+  cancelIdleLogoutWatch();
+  if (!getLoginTime()) return;
+
+  const deadline = getIdleLogoutDeadlineMs();
+  if (!deadline) return;
+
+  const remaining = deadline - Date.now();
+  if (remaining <= 0) {
+    triggerIdleTimeoutLogout();
+    return;
+  }
+
+  idleLogoutTimerId = setTimeout(() => {
+    idleLogoutTimerId = null;
+    triggerIdleTimeoutLogout();
+  }, remaining);
+
+  idleLogoutWatchId = setInterval(() => {
+    if (isIdleLogoutDue()) {
+      triggerIdleTimeoutLogout();
+    }
+  }, IDLE_LOGOUT_WATCH_MS);
+}
+
+/** Resets the 15-minute idle grace and 8-hour logout timer. */
+export function recordSessionInteraction() {
+  if (isOAuthRedirectPending() || isNativeGoogleSignInPending()) return;
+
+  const now = Date.now();
+  localStorage.setItem(LAST_INTERACTION_AT_KEY, now.toString());
+  scheduleIdleLogoutWatch();
+  void syncNativeIdleLogoutDeadline(getIdleLogoutDeadlineMs(now)).catch(() => {});
+}
+
+export function clearIdleLogoutState() {
+  cancelIdleLogoutWatch();
+  localStorage.removeItem(LAST_INTERACTION_AT_KEY);
+  void syncNativeIdleLogoutDeadline(0).catch(() => {});
+}
+
+export function ensureIdleLogoutWatch() {
+  scheduleIdleLogoutWatch();
+}
+
+/** @deprecated Idle logout replaces background-pending flags. */
+export function clearBackgroundPending() {
+  clearIdleLogoutState();
+}
 
 export function recordLoginTime() {
   immediateLogoutInFlight = false;
-  clearBackgroundPending();
   clearHardCloseLogoutFlag();
   localStorage.setItem(LOGIN_TIME_KEY, Date.now().toString());
+  recordSessionInteraction();
   syncNativeActiveSession(true);
   void syncNativeGoogleSignInPending(false).catch(() => {});
 }
 
 export function clearLoginTime() {
   localStorage.removeItem(LOGIN_TIME_KEY);
+  clearIdleLogoutState();
   void syncNativeActiveSession(false).catch(() => {});
 }
 
@@ -70,7 +162,6 @@ export function getSessionRemainingMs() {
   return SESSION_MAX_MS - (Date.now() - loginTime);
 }
 
-/** Set before native Google sign-in so auth init does not time out during account picker. */
 const NATIVE_GOOGLE_SIGNIN_KEY = "presence_native_google_signin";
 
 export function markNativeGoogleSignInPending() {
@@ -88,7 +179,6 @@ export function isNativeGoogleSignInPending() {
   return localStorage.getItem(NATIVE_GOOGLE_SIGNIN_KEY) === "1";
 }
 
-/** Set before signInWithRedirect navigates away so pagehide does not force sign-out. */
 export function markOAuthRedirectPending() {
   sessionStorage.setItem(OAUTH_REDIRECT_KEY, "1");
 }
@@ -105,10 +195,6 @@ export function isGoogleSignInRedirectPending() {
   return isOAuthRedirectPending();
 }
 
-/**
- * sessionStorage survives refresh but is cleared when the tab closes.
- * Returns true when this load is a refresh / same-tab navigation (not a new tab).
- */
 export function isSameTabReload() {
   const nav = performance.getEntriesByType?.("navigation")?.[0];
   if (nav?.type === "reload" || nav?.type === "back_forward") {
@@ -117,84 +203,8 @@ export function isSameTabReload() {
   return sessionStorage.getItem(TAB_SESSION_KEY) === "1";
 }
 
-/** Call once at app boot before reading the close-logout flag. */
 export function markTabSessionAlive() {
   sessionStorage.setItem(TAB_SESSION_KEY, "1");
-}
-
-function getBackgroundedAt() {
-  const raw = localStorage.getItem(BACKGROUNDED_AT_KEY);
-  if (!raw) return null;
-  const ts = parseInt(raw, 10);
-  return Number.isFinite(ts) ? ts : null;
-}
-
-function cancelBackgroundLogoutWatch() {
-  if (backgroundLogoutTimerId != null) {
-    clearTimeout(backgroundLogoutTimerId);
-    backgroundLogoutTimerId = null;
-  }
-  if (backgroundLogoutWatchId != null) {
-    clearInterval(backgroundLogoutWatchId);
-    backgroundLogoutWatchId = null;
-  }
-}
-
-function triggerBackgroundTimeoutLogout() {
-  cancelBackgroundLogoutWatch();
-  if (!isBackgroundPending() || !isBackgroundLogoutDue()) return;
-  performImmediateLogout();
-}
-
-function scheduleBackgroundLogoutWatch() {
-  cancelBackgroundLogoutWatch();
-  if (!isBackgroundPending()) return;
-
-  const backgroundedAt = getBackgroundedAt();
-  if (!backgroundedAt) return;
-
-  const remaining = BACKGROUND_LOGOUT_MS - (Date.now() - backgroundedAt);
-  if (remaining <= 0) {
-    triggerBackgroundTimeoutLogout();
-    return;
-  }
-
-  backgroundLogoutTimerId = setTimeout(() => {
-    backgroundLogoutTimerId = null;
-    triggerBackgroundTimeoutLogout();
-  }, remaining);
-
-  backgroundLogoutWatchId = setInterval(() => {
-    if (isBackgroundLogoutDue()) {
-      triggerBackgroundTimeoutLogout();
-    }
-  }, BACKGROUND_LOGOUT_WATCH_MS);
-}
-
-/** App/tab moved to background. Starts the 6-hour auto sign-out timer. */
-export function markBackgroundPending() {
-  if (isOAuthRedirectPending() || isNativeGoogleSignInPending()) return;
-  if (isSensitiveOperationActive()) return;
-  localStorage.setItem(BACKGROUND_PENDING_FLAG, "1");
-  localStorage.setItem(BACKGROUNDED_AT_KEY, Date.now().toString());
-  scheduleBackgroundLogoutWatch();
-}
-
-export function clearBackgroundPending() {
-  cancelBackgroundLogoutWatch();
-  localStorage.removeItem(BACKGROUND_PENDING_FLAG);
-  localStorage.removeItem(BACKGROUNDED_AT_KEY);
-}
-
-export function isBackgroundPending() {
-  return localStorage.getItem(BACKGROUND_PENDING_FLAG) === "1";
-}
-
-export function isBackgroundLogoutDue() {
-  if (!isBackgroundPending()) return false;
-  const backgroundedAt = getBackgroundedAt();
-  if (!backgroundedAt) return false;
-  return Date.now() - backgroundedAt >= BACKGROUND_LOGOUT_MS;
 }
 
 function clearHardCloseLogoutFlag() {
@@ -207,17 +217,12 @@ function consumeHardCloseLogoutFlag() {
   return true;
 }
 
-/** Tab/window closed (web). Next visit signs out immediately. */
 export function markLogoutOnClose() {
   clearLoginTime();
   clearDailyCodeSession();
   localStorage.setItem(HARD_CLOSE_LOGOUT_FLAG, "1");
 }
 
-/**
- * Immediate sign-out (swipe-away, 6h background timeout, or native alarm).
- * Native code calls window.__ptcImmediateLogout().
- */
 export function isImmediateLogoutInFlight() {
   return immediateLogoutInFlight;
 }
@@ -228,10 +233,9 @@ export function performImmediateLogout() {
   if (isSensitiveOperationActive()) return;
   if (!auth.currentUser && !getLoginTime()) return;
   immediateLogoutInFlight = true;
-  cancelBackgroundLogoutWatch();
+  cancelIdleLogoutWatch();
   clearLoginTime();
   clearDailyCodeSession();
-  clearBackgroundPending();
   clearNativeGoogleSignInPending();
   localStorage.setItem(HARD_CLOSE_LOGOUT_FLAG, "1");
   void signOut(auth).catch(() => {});
@@ -250,61 +254,69 @@ export function unregisterImmediateLogoutBridge() {
 
 function resolveStartupLogout() {
   if (consumeHardCloseLogoutFlag()) {
-    clearBackgroundPending();
+    clearIdleLogoutState();
     return true;
   }
-  if (isBackgroundLogoutDue()) {
-    clearBackgroundPending();
+  if (isIdleLogoutDue()) {
+    clearIdleLogoutState();
     return true;
   }
-  clearBackgroundPending();
   return false;
 }
 
-/**
- * Whether this launch should sign out due to a prior close or long background.
- * Marks the tab session alive for the next navigation check (web).
- */
 export function shouldLogoutAfterClose() {
   if (Capacitor.isNativePlatform()) {
-    return resolveStartupLogout();
+    const shouldLogout = resolveStartupLogout();
+    if (!shouldLogout && getLastInteractionAt()) {
+      scheduleIdleLogoutWatch();
+    }
+    return shouldLogout;
   }
 
   const isReload = isSameTabReload();
   markTabSessionAlive();
   if (isReload) {
     clearHardCloseLogoutFlag();
-    clearBackgroundPending();
+    if (getLastInteractionAt()) {
+      scheduleIdleLogoutWatch();
+    }
     return false;
   }
-  return resolveStartupLogout();
+  const shouldLogout = resolveStartupLogout();
+  if (!shouldLogout && getLastInteractionAt()) {
+    scheduleIdleLogoutWatch();
+  }
+  return shouldLogout;
+}
+
+function syncNativeAlarmFromIdleState() {
+  const deadline = getIdleLogoutDeadlineMs();
+  void syncNativeIdleLogoutDeadline(deadline || 0).catch(() => {});
 }
 
 function handleForeground() {
   resetSensitiveOperation();
-  cancelBackgroundLogoutWatch();
-  if (isBackgroundLogoutDue()) {
-    // Alarm/timer should already have signed out; fallback if the OS deferred JS.
+  if (isIdleLogoutDue()) {
     performImmediateLogout();
     return;
   }
-  clearBackgroundPending();
+  scheduleIdleLogoutWatch();
 }
 
 /**
- * Background timer (6h) + native alarm (Android). Foreground clears the timer.
+ * Idle logout watch (15m grace + 8h timer) while signed in.
+ * Native Android alarm mirrors the JS deadline when the app backgrounds.
  */
 export function installCloseLogoutHandler() {
-  if (isBackgroundPending()) {
-    scheduleBackgroundLogoutWatch();
+  if (getLastInteractionAt()) {
+    scheduleIdleLogoutWatch();
   }
 
   if (Capacitor.isNativePlatform()) {
     const handlePause = () => {
       if (isOAuthRedirectPending() || isNativeGoogleSignInPending()) return;
-      if (isSensitiveOperationActive()) return;
       if (!auth.currentUser) return;
-      markBackgroundPending();
+      syncNativeAlarmFromIdleState();
     };
     const handleResume = () => {
       handleForeground();
@@ -315,7 +327,7 @@ export function installCloseLogoutHandler() {
     return () => {
       window.removeEventListener("pause", handlePause);
       window.removeEventListener("resume", handleResume);
-      cancelBackgroundLogoutWatch();
+      cancelIdleLogoutWatch();
     };
   }
 
@@ -323,7 +335,7 @@ export function installCloseLogoutHandler() {
     if (document.visibilityState === "hidden") {
       if (isOAuthRedirectPending() || isNativeGoogleSignInPending()) return;
       if (!auth.currentUser) return;
-      markBackgroundPending();
+      syncNativeAlarmFromIdleState();
       return;
     }
     if (document.visibilityState === "visible") {
@@ -342,6 +354,6 @@ export function installCloseLogoutHandler() {
   return () => {
     document.removeEventListener("visibilitychange", handleVisibilityChange);
     window.removeEventListener("pagehide", handlePageHide);
-    cancelBackgroundLogoutWatch();
+    cancelIdleLogoutWatch();
   };
 }

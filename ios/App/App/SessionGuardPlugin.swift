@@ -37,6 +37,7 @@ public class SessionGuardPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "setGoogleSignInPending", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "setActiveSession", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "setSensitiveOperationPending", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "setIdleLogoutDeadline", returnType: CAPPluginReturnPromise),
     ]
 
     @objc func setGoogleSignInPending(_ call: CAPPluginCall) {
@@ -54,6 +55,10 @@ public class SessionGuardPlugin: CAPPlugin, CAPBridgedPlugin {
     @objc func setSensitiveOperationPending(_ call: CAPPluginCall) {
         let pending = call.getBool("pending") ?? false
         SessionPrefs.setSensitiveOperationPending(pending)
+        call.resolve()
+    }
+
+    @objc func setIdleLogoutDeadline(_ call: CAPPluginCall) {
         call.resolve()
     }
 }

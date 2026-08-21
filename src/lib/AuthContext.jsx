@@ -10,6 +10,7 @@ import {
   clearOAuthRedirectPending,
   clearNativeGoogleSignInPending,
   clearBackgroundPending,
+  ensureIdleLogoutWatch,
   installCloseLogoutHandler,
   shouldLogoutAfterClose,
   isSessionExpired,
@@ -420,7 +421,7 @@ export const AuthProvider = ({ children }) => {
         if (!getLoginTime()) {
           recordLoginTime();
         } else {
-          clearBackgroundPending();
+          ensureIdleLogoutWatch();
         }
 
         clearNativeGoogleSignInPending();

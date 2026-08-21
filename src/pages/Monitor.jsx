@@ -20,6 +20,7 @@ import { useRegisterPagePTTHandlers } from "@/components/ptt/PTTHandlerProvider"
 import ProtectionLevelControl from "../components/monitor/ProtectionLevelControl";
 import SetAllProtectionLevel from "../components/monitor/SetAllProtectionLevel";
 import { toast } from "@/lib/toast";
+import { recordSessionInteraction } from "@/lib/logoutOnClose";
 import {
   recordProtectionLevelChange,
   recordProtectionLevelChanges,
@@ -384,6 +385,17 @@ export default function Monitor() {
   const handleTargetChannelChange = useCallback((id) => {
     setTargetChannelId(id);
     localStorage.setItem("lastChannelId", id);
+    recordSessionInteraction();
+  }, []);
+
+  const handleBroadcastModeChange = useCallback((mode) => {
+    setBroadcastMode(mode);
+    recordSessionInteraction();
+  }, []);
+
+  const handleSelectedBroadcastIdsChange = useCallback((ids) => {
+    setSelectedBroadcastIds(ids);
+    recordSessionInteraction();
   }, []);
 
   const handleOpenChannelInTalk = useCallback((channelId) => {
@@ -739,6 +751,7 @@ export default function Monitor() {
       return;
     }
 
+    recordSessionInteraction();
     unlockAudioForPTT();
     playClearTone();
     setIsPTTPressed(true);
@@ -985,11 +998,11 @@ export default function Monitor() {
         <MonitorPTTBar
           channels={sendableMonitorChannels}
           mode={broadcastMode}
-          onModeChange={setBroadcastMode}
+          onModeChange={handleBroadcastModeChange}
           targetChannelId={targetChannelId}
           onTargetChannelChange={handleTargetChannelChange}
           selectedChannelIds={selectedBroadcastIds}
-          onSelectedChannelIdsChange={setSelectedBroadcastIds}
+          onSelectedChannelIdsChange={handleSelectedBroadcastIdsChange}
           isPressed={isPTTPressed}
           isReceiving={showReceiving}
           isChannelBusy={isTargetChannelBusy && !isPTTPressed && !showReceiving}

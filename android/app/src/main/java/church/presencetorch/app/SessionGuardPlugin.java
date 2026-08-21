@@ -28,4 +28,17 @@ public class SessionGuardPlugin extends Plugin {
         SessionPrefs.setSensitiveOperationPending(getContext(), pending);
         call.resolve();
     }
+
+    @PluginMethod
+    public void setIdleLogoutDeadline(PluginCall call) {
+        Long deadlineMs = call.getLong("deadlineMs");
+        long deadline = deadlineMs != null ? deadlineMs : 0L;
+        SessionPrefs.setIdleLogoutDeadlineMs(getContext(), deadline);
+        if (deadline > System.currentTimeMillis()) {
+            BackgroundLogoutScheduler.scheduleAt(getContext(), deadline);
+        } else {
+            BackgroundLogoutScheduler.cancel(getContext());
+        }
+        call.resolve();
+    }
 }

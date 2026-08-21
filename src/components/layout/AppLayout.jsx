@@ -14,6 +14,7 @@ import PasswordRotationReminder from "@/components/auth/PasswordRotationReminder
 import GooglePasswordSetupPrompt from "@/components/auth/GooglePasswordSetupPrompt";
 import useRedAlert from "@/hooks/useRedAlert";
 import { getLastAppRoute, saveLastAppRoute } from "@/lib/lastAppRoute";
+import { recordSessionInteraction } from "@/lib/logoutOnClose";
 
 export default function AppLayout() {
   const location = useLocation();
@@ -52,7 +53,10 @@ export default function AppLayout() {
 
   useEffect(() => {
     saveLastAppRoute(location.pathname + location.search);
-  }, [location.pathname, location.search]);
+    if (user) {
+      recordSessionInteraction();
+    }
+  }, [location.pathname, location.search, user]);
 
   useEffect(() => {
     const onPause = () => {

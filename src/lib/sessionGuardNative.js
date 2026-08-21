@@ -16,3 +16,8 @@ export async function syncNativeSensitiveOperation(pending) {
   if (!Capacitor.isNativePlatform()) return;
   await SessionGuard.setSensitiveOperationPending({ pending });
 }
+
+export async function syncNativeIdleLogoutDeadline(deadlineMs) {
+  if (!Capacitor.isNativePlatform()) return;
+  await SessionGuard.setIdleLogoutDeadline({ deadlineMs: deadlineMs || 0 });
+}

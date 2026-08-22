@@ -224,6 +224,7 @@ export default function Monitor() {
   const pttStartInFlightRef = useRef(null);
   const pttStopPendingRef = useRef(false);
   const pttRecordingActiveRef = useRef(false);
+  const isPTTPressedRef = useRef(false);
   const channelBusyTimeoutRef = useRef(new Map());
   const heardBroadcastsRef = useRef(new Set());
   const broadcastModeRef = useRef(broadcastMode);
@@ -804,6 +805,7 @@ export default function Monitor() {
     recordSessionInteraction();
     unlockAudioForPTT();
     playClearTone();
+    isPTTPressedRef.current = true;
     setIsPTTPressed(true);
     pttStopPendingRef.current = false;
     pttRecordingActiveRef.current = false;
@@ -939,13 +941,15 @@ export default function Monitor() {
   const handlePTTStop = useCallback(() => {
     if (pttStartInFlightRef.current) {
       pttStopPendingRef.current = true;
+      isPTTPressedRef.current = false;
       setIsPTTPressed(false);
       return;
     }
-    if (!isPTTPressed && !pttRecordingActiveRef.current) return;
+    if (!isPTTPressedRef.current && !pttRecordingActiveRef.current) return;
+    isPTTPressedRef.current = false;
     setIsPTTPressed(false);
     finishPttStop();
-  }, [isPTTPressed, finishPttStop]);
+  }, [finishPttStop]);
 
   useRegisterPagePTTHandlers({
     onPress: handlePTTStart,
@@ -955,7 +959,7 @@ export default function Monitor() {
   const showReceiving = isLiveReceiving && !isPTTPressed;
 
   return (
-    <div className="min-h-screen safe-top">
+    <div className="min-h-screen w-full safe-top">
       {/* Header */}
       <div className="px-4 pt-4 pb-4 border-b border-border sm:px-5 sm:pt-6">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between max-sm:pr-12 sm:pr-48">

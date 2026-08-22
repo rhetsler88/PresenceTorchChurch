@@ -12,7 +12,6 @@ const PTT_KEY_CODES = new Set([
 ]);
 
 const MEDIA_TAP_DEBOUNCE_MS = 300;
-const EARBUD_UP_IGNORE_MS = 250;
 
 function isEditableTarget(target) {
   if (!(target instanceof Element)) return false;
@@ -40,6 +39,7 @@ export default function useWiredPTT({ onPress, onRelease }) {
   const releaseTimerRef = useRef(null);
   const autoStopTimerRef = useRef(null);
   const lastMediaTapRef = useRef(0);
+  const mediaKeyDownSeenRef = useRef(false);
   const callbacksRef = useRef({ onPress, onRelease });
 
   useEffect(() => {
@@ -102,20 +102,6 @@ export default function useWiredPTT({ onPress, onRelease }) {
     }
   }, [startTogglePtt, stopTogglePtt]);
 
-  const handleMediaDown = useCallback(() => {
-    if (toggleActiveRef.current) {
-      stopTogglePtt();
-      return;
-    }
-    startTogglePtt();
-  }, [startTogglePtt, stopTogglePtt]);
-
-  const handleMediaUp = useCallback(() => {
-    if (!toggleActiveRef.current) return;
-    if (Date.now() - toggleStartedAtRef.current <= EARBUD_UP_IGNORE_MS) return;
-    stopTogglePtt();
-  }, [stopTogglePtt]);
-
   const handlePress = useCallback(() => {
     if (pressedRef.current) return;
     pressedRef.current = true;
@@ -131,28 +117,28 @@ export default function useWiredPTT({ onPress, onRelease }) {
     }, 150);
   }, []);
 
+  const handleHoldMediaDown = useCallback(() => {
+    mediaKeyDownSeenRef.current = true;
+    handlePress();
+  }, [handlePress]);
+
+  const handleHoldMediaUp = useCallback(() => {
+    if (!mediaKeyDownSeenRef.current) return;
+    mediaKeyDownSeenRef.current = false;
+    handleRelease();
+  }, [handleRelease]);
+
   useEffect(() => {
     if (!isNativeHeadsetPTTAvailable()) return undefined;
 
     let cleanup = () => {};
     let cancelled = false;
 
-    startNativeHeadsetPTT({
-      onDown: () => {
-        if (earbudToggleMode) {
-          handleMediaDown();
-          return;
-        }
-        handlePress();
-      },
-      onUp: () => {
-        if (earbudToggleMode) {
-          handleMediaUp();
-          return;
-        }
-        handleRelease();
-      },
-    }).then((stop) => {
+    startNativeHeadsetPTT(
+      earbudToggleMode
+        ? { onTap: handleMediaTap }
+        : { onDown: handleHoldMediaDown, onUp: handleHoldMediaUp }
+    ).then((stop) => {
       if (cancelled) {
         stop();
         return;
@@ -164,7 +150,7 @@ export default function useWiredPTT({ onPress, onRelease }) {
       cancelled = true;
       cleanup();
     };
-  }, [earbudToggleMode, handleMediaDown, handleMediaUp, handlePress, handleRelease]);
+  }, [earbudToggleMode, handleMediaTap, handleHoldMediaDown, handleHoldMediaUp]);
 
   useEffect(() => {
     if (Capacitor.isNativePlatform()) return undefined;

@@ -88,15 +88,15 @@ export default function ChannelCard({
         )}
       </div>
       {canManageProtection ? (
-        <div onClick={(e) => e.stopPropagation()} className="px-4 py-2">
+        <div onClick={(e) => e.stopPropagation()} className="px-4 py-2 w-full">
           <ProtectionLevelControl
             level={protectionLevel || "green"}
             onChange={onProtectionChange}
           />
         </div>
       ) : (
-        <div className="px-4 py-2">
-          <div className="flex items-center gap-3 px-1 py-1.5 rounded-xl border" style={{ backgroundColor: protConfig.bg, borderColor: protConfig.color + "40" }}>
+        <div className="px-4 py-2 w-full">
+          <div className="flex w-full items-center gap-3 px-1 py-1.5 rounded-xl border" style={{ backgroundColor: protConfig.bg, borderColor: protConfig.color + "40" }}>
             <Shield className="w-5 h-5 flex-shrink-0" style={{ color: protConfig.color }} />
             <div className="flex-1 min-w-0">
               <p className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground leading-none">Force Protection</p>

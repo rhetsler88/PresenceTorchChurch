@@ -147,7 +147,7 @@ export default function Channels() {
       : "Request access to join a channel";
 
   return (
-    <div className="min-h-screen safe-top">
+    <div className="min-h-screen w-full safe-top">
       <div className="px-4 pt-4 pb-4 border-b border-border sm:px-5 sm:pt-6">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between max-sm:pr-12 sm:pr-48">
           <div className="min-w-0">
@@ -170,7 +170,7 @@ export default function Channels() {
         </div>
       </div>
 
-      <div className="p-3 pb-36 sm:p-4">
+      <div className="w-full p-3 pb-36 sm:p-4">
         {isLoading ? (
           <div className="flex justify-center py-16">
             <div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin" />

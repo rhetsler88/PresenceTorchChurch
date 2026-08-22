@@ -61,6 +61,7 @@ export default function Talk() {
   const feedEndRef = useRef(null);
   const pttSignalRef = useRef(null);
   const pttRecordingActiveRef = useRef(false);
+  const isPTTPressedRef = useRef(false);
   const pttStartInFlightRef = useRef(null);
   const pttStopPendingRef = useRef(false);
   const pttSessionChannelIdRef = useRef(null);
@@ -682,6 +683,7 @@ export default function Talk() {
 
     pttSessionChannelIdRef.current = effectiveChannelId;
     pttSessionUserRef.current = user;
+    isPTTPressedRef.current = true;
     setIsPTTPressed(true);
     pttStopPendingRef.current = false;
     pttRecordingActiveRef.current = false;
@@ -803,13 +805,15 @@ export default function Talk() {
   const handlePTTStop = useCallback(() => {
     if (pttStartInFlightRef.current) {
       pttStopPendingRef.current = true;
+      isPTTPressedRef.current = false;
       setIsPTTPressed(false);
       return;
     }
-    if (!isPTTPressed && !pttRecordingActiveRef.current) return;
+    if (!isPTTPressedRef.current && !pttRecordingActiveRef.current) return;
+    isPTTPressedRef.current = false;
     setIsPTTPressed(false);
     finishPttStop();
-  }, [isPTTPressed, finishPttStop]);
+  }, [finishPttStop]);
 
   useRegisterPagePTTHandlers({
     onPress: handlePTTStart,

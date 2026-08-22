@@ -17,7 +17,10 @@ public class HeadsetPTTPlugin extends Plugin {
     private AudioManager audioManager;
     private AudioManager.OnAudioFocusChangeListener audioFocusListener;
     private boolean listening = false;
-    private boolean pttHeld = false;
+    private long lastDownEventTime = -1;
+    private int lastDownKeyCode = -1;
+    private long lastUpEventTime = -1;
+    private int lastUpKeyCode = -1;
 
     @PluginMethod
     public void startListening(PluginCall call) {
@@ -32,7 +35,6 @@ public class HeadsetPTTPlugin extends Plugin {
     public void stopListening(PluginCall call) {
         getActivity().runOnUiThread(() -> {
             listening = false;
-            pttHeld = false;
             deactivateMediaSession();
             call.resolve();
         });
@@ -51,19 +53,27 @@ public class HeadsetPTTPlugin extends Plugin {
         }
 
         int action = event.getAction();
+        int keyCode = event.getKeyCode();
+        long eventTime = event.getEventTime();
+
         if (action == KeyEvent.ACTION_DOWN) {
-            if (!pttHeld) {
-                pttHeld = true;
-                notifyPttDown();
+            if (eventTime == lastDownEventTime && keyCode == lastDownKeyCode) {
+                return true;
             }
+            lastDownEventTime = eventTime;
+            lastDownKeyCode = keyCode;
+            notifyPttDown();
+            notifyPttTap();
             return true;
         }
 
         if (action == KeyEvent.ACTION_UP) {
-            if (pttHeld) {
-                pttHeld = false;
-                notifyPttUp();
+            if (eventTime == lastUpEventTime && keyCode == lastUpKeyCode) {
+                return true;
             }
+            lastUpEventTime = eventTime;
+            lastUpKeyCode = keyCode;
+            notifyPttUp();
             return true;
         }
 
@@ -101,12 +111,6 @@ public class HeadsetPTTPlugin extends Plugin {
             audioFocusListener = focusChange -> {};
         }
 
-        audioManager.requestAudioFocus(
-            audioFocusListener,
-            AudioManager.STREAM_VOICE_CALL,
-            AudioManager.AUDIOFOCUS_GAIN_TRANSIENT
-        );
-
         if (mediaSession == null) {
             mediaSession = new MediaSessionCompat(context, "HeadsetPTT");
             mediaSession.setFlags(
@@ -138,10 +142,10 @@ public class HeadsetPTTPlugin extends Plugin {
             mediaSession.release();
             mediaSession = null;
         }
+    }
 
-        if (audioManager != null && audioFocusListener != null) {
-            audioManager.abandonAudioFocus(audioFocusListener);
-        }
+    private void notifyPttTap() {
+        notifyListeners("pttTap", new JSObject());
     }
 
     private void notifyPttDown() {

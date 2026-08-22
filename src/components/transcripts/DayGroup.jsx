@@ -31,7 +31,7 @@ export default function DayGroup({
   };
 
   return (
-    <div>
+    <div className="w-full">
       <div className="flex items-center gap-2 mb-2 px-1 w-full group">
         {selectable && (
           <Checkbox
@@ -69,7 +69,7 @@ export default function DayGroup({
         )}
       </div>
       {expanded && (
-        <div className="space-y-3">
+        <div className="flex flex-col gap-3 w-full">
           {messages.map((msg) => (
             <TranscriptItem
               key={msg.id}

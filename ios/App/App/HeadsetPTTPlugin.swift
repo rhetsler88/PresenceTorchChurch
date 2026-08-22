@@ -82,7 +82,7 @@ public class HeadsetPTTPlugin: CAPPlugin, CAPBridgedPlugin {
             return .success
         }
         commandCenter.togglePlayPauseCommand.addTarget { [weak self] _ in
-            self?.handleToggle()
+            self?.handleRemoteTap()
             return .success
         }
         commandCenter.nextTrackCommand.addTarget { [weak self] _ in
@@ -112,27 +112,25 @@ public class HeadsetPTTPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     private func handlePress() {
-        guard isListening, !pttHeld else { return }
+        guard isListening else { return }
         pttHeld = true
         notifyListeners("pttDown", data: [:])
     }
 
     private func handleRelease() {
-        guard isListening, pttHeld else { return }
+        guard isListening else { return }
         pttHeld = false
         notifyListeners("pttUp", data: [:])
     }
 
-    private func handleToggle() {
-        if pttHeld {
-            handleRelease()
-        } else {
-            handlePress()
-        }
+    private func handleRemoteTap() {
+        guard isListening else { return }
+        notifyListeners("pttTap", data: [:])
     }
 
     private func handleMomentaryPress() {
-        handlePress()
-        handleRelease()
+        guard isListening else { return }
+        notifyListeners("pttDown", data: [:])
+        notifyListeners("pttUp", data: [:])
     }
 }

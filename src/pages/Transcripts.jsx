@@ -259,11 +259,11 @@ export default function Transcripts() {
   };
 
   return (
-    <div className="min-h-screen safe-top">
-      <div className="px-4 pt-4 pb-3 sm:px-5 sm:pt-6">
-        <div className="flex items-start justify-between gap-3 mb-5">
-          <div>
-            <h1 className="text-xl font-bold text-foreground">Transcript Log</h1>
+    <div className="min-h-screen w-full safe-top">
+      <div className="px-4 pt-4 pb-4 border-b border-border sm:px-5 sm:pt-6">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between max-sm:pr-12 sm:pr-48">
+          <div className="min-w-0">
+            <h1 className="text-lg font-bold text-foreground sm:text-xl">Transcript Log</h1>
             <p className="text-xs text-muted-foreground mt-0.5">
               {messages.length} recordings & transcripts · last {TRANSCRIPT_RETENTION_DAYS} days
             </p>
@@ -272,7 +272,7 @@ export default function Transcripts() {
             <Button
               size="sm"
               onClick={handleExportToGoogleDoc}
-              className="gap-1.5 shrink-0 sm:mr-48 mr-12"
+              className="gap-1.5 shrink-0"
               disabled={exportMessages.length === 0 || isExporting}
             >
               <FileUp className="w-4 h-4" />
@@ -282,7 +282,7 @@ export default function Transcripts() {
         </div>
 
         {canExport && availableDayKeys.length > 0 && (
-          <div className="mb-4 rounded-xl border border-border bg-card p-3">
+          <div className="mt-4 w-full rounded-xl border border-border bg-card p-3">
             <div className="flex items-center justify-between gap-2 mb-2">
               <p className="text-xs font-semibold text-foreground">Select dates to export</p>
               <div className="flex items-center gap-2">
@@ -330,24 +330,24 @@ export default function Transcripts() {
           </div>
         )}
 
-        <div className="relative">
+        <div className="relative mt-4 w-full">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
           <Input
             placeholder="Search transcripts..."
-            className="pl-9 bg-card border-border"
+            className="w-full pl-9 bg-card border-border"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
         </div>
       </div>
 
-      <div className="px-4 pb-24">
+      <div className="w-full p-3 pb-36 sm:p-4">
         {isLoading ? (
           <div className="flex justify-center py-16">
             <div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin" />
           </div>
         ) : filtered.length > 0 ? (
-          <div className="space-y-5 mt-3">
+          <div className="flex flex-col gap-5 w-full">
             {dayGroups.map(([dayKey, { date, messages: dayMessages }]) => (
               <DayGroup
                 key={dayKey}

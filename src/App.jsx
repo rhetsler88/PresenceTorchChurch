@@ -26,11 +26,13 @@ import AppLoadingScreen from '@/components/ui/AppLoadingScreen';
 
 function AppRoutes() {
   return (
-    <Routes>
-      <Route path="/privacy" element={<PrivacyPolicy />} />
-      <Route path="/terms" element={<TermsOfService />} />
-      <Route path="/*" element={<AuthenticatedApp />} />
-    </Routes>
+    <div className="w-full min-h-dvh flex flex-col">
+      <Routes>
+        <Route path="/privacy" element={<PrivacyPolicy />} />
+        <Route path="/terms" element={<TermsOfService />} />
+        <Route path="/*" element={<AuthenticatedApp />} />
+      </Routes>
+    </div>
   );
 }
 
@@ -67,17 +69,19 @@ const AuthenticatedApp = () => {
   }
 
   return (
-    <Routes>
-      <Route element={<AppLayout />}>
-        <Route path="/" element={<Talk />} />
-        <Route path="/contacts" element={<Contacts />} />
-        <Route path="/channels" element={<Channels />} />
-        <Route path="/transcripts" element={<Transcripts />} />
-        <Route path="/monitor" element={<Monitor />} />
-        <Route path="/admin" element={<Admin />} />
-      </Route>
-      <Route path="*" element={<PageNotFound />} />
-    </Routes>
+    <div className="w-full min-h-dvh flex flex-col">
+      <Routes>
+        <Route element={<AppLayout />}>
+          <Route path="/" element={<Talk />} />
+          <Route path="/contacts" element={<Contacts />} />
+          <Route path="/channels" element={<Channels />} />
+          <Route path="/transcripts" element={<Transcripts />} />
+          <Route path="/monitor" element={<Monitor />} />
+          <Route path="/admin" element={<Admin />} />
+        </Route>
+        <Route path="*" element={<PageNotFound />} />
+      </Routes>
+    </div>
   );
 };
 

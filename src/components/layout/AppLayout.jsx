@@ -67,7 +67,7 @@ export default function AppLayout() {
   }, [location.pathname, location.search]);
 
   return (
-    <div className="h-dvh bg-background flex flex-col safe-top">
+    <div className="h-dvh w-full bg-background flex flex-col safe-top">
       <BluetoothPTTProvider>
       <PassiveMonitorProvider user={user}>
       <PassiveTalkListenProvider user={user}>
@@ -78,7 +78,7 @@ export default function AppLayout() {
       <GooglePasswordSetupPrompt />
       <UserMenu />
       <div
-        className="flex-1 overflow-x-hidden overflow-y-auto [scrollbar-gutter:stable]"
+        className="flex-1 w-full min-w-0 overflow-x-hidden overflow-y-auto [scrollbar-gutter:stable]"
         style={{ paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 5rem)" }}
       >
         <Outlet />

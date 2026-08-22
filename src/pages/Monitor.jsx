@@ -62,7 +62,7 @@ function ChannelMonitorCard({
   const hasActivity = messages.length > 0;
 
   return (
-    <div className={`bg-card border rounded-2xl overflow-hidden transition-all duration-300 ${
+    <div className={`w-full bg-card border rounded-2xl overflow-hidden transition-all duration-300 ${
       playingId && messages.some(m => m.id === playingId)
         ? "border-green-500/50 shadow-lg shadow-green-500/10"
         : "border-border"
@@ -1010,7 +1010,7 @@ export default function Monitor() {
                 <div
                   ref={provided.innerRef}
                   {...provided.droppableProps}
-                  className="grid grid-cols-1 gap-4 md:grid-cols-2"
+                  className="flex flex-col gap-4 w-full"
                 >
                   {orderedChannels.map((channel, index) => (
                     <Draggable key={channel.id} draggableId={channel.id} index={index}>

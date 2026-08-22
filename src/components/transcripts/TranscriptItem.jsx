@@ -12,7 +12,7 @@ export default function TranscriptItem({ msg, channel, senderName }) {
 
     return (
       <div
-        className="rounded-xl border px-4 py-3"
+        className="w-full rounded-xl border px-4 py-3"
         style={{ backgroundColor: config.bg, borderColor: `${config.color}40` }}
       >
         <div className="flex items-start justify-between gap-2">
@@ -42,7 +42,7 @@ export default function TranscriptItem({ msg, channel, senderName }) {
   }
 
   return (
-    <div className="bg-card border border-border rounded-xl p-4">
+    <div className="w-full bg-card border border-border rounded-xl p-4">
       <div className="flex items-start justify-between gap-2 mb-2">
         <div className="flex items-center gap-2">
           <div className="w-7 h-7 rounded-full bg-primary/10 flex items-center justify-center">

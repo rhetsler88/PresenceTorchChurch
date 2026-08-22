@@ -50,7 +50,7 @@ export default function ChannelCard({
 
   return (
     <div
-      className={`bg-card border rounded-2xl overflow-hidden transition-all duration-200 text-left ${
+      className={`w-full bg-card border rounded-2xl overflow-hidden transition-all duration-200 text-left ${
         isActive
           ? "border-primary/30 shadow-sm shadow-primary/5"
           : isPending

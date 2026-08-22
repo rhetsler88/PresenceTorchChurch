@@ -13,6 +13,25 @@ firebase.initializeApp({
 
 const messaging = firebase.messaging();
 
+function formatTextMessageBody(count, channelName) {
+  const safeCount = Number.parseInt(String(count || "1"), 10);
+  const normalizedCount = Number.isFinite(safeCount) && safeCount > 0 ? safeCount : 1;
+  const label = normalizedCount === 1 ? "text message" : "text messages";
+  return `${normalizedCount} new ${label} in ${channelName || "Channel"}`;
+}
+
+function clearTextMessageNotifications() {
+  return self.registration.getNotifications().then((notifications) => {
+    notifications.forEach((notification) => {
+      const tag = notification.tag || "";
+      const type = notification.data?.type;
+      if (type === "text_message" || tag.startsWith("text_message_")) {
+        notification.close();
+      }
+    });
+  });
+}
+
 messaging.onBackgroundMessage((payload) => {
   const data = payload?.data || {};
   if (data.type === "red_alert") {
@@ -33,16 +52,28 @@ messaging.onBackgroundMessage((payload) => {
   }
 
   if (data.type === "text_message") {
-    const title = payload.notification?.title || data.channelName || "New message";
-    const body = payload.notification?.body || "New text message";
+    const channelId = data.channelId || data.channel_id || "channel";
+    const channelName = data.channelName || data.channel_name || "Channel";
+    const count = data.unreadCount || payload.notification?.body || "1";
+    const title = payload.notification?.title || "Presence Torch";
+    const body =
+      payload.notification?.body || formatTextMessageBody(count, channelName);
+    const tag = data.notificationTag || `text_message_${channelId}`;
+
     self.registration.showNotification(title, {
       body,
       icon: "/icons/icon-192.png",
       badge: "/icons/icon-192.png",
-      tag: `text_message_${data.messageId || data.channelId || title}`,
+      tag,
       renotify: true,
       data,
     });
+  }
+});
+
+self.addEventListener("message", (event) => {
+  if (event.data?.type === "clear_text_message_notifications") {
+    event.waitUntil(clearTextMessageNotifications());
   }
 });
 

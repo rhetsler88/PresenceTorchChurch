@@ -91,7 +91,6 @@ export function PassiveTalkListenProvider({ user, children }) {
 
   useBackgroundRelayListen({
     enabled: passiveListenActive,
-    silent: false,
     title: "Presence Torch",
     channelCount: listenChannelId ? 1 : 0,
   });

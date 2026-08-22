@@ -65,18 +65,33 @@ function buildRedAlertTokenSets(usersSnap, channelData) {
 
 /** FCM tokens for channel members except the sender (text message alerts). */
 function buildTextMessageTokenSet(usersSnap, channelData, senderId) {
-  const tokens = new Set();
+  return buildTextMessageRecipients(usersSnap, channelData, senderId).flatMap(
+    (recipient) => recipient.tokens
+  );
+}
+
+/** Channel members (except sender) with their device tokens for text message alerts. */
+function buildTextMessageRecipients(usersSnap, channelData, senderId) {
+  const recipients = [];
 
   usersSnap.forEach((doc) => {
     if (doc.id === senderId) return;
     const data = doc.data();
     const userData = { id: doc.id, email: data.email, ...data };
     if (!receivesChannelRedAlert(userData, channelData)) return;
+
+    const tokens = new Set();
     collectRegistrationTokens(data.fcm_registrations, tokens);
     collectTokens(data.fcm_tokens, tokens);
+    if (tokens.size === 0) return;
+
+    recipients.push({
+      userId: doc.id,
+      tokens: [...tokens],
+    });
   });
 
-  return [...tokens];
+  return recipients;
 }
 
 function removeStaleTokensFromUserData(userData, staleSet) {
@@ -142,5 +157,6 @@ module.exports = {
   isStaffAlertRecipient,
   buildRedAlertTokenSets,
   buildTextMessageTokenSet,
+  buildTextMessageRecipients,
   removeStaleTokensFromUserData,
 };

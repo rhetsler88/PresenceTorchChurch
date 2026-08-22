@@ -36,11 +36,13 @@ public class BackgroundAudioPlugin extends Plugin {
     public void updateSession(PluginCall call) {
         String title = call.getString("title", "Presence Torch");
         String body = call.getString("body", "1 channel active");
+        boolean silent = call.getBoolean("silent", false);
 
         Intent intent = new Intent(getContext(), BackgroundAudioService.class);
         intent.setAction(BackgroundAudioService.ACTION_UPDATE);
         intent.putExtra(BackgroundAudioService.EXTRA_TITLE, title);
         intent.putExtra(BackgroundAudioService.EXTRA_BODY, body);
+        intent.putExtra(BackgroundAudioService.EXTRA_SILENT, silent);
         getContext().startService(intent);
 
         call.resolve();

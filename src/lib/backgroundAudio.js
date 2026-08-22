@@ -6,24 +6,48 @@ const BackgroundAudio = registerPlugin("BackgroundAudio");
 let sessionRefCount = 0;
 let activeTitle = "Presence Torch";
 let activeBody = formatActiveChannelsBody(1);
+let activeSilent = false;
 
 export function isBackgroundAudioAvailable() {
   return Capacitor.isNativePlatform() && Capacitor.isPluginAvailable("BackgroundAudio");
 }
 
-async function syncSession({ title, body, channelCount }) {
+async function syncSession({ title, body, channelCount, silent = activeSilent }) {
   const nextTitle = title || "Presence Torch";
   const nextBody = body || formatActiveChannelsBody(channelCount ?? 1);
   if (
     sessionRefCount > 0
-    && (nextTitle !== activeTitle || nextBody !== activeBody)
+    && (
+      nextTitle !== activeTitle
+      || nextBody !== activeBody
+      || silent !== activeSilent
+    )
   ) {
-    await BackgroundAudio.updateSession({ title: nextTitle, body: nextBody }).catch(() => {
-      return BackgroundAudio.startSession({ title: nextTitle, body: nextBody, silent: false });
+    await BackgroundAudio.updateSession({
+      title: nextTitle,
+      body: nextBody,
+      silent,
+    }).catch(() => {
+      return BackgroundAudio.startSession({
+        title: nextTitle,
+        body: nextBody,
+        silent,
+      });
     });
   }
   activeTitle = nextTitle;
   activeBody = nextBody;
+  activeSilent = silent;
+}
+
+export async function updateBackgroundAudio({
+  title = "Presence Torch",
+  body,
+  channelCount = 1,
+  silent = activeSilent,
+} = {}) {
+  if (!isBackgroundAudioAvailable() || sessionRefCount === 0) return;
+  await syncSession({ title, body, channelCount, silent });
 }
 
 /**
@@ -49,10 +73,11 @@ export async function startBackgroundAudio({
     });
     activeTitle = title;
     activeBody = resolvedBody;
+    activeSilent = silent;
     return;
   }
 
-  await syncSession({ title, body: resolvedBody, channelCount });
+  await syncSession({ title, body: resolvedBody, channelCount, silent });
 }
 
 export async function stopBackgroundAudio() {
@@ -63,6 +88,7 @@ export async function stopBackgroundAudio() {
     await BackgroundAudio.stopSession().catch(() => {});
     activeTitle = "Presence Torch";
     activeBody = formatActiveChannelsBody(1);
+    activeSilent = false;
   }
 }
 
@@ -72,5 +98,6 @@ export async function forceStopBackgroundAudio() {
   sessionRefCount = 0;
   activeTitle = "Presence Torch";
   activeBody = formatActiveChannelsBody(1);
+  activeSilent = false;
   await BackgroundAudio.stopSession().catch(() => {});
 }

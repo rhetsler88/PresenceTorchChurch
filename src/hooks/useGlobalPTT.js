@@ -14,6 +14,7 @@ import { isDailyCodeVerified } from "@/lib/dailyCode";
 import { usePassiveTalkListen } from "@/components/ptt/PassiveTalkListenProvider";
 import usePttBroadcast from "@/hooks/useRelayBroadcast";
 import { playBusyTone, playClearTone, unlockAudioForPTT } from "@/lib/pttTones";
+import { logVoiceMessageFailure } from "@/lib/voiceMessageLogging";
 import { claimPttChannels, cleanupStalePTTSignals, releasePttSignals } from "@/lib/pttSignals";
 import { deviceDayKey } from "@/lib/deviceDate";
 import { toast } from "@/lib/toast";
@@ -92,22 +93,37 @@ export default function useGlobalPTT() {
 
       const { file_url, duration, broadcast_id } = result;
       const now = new Date();
-      return api.entities.VoiceMessage.create({
-        channel_id: channelId,
-        sender_id: user.id,
-        sender_name: getDisplayName(user),
-        sender_email: user.email || "",
-        audio_url: file_url,
-        duration_seconds: Math.round(duration * 10) / 10,
-        is_transcribed: false,
-        device_time: now.toLocaleTimeString("en-US", {
-          hour: "numeric",
-          minute: "2-digit",
-          hour12: true,
-        }),
-        device_date: deviceDayKey(now),
-        broadcast_id,
-      });
+      try {
+        return await api.entities.VoiceMessage.create({
+          channel_id: channelId,
+          sender_id: user.id,
+          sender_name: getDisplayName(user),
+          sender_email: user.email || "",
+          audio_url: file_url,
+          duration_seconds: Math.round(duration * 10) / 10,
+          is_transcribed: false,
+          device_time: now.toLocaleTimeString("en-US", {
+            hour: "numeric",
+            minute: "2-digit",
+            hour12: true,
+          }),
+          device_date: deviceDayKey(now),
+          broadcast_id,
+        });
+      } catch (err) {
+        err.logged = true;
+        void logVoiceMessageFailure({
+          source: "global-ptt",
+          stage: "create",
+          error: err,
+          channelId,
+          broadcastId: broadcast_id,
+          durationSeconds: duration,
+          user,
+          extra: { audio_url: file_url },
+        });
+        throw err;
+      }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["messages", channelId] });
@@ -115,6 +131,17 @@ export default function useGlobalPTT() {
       queryClient.invalidateQueries({ queryKey: ["all-channel-messages"] });
     },
     onError: (err) => {
+      if (!err?.logged) {
+        const isRecordingStage =
+          err?.code === "app/recording-failed" || err?.code === "storage/unauthorized";
+        void logVoiceMessageFailure({
+          source: "global-ptt",
+          stage: isRecordingStage ? "recording" : "create",
+          error: err,
+          channelId,
+          user,
+        });
+      }
       console.warn("Global PTT send failed:", err);
       toast.error("Could not send voice message");
     },

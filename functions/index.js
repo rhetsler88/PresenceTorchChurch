@@ -13,7 +13,7 @@ const { google } = require("googleapis");
 const { RtcTokenBuilder, RtcRole } = require("agora-access-token");
 const {
   buildRedAlertTokenSets,
-  buildTextMessageTokenSet,
+  buildTextMessageRecipients,
   removeStaleTokensFromUserData,
 } = require("./alertRecipients");
 const {
@@ -777,6 +777,85 @@ exports.transcribeOnVoiceMessage = onDocumentCreated(
   }
 );
 
+function formatTextMessageNotificationBody(count, channelName) {
+  const safeCount = Number.isFinite(count) && count > 0 ? count : 1;
+  const label = safeCount === 1 ? "text message" : "text messages";
+  return `${safeCount} new ${label} in ${channelName}`;
+}
+
+async function incrementTextMessageUnreadCount(db, userId, channelId, channelName) {
+  const userRef = db.collection("users").doc(userId);
+  return db.runTransaction(async (tx) => {
+    const snap = await tx.get(userRef);
+    const data = snap.data() || {};
+    const unread = data.text_message_unread || {};
+    const entry = unread[channelId] || { count: 0, channelName };
+    const count = (entry.count || 0) + 1;
+    unread[channelId] = {
+      count,
+      channelName: channelName || entry.channelName || "Channel",
+    };
+    tx.set(userRef, { text_message_unread: unread }, { merge: true });
+    return count;
+  });
+}
+
+function buildTextMessagePushMessage({ token, channelId, channelName, messageId, count }) {
+  const body = formatTextMessageNotificationBody(count, channelName);
+  const tag = `text_message_${channelId}`;
+
+  return {
+    token,
+    notification: {
+      title: "Presence Torch",
+      body,
+    },
+    data: {
+      type: "text_message",
+      channelId,
+      channelName,
+      messageId,
+      unreadCount: String(count),
+      notificationTag: tag,
+    },
+    android: {
+      priority: "high",
+      collapseKey: tag,
+      notification: {
+        channelId: "text_messages",
+        tag,
+        notificationCount: count,
+        sound: "default",
+        defaultVibrateTimings: true,
+        priority: "high",
+      },
+    },
+    apns: {
+      payload: {
+        aps: {
+          alert: {
+            title: "Presence Torch",
+            body,
+          },
+          sound: "default",
+          "thread-id": tag,
+        },
+      },
+    },
+    webpush: {
+      notification: {
+        title: "Presence Torch",
+        body,
+        icon: "https://app.presencetorch.net/icons/icon-192.png",
+        tag,
+      },
+      fcmOptions: {
+        link: "https://app.presencetorch.net/",
+      },
+    },
+  };
+}
+
 exports.sendTextMessagePush = onDocumentCreated(
   { document: "voiceMessages/{messageId}" },
   async (event) => {
@@ -796,63 +875,40 @@ exports.sendTextMessagePush = onDocumentCreated(
 
     const channelData = channelSnap.data() || {};
     const channelName = channelData.name || "Channel";
-    const senderName = data.sender_name || "Someone";
-    const preview = String(data.text_content).trim().slice(0, 120);
 
     const usersSnap = await db.collection("users").get();
-    const tokens = buildTextMessageTokenSet(usersSnap, channelData, senderId);
-    if (tokens.length === 0) return;
+    const recipients = buildTextMessageRecipients(usersSnap, channelData, senderId);
+    if (recipients.length === 0) return;
 
     const messaging = getMessaging();
     const chunkSize = 500;
     const staleTokens = new Set();
+    const messages = [];
 
-    const pushPayload = {
-      notification: {
-        title: channelName,
-        body: `${senderName}: ${preview}`,
-      },
-      data: {
-        type: "text_message",
+    for (const recipient of recipients) {
+      const count = await incrementTextMessageUnreadCount(
+        db,
+        recipient.userId,
         channelId,
-        channelName,
-        messageId: event.params.messageId,
-      },
-      android: {
-        priority: "high",
-        notification: {
-          channelId: "text_messages",
-          sound: "default",
-          defaultVibrateTimings: true,
-          priority: "high",
-        },
-      },
-      apns: {
-        payload: {
-          aps: {
-            sound: "default",
-            contentAvailable: true,
-          },
-        },
-      },
-      webpush: {
-        notification: {
-          title: channelName,
-          body: `${senderName}: ${preview}`,
-          icon: "https://app.presencetorch.net/icons/icon-192.png",
-        },
-        fcmOptions: {
-          link: "https://app.presencetorch.net/",
-        },
-      },
-    };
+        channelName
+      );
 
-    for (let i = 0; i < tokens.length; i += chunkSize) {
-      const chunk = tokens.slice(i, i + chunkSize);
-      const response = await messaging.sendEachForMulticast({
-        tokens: chunk,
-        ...pushPayload,
-      });
+      for (const token of recipient.tokens) {
+        messages.push(
+          buildTextMessagePushMessage({
+            token,
+            channelId,
+            channelName,
+            messageId: event.params.messageId,
+            count,
+          })
+        );
+      }
+    }
+
+    for (let i = 0; i < messages.length; i += chunkSize) {
+      const chunk = messages.slice(i, i + chunkSize);
+      const response = await messaging.sendEach(chunk);
 
       response.responses.forEach((result, index) => {
         if (result.success) return;
@@ -861,7 +917,7 @@ exports.sendTextMessagePush = onDocumentCreated(
           code === "messaging/registration-token-not-registered"
           || code === "messaging/invalid-registration-token"
         ) {
-          staleTokens.add(chunk[index]);
+          staleTokens.add(chunk[index].token);
         }
       });
     }

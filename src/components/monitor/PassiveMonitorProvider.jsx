@@ -101,7 +101,6 @@ export function PassiveMonitorProvider({ user, children }) {
 
   useBackgroundRelayListen({
     enabled: passiveListenActive,
-    silent: false,
     title: "Presence Torch",
     channelCount: listenChannelIds.length,
   });

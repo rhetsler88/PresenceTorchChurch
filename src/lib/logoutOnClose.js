@@ -301,7 +301,7 @@ function handleForeground() {
 
 /**
  * Idle logout watch (15m grace + 8h timer) while signed in.
- * Native Android alarm mirrors the JS deadline when the app backgrounds.
+ * Native Android alarm / iOS scheduler mirrors the JS deadline when the app backgrounds.
  */
 export function installCloseLogoutHandler() {
   if (getLastInteractionAt()) {

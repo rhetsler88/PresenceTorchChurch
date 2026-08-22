@@ -1,7 +1,8 @@
 import { Capacitor } from "@capacitor/core";
 import { PushNotifications } from "@capacitor/push-notifications";
 import { getToken, isSupported, onMessage } from "firebase/messaging";
-import { getFirebaseMessaging } from "@/lib/firebase";
+import { doc, updateDoc } from "firebase/firestore";
+import { getFirebaseMessaging, db, auth } from "@/lib/firebase";
 import { triggerRedAlert, ensureRedAlertNotificationChannel } from "@/lib/redAlertActions";
 import { playTextMessageTone } from "@/lib/pttTones";
 import { isStaffAlertRecipient } from "@/lib/channelAlerts";
@@ -13,6 +14,7 @@ import {
 import { removePushRegistration, upsertPushRegistration } from "@/lib/pushRegistrationStore";
 import { beginSensitiveOperation, endSensitiveOperation } from "@/lib/sensitiveOperation";
 import { clearNativeGoogleSignInPending } from "@/lib/logoutOnClose";
+import { clearNativeTextMessageNotifications } from "@/lib/sessionGuardNative";
 
 const PUSH_CHANNEL_ID = "red_alerts";
 const TEXT_MESSAGE_CHANNEL_ID = "text_messages";
@@ -26,6 +28,60 @@ let currentToken = null;
 let currentRegistrationKey = null;
 let staffAlertsEnabled = false;
 let webMessageUnsub = null;
+let textNotificationLifecycleInstalled = false;
+
+async function clearWebTextMessageNotifications() {
+  if (!("serviceWorker" in navigator)) return;
+  try {
+    const registration = await navigator.serviceWorker.ready;
+    registration.active?.postMessage({ type: "clear_text_message_notifications" });
+  } catch {
+    /* ignore */
+  }
+}
+
+async function clearNativeTextMessageNotificationsFromTray() {
+  await clearNativeTextMessageNotifications();
+}
+
+async function resetTextMessageUnreadCounts(uid) {
+  if (!uid) return;
+  try {
+    await updateDoc(doc(db, "users", uid), { text_message_unread: {} });
+  } catch {
+    /* ignore */
+  }
+}
+
+/** Remove text-message push notifications and reset unread counts when the app opens. */
+export async function clearTextMessageNotificationsOnForeground() {
+  const uid = auth.currentUser?.uid || currentUid;
+  await Promise.all([
+    clearNativeTextMessageNotificationsFromTray(),
+    clearWebTextMessageNotifications(),
+    resetTextMessageUnreadCounts(uid),
+  ]);
+}
+
+function installTextMessageNotificationLifecycle() {
+  if (textNotificationLifecycleInstalled) return;
+  textNotificationLifecycleInstalled = true;
+
+  const handleOpen = () => {
+    void clearTextMessageNotificationsOnForeground();
+  };
+
+  if (Capacitor.isNativePlatform()) {
+    window.addEventListener("resume", handleOpen);
+    return;
+  }
+
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") {
+      handleOpen();
+    }
+  });
+}
 
 function handleRedAlertPayload(data) {
   const channelName = data?.channelName || data?.channel_name || "A channel";
@@ -228,6 +284,8 @@ export async function initPushNotifications(uid, userProfile = null) {
     return;
   }
   initialized = true;
+  installTextMessageNotificationLifecycle();
+  void clearTextMessageNotificationsOnForeground();
 
   if (Capacitor.isNativePlatform()) {
     scheduleNativePushInit(uid, userProfile);
@@ -268,6 +326,7 @@ export async function teardownPushNotifications() {
   staffAlertsEnabled = false;
   initialized = false;
   nativeListenersRegistered = false;
+  textNotificationLifecycleInstalled = false;
 }
 
 /** Re-register web push after PWA install (browser → standalone storage context). */

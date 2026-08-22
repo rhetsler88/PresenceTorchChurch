@@ -12,7 +12,6 @@ export default function useBackgroundRelayListen({
   enabled,
   title,
   channelCount = 1,
-  silent = false,
 }) {
   useEffect(() => {
     if (!enabled || !Capacitor.isNativePlatform()) {
@@ -26,11 +25,11 @@ export default function useBackgroundRelayListen({
       title: title || "Presence Torch",
       body,
       channelCount,
-      silent,
+      silent: false,
     });
 
     return () => {
       void stopBackgroundAudio();
     };
-  }, [enabled, title, channelCount, silent]);
+  }, [enabled, title, channelCount]);
 }

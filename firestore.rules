@@ -424,5 +424,13 @@ service cloud.firestore {
       allow read: if isPlatformAdmin();
       allow write: if false;
     }
+
+    // Client-reported PTT archive failures (Talk / Monitor / global PTT).
+    match /voiceMessageFailures/{logId} {
+      allow create: if isSignedIn()
+        && request.resource.data.user_id == request.auth.uid;
+      allow read: if isPlatformAdmin() || isPlatformAdminFromToken();
+      allow update, delete: if false;
+    }
   }
 }

@@ -30,8 +30,8 @@ public class BackgroundAudioService extends Service {
     public static final String EXTRA_SILENT = "silent";
 
     private static final int NOTIFICATION_ID = 41001;
-    private static final String CHANNEL_ID = "presence_torch_background_listen";
-    private static final String CHANNEL_ID_SILENT = "presence_torch_background_listen_silent";
+    private static final String CHANNEL_ID = "presence_torch_background_listen_v2";
+    private static final String CHANNEL_ID_SILENT = "presence_torch_background_listen_silent_v2";
     private static final int SAMPLE_RATE = 44100;
 
     private static volatile boolean sessionActive = false;
@@ -73,15 +73,28 @@ public class BackgroundAudioService extends Service {
             }
             String title = intent.getStringExtra(EXTRA_TITLE);
             String body = intent.getStringExtra(EXTRA_BODY);
+            if (intent.hasExtra(EXTRA_SILENT)) {
+                silentNotification = intent.getBooleanExtra(EXTRA_SILENT, silentNotification);
+            }
             if (title != null && !title.isEmpty()) {
                 currentTitle = title;
             }
             if (body != null && !body.isEmpty()) {
                 currentBody = body;
             }
+            createNotificationChannel();
             NotificationManager manager = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
             if (manager != null) {
-                manager.notify(NOTIFICATION_ID, buildNotification(currentTitle));
+                Notification notification = buildNotification(currentTitle);
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    startForeground(
+                        NOTIFICATION_ID,
+                        notification,
+                        android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK
+                    );
+                } else {
+                    startForeground(NOTIFICATION_ID, notification);
+                }
             }
             return START_STICKY;
         }
@@ -167,7 +180,8 @@ public class BackgroundAudioService extends Service {
             .setOngoing(true)
             .setOnlyAlertOnce(true)
             .setContentIntent(pendingIntent)
-            .setCategory(NotificationCompat.CATEGORY_SERVICE);
+            .setCategory(NotificationCompat.CATEGORY_SERVICE)
+            .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE);
 
         if (silentNotification) {
             builder
@@ -181,7 +195,8 @@ public class BackgroundAudioService extends Service {
             builder
                 .setContentTitle(title)
                 .setContentText(currentBody != null ? currentBody : getString(R.string.background_audio_notification_text))
-                .setPriority(NotificationCompat.PRIORITY_LOW);
+                .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+                .setVisibility(NotificationCompat.VISIBILITY_PUBLIC);
         }
 
         return builder.build();
@@ -200,7 +215,7 @@ public class BackgroundAudioService extends Service {
         NotificationChannel channel = new NotificationChannel(
             silentNotification ? CHANNEL_ID_SILENT : CHANNEL_ID,
             getString(R.string.background_audio_channel_name),
-            silentNotification ? NotificationManager.IMPORTANCE_MIN : NotificationManager.IMPORTANCE_LOW
+            silentNotification ? NotificationManager.IMPORTANCE_MIN : NotificationManager.IMPORTANCE_DEFAULT
         );
         channel.setDescription(getString(R.string.background_audio_channel_description));
         channel.setShowBadge(false);

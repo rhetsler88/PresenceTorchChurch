@@ -1,31 +1,70 @@
-import Foundation
 import Capacitor
+import Foundation
+import GoogleSignIn
+import UserNotifications
 
 enum SessionPrefs {
     private static let googleSignInKey = "google_signin_pending"
     private static let activeSessionKey = "active_session"
     private static let sensitiveOperationKey = "sensitive_operation_pending"
+    private static let idleLogoutDeadlineKey = "idle_logout_deadline_ms"
+    private static let forceLogoutKey = "force_logout_on_next_start"
+
+    private static var defaults: UserDefaults {
+        .standard
+    }
 
     static func setGoogleSignInPending(_ pending: Bool) {
-        UserDefaults.standard.set(pending, forKey: googleSignInKey)
+        defaults.set(pending, forKey: googleSignInKey)
     }
 
     static func setActiveSession(_ active: Bool) {
-        UserDefaults.standard.set(active, forKey: activeSessionKey)
+        defaults.set(active, forKey: activeSessionKey)
     }
 
     static func setSensitiveOperationPending(_ pending: Bool) {
-        UserDefaults.standard.set(pending, forKey: sensitiveOperationKey)
+        defaults.set(pending, forKey: sensitiveOperationKey)
+    }
+
+    static func setIdleLogoutDeadlineMs(_ deadlineMs: Double) {
+        defaults.set(deadlineMs, forKey: idleLogoutDeadlineKey)
+    }
+
+    static func getIdleLogoutDeadlineMs() -> Double {
+        defaults.double(forKey: idleLogoutDeadlineKey)
+    }
+
+    /// Durable swipe-away / kill flag — survives WebView teardown.
+    static func markForceLogoutOnNextStart() {
+        defaults.set(true, forKey: forceLogoutKey)
+        defaults.set(false, forKey: activeSessionKey)
+        defaults.set(0, forKey: idleLogoutDeadlineKey)
+        defaults.synchronize()
+    }
+
+    static func consumeForceLogoutOnNextStart() -> Bool {
+        guard defaults.bool(forKey: forceLogoutKey) else {
+            return false
+        }
+        defaults.removeObject(forKey: forceLogoutKey)
+        defaults.set(false, forKey: activeSessionKey)
+        defaults.synchronize()
+        return true
+    }
+
+    static func clearForceLogoutOnNextStart() {
+        defaults.removeObject(forKey: forceLogoutKey)
+        defaults.synchronize()
     }
 
     static func shouldAllowSessionLogout() -> Bool {
-        if UserDefaults.standard.bool(forKey: sensitiveOperationKey) {
+        if defaults.bool(forKey: sensitiveOperationKey) {
             return false
         }
-        if UserDefaults.standard.bool(forKey: googleSignInKey) {
+        if defaults.bool(forKey: googleSignInKey) {
             return false
         }
-        return UserDefaults.standard.bool(forKey: activeSessionKey)
+        return defaults.bool(forKey: activeSessionKey)
     }
 }
 
@@ -40,6 +79,7 @@ public class SessionGuardPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "setIdleLogoutDeadline", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "consumeForceLogoutOnNextStart", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "revokeGoogleSignInSession", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "clearTextMessageNotifications", returnType: CAPPluginReturnPromise),
     ]
 
     @objc func setGoogleSignInPending(_ call: CAPPluginCall) {
@@ -51,6 +91,10 @@ public class SessionGuardPlugin: CAPPlugin, CAPBridgedPlugin {
     @objc func setActiveSession(_ call: CAPPluginCall) {
         let active = call.getBool("active") ?? false
         SessionPrefs.setActiveSession(active)
+        if !active {
+            SessionPrefs.clearForceLogoutOnNextStart()
+            BackgroundLogoutScheduler.shared.cancel()
+        }
         call.resolve()
     }
 
@@ -61,14 +105,45 @@ public class SessionGuardPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     @objc func setIdleLogoutDeadline(_ call: CAPPluginCall) {
+        let deadlineMs = call.getDouble("deadlineMs") ?? 0
+        SessionPrefs.setIdleLogoutDeadlineMs(deadlineMs)
+
+        let nowMs = Date().timeIntervalSince1970 * 1000
+        if deadlineMs > nowMs {
+            BackgroundLogoutScheduler.shared.scheduleAt(deadlineMs)
+        } else {
+            BackgroundLogoutScheduler.shared.cancel()
+        }
+
         call.resolve()
     }
 
     @objc func consumeForceLogoutOnNextStart(_ call: CAPPluginCall) {
-        call.resolve(["pending": false])
+        let pending = SessionPrefs.consumeForceLogoutOnNextStart()
+        call.resolve(["pending": pending])
     }
 
     @objc func revokeGoogleSignInSession(_ call: CAPPluginCall) {
+        GIDSignIn.sharedInstance.signOut()
         call.resolve()
+    }
+
+    @objc func clearTextMessageNotifications(_ call: CAPPluginCall) {
+        UNUserNotificationCenter.current().getDeliveredNotifications { notifications in
+            let ids = notifications.compactMap { notification -> String? in
+                let content = notification.request.content
+                if content.threadIdentifier.hasPrefix("text_message_") {
+                    return notification.request.identifier
+                }
+                if content.userInfo["type"] as? String == "text_message" {
+                    return notification.request.identifier
+                }
+                return nil
+            }
+            if !ids.isEmpty {
+                UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: ids)
+            }
+            call.resolve()
+        }
     }
 }

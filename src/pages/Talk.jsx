@@ -14,6 +14,7 @@ import {
 } from "../components/ptt/PassiveTalkListenProvider";
 import { useRegisterPagePTTHandlers } from "@/components/ptt/PTTHandlerProvider";
 import { playClearTone, playBusyTone, unlockAudioForPTT } from "@/lib/pttTones";
+import { logVoiceMessageFailure } from "@/lib/voiceMessageLogging";
 import { cleanupStalePTTSignals, claimPttChannels, releasePttSignals } from "@/lib/pttSignals";
 import { playAudioUrl, stopAudio } from "@/lib/audioPlayer";
 import { deviceDayKey } from "@/lib/deviceDate";
@@ -484,20 +485,36 @@ export default function Talk() {
       const { file_url, duration, broadcast_id } = result;
 
       const now = new Date();
-      const msg = await api.entities.VoiceMessage.create({
-        channel_id: channelId,
-        sender_id: resolvedUser.id,
-        sender_name: getDisplayName(resolvedUser),
-        sender_email: resolvedUser.email || "",
-        audio_url: file_url,
-        duration_seconds: Math.round(duration * 10) / 10,
-        is_transcribed: false,
-        device_time: now.toLocaleTimeString('en-US', {
-          hour: 'numeric', minute: '2-digit', hour12: true
-        }),
-        device_date: deviceDayKey(now),
-        broadcast_id,
-      });
+      let msg;
+      try {
+        msg = await api.entities.VoiceMessage.create({
+          channel_id: channelId,
+          sender_id: resolvedUser.id,
+          sender_name: getDisplayName(resolvedUser),
+          sender_email: resolvedUser.email || "",
+          audio_url: file_url,
+          duration_seconds: Math.round(duration * 10) / 10,
+          is_transcribed: false,
+          device_time: now.toLocaleTimeString('en-US', {
+            hour: 'numeric', minute: '2-digit', hour12: true
+          }),
+          device_date: deviceDayKey(now),
+          broadcast_id,
+        });
+      } catch (err) {
+        err.logged = true;
+        void logVoiceMessageFailure({
+          source: "talk",
+          stage: "create",
+          error: err,
+          channelId,
+          broadcastId: broadcast_id,
+          durationSeconds: duration,
+          user: resolvedUser,
+          extra: { audio_url: file_url },
+        });
+        throw err;
+      }
 
       // Clean up relay chunks (best-effort; only admins can delete in rules)
       if (broadcast_id) {
@@ -518,8 +535,20 @@ export default function Talk() {
       pttSessionUserRef.current = null;
     },
     onError: (err) => {
+      const channelId = pttSessionChannelIdRef.current || effectiveChannelId;
+      if (!err?.logged) {
+        const isRecordingStage =
+          err?.code === "app/recording-failed" || err?.code === "storage/unauthorized";
+        void logVoiceMessageFailure({
+          source: "talk",
+          stage: isRecordingStage ? "recording" : "create",
+          error: err,
+          channelId,
+          user,
+        });
+      }
       console.error("Voice message send failed:", err, {
-        channelId: pttSessionChannelIdRef.current || effectiveChannelId,
+        channelId,
         userId: user?.id,
         code: err?.code,
       });

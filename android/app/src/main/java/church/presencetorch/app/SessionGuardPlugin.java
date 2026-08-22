@@ -76,4 +76,10 @@ public class SessionGuardPlugin extends Plugin {
         GoogleSignInClient client = GoogleSignIn.getClient(activity, options);
         client.signOut().addOnCompleteListener(task -> call.resolve());
     }
+
+    @PluginMethod
+    public void clearTextMessageNotifications(PluginCall call) {
+        TextMessageNotificationHelper.clearDelivered(getContext());
+        call.resolve();
+    }
 }

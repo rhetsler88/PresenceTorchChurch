@@ -32,3 +32,8 @@ export async function revokeNativeGoogleSignInSession() {
   if (!Capacitor.isNativePlatform()) return;
   await SessionGuard.revokeGoogleSignInSession();
 }
+
+export async function clearNativeTextMessageNotifications() {
+  if (!Capacitor.isNativePlatform()) return;
+  await SessionGuard.clearTextMessageNotifications();
+}

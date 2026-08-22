@@ -9,7 +9,8 @@ import { Button } from "@/components/ui/button";
 import { etzTime } from "@/lib/etz";
 import { deviceDayKey, deviceDayLabel } from "@/lib/deviceDate";
 import { getDisplayName, getInitials, getInitialsFromName, getMonitorChannels, getReadableVoiceChannels, canSendOnChannelForChannel } from "@/lib/userUtils";
-import { playClearTone, playBusyTone, unlockAudioForPTT } from "@/lib/pttTones";
+import { playClearTone, playBusyTone, ensureAudioReady, unlockAudioForPTT } from "@/lib/pttTones";
+import { logVoiceMessageFailure } from "@/lib/voiceMessageLogging";
 import { auth } from "@/lib/firebase";
 import { cleanupStalePTTSignals, claimPttChannels, releasePttSignals } from "@/lib/pttSignals";
 import { playAudioUrl, stopAudio } from "@/lib/audioPlayer";
@@ -256,6 +257,10 @@ export default function Monitor() {
   }, [channelOrder, monitorOrderKey]);
 
   useEffect(() => { api.auth.me().then(setUser); }, []);
+
+  useEffect(() => {
+    ensureAudioReady();
+  }, []);
 
   const { data: channels = [] } = useQuery({
     queryKey: ["channels"],
@@ -639,16 +644,6 @@ export default function Monitor() {
   // PTT send � uses relay broadcast result (already uploaded)
   const sendMutation = useMutation({
     mutationFn: async () => {
-      const result = await stopRecording();
-
-      if (!result) return null;
-      const { file_url, duration, broadcast_id } = result;
-
-      const now = new Date();
-      const deviceTime = now.toLocaleTimeString('en-US', {
-        hour: 'numeric', minute: '2-digit', hour12: true
-      });
-      const deviceDate = deviceDayKey(now);
       const targetIds = broadcastModeRef.current === "multi"
         ? selectedBroadcastIdsRef.current.filter((id) =>
             sendableChannelIdsRef.current.includes(id)
@@ -658,19 +653,59 @@ export default function Monitor() {
           );
       const targetId = targetChannelIdRef.current;
 
-      const created = await Promise.all(targetIds.map(cid =>
-        api.entities.VoiceMessage.create({
-          channel_id: cid,
-          sender_name: getDisplayName(user) || "Monitor",
-          sender_email: user?.email || "",
-          audio_url: file_url,
-          duration_seconds: Math.round(duration * 10) / 10,
-          is_transcribed: false,
-          device_time: deviceTime,
-          device_date: deviceDate,
-          ...(broadcast_id ? { broadcast_id } : {}),
-        })
-      ));
+      const result = await stopRecording();
+
+      if (!result) {
+        void logVoiceMessageFailure({
+          source: "monitor",
+          stage: "recording",
+          error: Object.assign(new Error("Recording produced no audio or upload failed"), {
+            code: "app/recording-failed",
+          }),
+          channelId: targetId,
+          channelIds: targetIds,
+          user,
+        });
+        return null;
+      }
+      const { file_url, duration, broadcast_id } = result;
+
+      const now = new Date();
+      const deviceTime = now.toLocaleTimeString('en-US', {
+        hour: 'numeric', minute: '2-digit', hour12: true
+      });
+      const deviceDate = deviceDayKey(now);
+
+      let created;
+      try {
+        created = await Promise.all(targetIds.map(cid =>
+          api.entities.VoiceMessage.create({
+            channel_id: cid,
+            sender_name: getDisplayName(user) || "Monitor",
+            sender_email: user?.email || "",
+            audio_url: file_url,
+            duration_seconds: Math.round(duration * 10) / 10,
+            is_transcribed: false,
+            device_time: deviceTime,
+            device_date: deviceDate,
+            ...(broadcast_id ? { broadcast_id } : {}),
+          })
+        ));
+      } catch (err) {
+        err.logged = true;
+        void logVoiceMessageFailure({
+          source: "monitor",
+          stage: "create",
+          error: err,
+          channelId: targetId,
+          channelIds: targetIds,
+          broadcastId: broadcast_id,
+          durationSeconds: duration,
+          user,
+          extra: { audio_url: file_url },
+        });
+        throw err;
+      }
 
       // Clean up relay chunks for the target channel
       if (broadcast_id) {
@@ -709,6 +744,21 @@ export default function Monitor() {
     },
     onSuccess: (label) => {
       if (label) toast.success(`Sent to ${label}`);
+    },
+    onError: (err) => {
+      if (err?.logged) return;
+      const isRecordingStage =
+        err?.code === "app/recording-failed" || err?.code === "storage/unauthorized";
+      void logVoiceMessageFailure({
+        source: "monitor",
+        stage: isRecordingStage ? "recording" : "create",
+        error: err,
+        channelId: targetChannelIdRef.current,
+        channelIds: broadcastModeRef.current === "multi"
+          ? selectedBroadcastIdsRef.current
+          : [targetChannelIdRef.current].filter(Boolean),
+        user,
+      });
     },
   });
 

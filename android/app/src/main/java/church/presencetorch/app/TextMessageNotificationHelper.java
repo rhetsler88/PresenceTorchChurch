@@ -2,9 +2,9 @@ package church.presencetorch.app;
 
 import android.app.Notification;
 import android.app.NotificationManager;
-import android.app.StatusBarNotification;
 import android.content.Context;
 import android.os.Build;
+import android.service.notification.StatusBarNotification;
 
 /** Clears delivered text-message push notifications (not the background listen FGS). */
 public final class TextMessageNotificationHelper {

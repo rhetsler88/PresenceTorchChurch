@@ -21,6 +21,9 @@ function formatTextMessageBody(count, channelName) {
 }
 
 function clearTextMessageNotifications() {
+  if (typeof self.registration?.getNotifications !== "function") {
+    return Promise.resolve();
+  }
   return self.registration.getNotifications().then((notifications) => {
     notifications.forEach((notification) => {
       const tag = notification.tag || "";
@@ -36,9 +39,8 @@ messaging.onBackgroundMessage((payload) => {
   const data = payload?.data || {};
   if (data.type === "red_alert") {
     const channelName = data.channelName || data.channel_name || "A channel";
-    const title = payload.notification?.title || "RED ALERT";
-    const body =
-      payload.notification?.body || `Code Red — ${channelName} — Secure Now`;
+    const title = data.title || "RED ALERT";
+    const body = data.body || `Code Red — ${channelName} — Secure Now`;
 
     self.registration.showNotification(title, {
       body,
@@ -54,10 +56,9 @@ messaging.onBackgroundMessage((payload) => {
   if (data.type === "text_message") {
     const channelId = data.channelId || data.channel_id || "channel";
     const channelName = data.channelName || data.channel_name || "Channel";
-    const count = data.unreadCount || payload.notification?.body || "1";
-    const title = payload.notification?.title || "Presence Torch";
-    const body =
-      payload.notification?.body || formatTextMessageBody(count, channelName);
+    const count = data.unreadCount || data.unread_count || "1";
+    const title = data.title || "Presence Torch";
+    const body = data.body || formatTextMessageBody(count, channelName);
     const tag = data.notificationTag || `text_message_${channelId}`;
 
     self.registration.showNotification(title, {
@@ -65,7 +66,6 @@ messaging.onBackgroundMessage((payload) => {
       icon: "/icons/icon-192.png",
       badge: "/icons/icon-192.png",
       tag,
-      renotify: true,
       data,
     });
   }

@@ -36,6 +36,11 @@ function AdminGate({ user, authError, logout }) {
             </p>
           </div>
           <div className="flex flex-col gap-3">
+            {authError?.message && authError.type !== "auth_required" && (
+              <p className="text-xs text-destructive text-center bg-destructive/10 rounded-lg p-3">
+                {authError.message}
+              </p>
+            )}
             <AuthSignInPanel />
             <BackToAppLink className="w-full" />
           </div>

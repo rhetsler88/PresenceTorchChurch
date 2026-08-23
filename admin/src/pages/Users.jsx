@@ -32,6 +32,7 @@ import { AlertTriangle, Pencil, RefreshCw, Search, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import {
   getDisplayName,
+  getProfileEmail,
   isPlatformAdmin,
   isSuperAdmin,
   filterChannelsByOrganization,
@@ -127,6 +128,17 @@ export default function Users() {
     onError: () => toast.error("Couldn't sync channel memberships"),
   });
 
+  const backfillEmailsMutation = useMutation({
+    mutationFn: () => api.admin.backfillMissingUserEmails(),
+    onSuccess: (result) => {
+      queryClient.invalidateQueries({ queryKey: ["users"] });
+      toast.success(
+        `Backfilled ${result?.updated ?? 0} missing email(s)${result?.unresolved ? ` · ${result.unresolved} still unresolved` : ""}`
+      );
+    },
+    onError: () => toast.error("Couldn't backfill user emails"),
+  });
+
   const repairAccessMutation = useMutation({
     mutationFn: (email) => api.admin.repairUserAccess(email),
     onSuccess: (result) => {
@@ -188,6 +200,7 @@ export default function Users() {
     return (
       name.includes(q) ||
       u.email?.toLowerCase().includes(q) ||
+      getProfileEmail(u).toLowerCase().includes(q) ||
       u.organization?.toLowerCase().includes(q)
     );
   });
@@ -240,15 +253,26 @@ export default function Users() {
           </p>
         </div>
         {isPlatformAdmin(currentUser) && (
-          <Button
-            variant="outline"
-            className="gap-2 shrink-0"
-            onClick={() => syncMembershipsMutation.mutate()}
-            disabled={syncMembershipsMutation.isPending}
-          >
-            <RefreshCw className={`w-4 h-4 ${syncMembershipsMutation.isPending ? "animate-spin" : ""}`} />
-            Sync channel memberships
-          </Button>
+          <div className="flex flex-wrap gap-2 shrink-0">
+            <Button
+              variant="outline"
+              className="gap-2"
+              onClick={() => backfillEmailsMutation.mutate()}
+              disabled={backfillEmailsMutation.isPending}
+            >
+              <RefreshCw className={`w-4 h-4 ${backfillEmailsMutation.isPending ? "animate-spin" : ""}`} />
+              Backfill emails
+            </Button>
+            <Button
+              variant="outline"
+              className="gap-2"
+              onClick={() => syncMembershipsMutation.mutate()}
+              disabled={syncMembershipsMutation.isPending}
+            >
+              <RefreshCw className={`w-4 h-4 ${syncMembershipsMutation.isPending ? "animate-spin" : ""}`} />
+              Sync channel memberships
+            </Button>
+          </div>
         )}
       </div>
 
@@ -288,7 +312,9 @@ export default function Users() {
                   <td className="px-4 py-3 font-medium text-foreground">
                     {getDisplayName(u)}
                   </td>
-                  <td className="px-4 py-3 text-muted-foreground">{u.email}</td>
+                  <td className="px-4 py-3 text-muted-foreground">
+                    {getProfileEmail(u) || "—"}
+                  </td>
                   <td className="px-4 py-3 text-muted-foreground">
                     {u.organization || "—"}
                   </td>
@@ -330,13 +356,13 @@ export default function Users() {
                   </td>
                   <td className="px-4 py-3 text-right">
                     <div className="flex justify-end gap-1">
-                      {isPlatformAdmin(currentUser) && u.email && (
+                      {isPlatformAdmin(currentUser) && getProfileEmail(u) && (
                         <>
                           <Button
                             variant="ghost"
                             size="sm"
                             title="Diagnose access issues"
-                            onClick={() => diagnoseAccessMutation.mutate(u.email)}
+                            onClick={() => diagnoseAccessMutation.mutate(getProfileEmail(u))}
                             disabled={diagnoseAccessMutation.isPending}
                           >
                             <Search className="w-4 h-4" />
@@ -345,7 +371,7 @@ export default function Users() {
                             variant="ghost"
                             size="sm"
                             title="Repair channel membership and daily code"
-                            onClick={() => repairAccessMutation.mutate(u.email)}
+                            onClick={() => repairAccessMutation.mutate(getProfileEmail(u))}
                             disabled={repairAccessMutation.isPending}
                           >
                             <RefreshCw className={`w-4 h-4 ${repairAccessMutation.isPending ? "animate-spin" : ""}`} />
@@ -484,8 +510,8 @@ export default function Users() {
                       variant="outline"
                       size="sm"
                       className="w-full mt-3"
-                      onClick={() => repairAccessMutation.mutate(editing.email)}
-                      disabled={repairAccessMutation.isPending || !editing.email}
+                      onClick={() => repairAccessMutation.mutate(getProfileEmail(editing))}
+                      disabled={repairAccessMutation.isPending || !getProfileEmail(editing)}
                     >
                       Repair sync for this user
                     </Button>

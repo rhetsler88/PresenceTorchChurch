@@ -227,11 +227,17 @@ async function loadOrCreateUser(firebaseUser) {
     return { id: firebaseUser.uid, email: firebaseUser.email, ...existing, ...updates };
   }
 
+  const authEmail = firebaseUser.email?.trim().toLowerCase() || "";
+  if (authEmail && !existing.email?.trim()) {
+    await setDoc(userRef, { email: authEmail }, { merge: true });
+    return { id: firebaseUser.uid, ...existing, email: authEmail };
+  }
+
   return {
     id: firebaseUser.uid,
-    email: firebaseUser.email,
     ...existing,
-  }
+    email: existing.email?.trim() || authEmail,
+  };
 }
 
 export const AuthProvider = ({ children }) => {
@@ -396,7 +402,7 @@ export const AuthProvider = ({ children }) => {
           setIsLoadingAuth(true);
         }
 
-        if (pendingCloseLogout) {
+        if (pendingCloseLogout && !isGoogleSignInRedirectPending()) {
           pendingCloseLogout = false;
           if (firebaseUser) {
             await expireSession();
@@ -463,14 +469,8 @@ export const AuthProvider = ({ children }) => {
         if (await consumeNativeForceLogoutPending()) {
           pendingCloseLogout = true;
         }
-      }
-
-      unsub = onAuthStateChanged(auth, (firebaseUser) => {
-        listenerHasFired = true;
-        void handleAuthUser(firebaseUser);
-      });
-
-      if (!Capacitor.isNativePlatform()) {
+        clearOAuthRedirectPending();
+      } else {
         try {
           const redirectResult = await getRedirectResult(auth);
           if (redirectResult?.user) {
@@ -491,9 +491,12 @@ export const AuthProvider = ({ children }) => {
         } finally {
           clearOAuthRedirectPending();
         }
-      } else {
-        clearOAuthRedirectPending();
       }
+
+      unsub = onAuthStateChanged(auth, (firebaseUser) => {
+        listenerHasFired = true;
+        void handleAuthUser(firebaseUser);
+      });
 
       // Fallback if Firebase never emits an initial auth state (shouldn't happen normally).
       if (!cancelled && !listenerHasFired && !authInitSettled) {

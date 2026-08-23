@@ -25,7 +25,7 @@ export default function useBackgroundRelayListen({
       title: title || "Presence Torch",
       body,
       channelCount,
-      silent: false,
+      silent: true,
     });
 
     return () => {

@@ -10,6 +10,8 @@ import {
   getOrCreateDeviceId,
   getPushRegistrationKey,
   getWebPushSurface,
+  isMobileWebUserAgent,
+  isPwaInstalled,
 } from "@/lib/pushDevice";
 import { removePushRegistration, upsertPushRegistration } from "@/lib/pushRegistrationStore";
 import { beginSensitiveOperation, endSensitiveOperation } from "@/lib/sensitiveOperation";
@@ -31,6 +33,7 @@ let webMessageUnsub = null;
 let textNotificationLifecycleInstalled = false;
 
 async function clearWebTextMessageNotifications() {
+  if (Capacitor.isNativePlatform()) return;
   if (!("serviceWorker" in navigator)) return;
   try {
     const registration = await navigator.serviceWorker.ready;
@@ -112,7 +115,8 @@ async function removeSessionRegistration(uid, registrationKey) {
   }
 }
 
-function handleTextMessagePayload(data) {
+/** Foreground only — FCM/system tray handles visible notifications in background. */
+function handleTextMessagePayload() {
   playTextMessageTone();
 }
 
@@ -141,7 +145,7 @@ async function registerNativePushListeners(uid) {
       return;
     }
     if (data.type === "text_message") {
-      handleTextMessagePayload(data);
+      handleTextMessagePayload();
     }
   });
 
@@ -152,9 +156,29 @@ async function registerNativePushListeners(uid) {
       return;
     }
     if (data.type === "text_message") {
-      handleTextMessagePayload(data);
+      void clearTextMessageNotificationsOnForeground();
     }
   });
+}
+
+async function requestNativePushPermission() {
+  beginSensitiveOperation();
+  try {
+    let perm = await PushNotifications.checkPermissions();
+    if (perm.receive === "prompt") {
+      perm = await PushNotifications.requestPermissions();
+    }
+    return perm;
+  } finally {
+    endSensitiveOperation();
+  }
+}
+
+async function registerNativeFcm(perm) {
+  // Android can obtain an FCM token even when tray permission is still denied.
+  if (Capacitor.getPlatform() === "android" || perm?.receive === "granted") {
+    await PushNotifications.register();
+  }
 }
 
 async function initNativePush(uid, userProfile) {
@@ -182,22 +206,8 @@ async function initNativePush(uid, userProfile) {
       /* ignore */
     }
 
-    await registerNativePushListeners(uid);
-
-    beginSensitiveOperation();
-    let perm;
-    try {
-      perm = await PushNotifications.checkPermissions();
-      if (perm.receive === "prompt") {
-        perm = await PushNotifications.requestPermissions();
-      }
-    } finally {
-      endSensitiveOperation();
-    }
-
-    if (perm?.receive === "granted") {
-      await PushNotifications.register();
-    }
+    const perm = await requestNativePushPermission();
+    await registerNativeFcm(perm);
   } catch (err) {
     console.error("Native push init failed:", err);
   } finally {
@@ -208,6 +218,11 @@ async function initNativePush(uid, userProfile) {
 async function initWebPush(uid, userProfile) {
   if (!VAPID_KEY) {
     console.warn("[Push] VITE_FIREBASE_VAPID_KEY is not set; web push disabled.");
+    return;
+  }
+
+  // Mobile browser tabs should use the installed PWA or native app instead.
+  if (isMobileWebUserAgent() && !isPwaInstalled()) {
     return;
   }
 
@@ -254,7 +269,7 @@ async function initWebPush(uid, userProfile) {
       return;
     }
     if (data.type === "text_message") {
-      handleTextMessagePayload(data);
+      handleTextMessagePayload();
     }
   });
 }
@@ -280,6 +295,8 @@ export async function initPushNotifications(uid, userProfile = null) {
         deviceId,
         staffAlerts: staffAlertsEnabled,
       });
+    } else if (Capacitor.isNativePlatform()) {
+      void PushNotifications.register().catch(() => {});
     }
     return;
   }
@@ -288,6 +305,7 @@ export async function initPushNotifications(uid, userProfile = null) {
   void clearTextMessageNotificationsOnForeground();
 
   if (Capacitor.isNativePlatform()) {
+    await registerNativePushListeners(uid);
     scheduleNativePushInit(uid, userProfile);
     return;
   }

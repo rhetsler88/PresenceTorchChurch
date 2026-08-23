@@ -13,6 +13,8 @@ import com.getcapacitor.annotation.CapacitorPlugin;
 @CapacitorPlugin(name = "HeadsetPTT")
 public class HeadsetPTTPlugin extends Plugin {
 
+    private static HeadsetPTTPlugin instance;
+
     private MediaSessionCompat mediaSession;
     private AudioManager audioManager;
     private AudioManager.OnAudioFocusChangeListener audioFocusListener;
@@ -21,6 +23,29 @@ public class HeadsetPTTPlugin extends Plugin {
     private int lastDownKeyCode = -1;
     private long lastUpEventTime = -1;
     private int lastUpKeyCode = -1;
+
+    @Override
+    public void load() {
+        super.load();
+        instance = this;
+    }
+
+    @Override
+    protected void handleOnDestroy() {
+        if (instance == this) {
+            instance = null;
+        }
+        super.handleOnDestroy();
+    }
+
+    /** Forward media keys from the background listen foreground service. */
+    public static boolean forwardKeyEvent(KeyEvent event) {
+        HeadsetPTTPlugin plugin = instance;
+        if (plugin != null && plugin.listening && event != null) {
+            return plugin.handleKeyEvent(event);
+        }
+        return false;
+    }
 
     @PluginMethod
     public void startListening(PluginCall call) {

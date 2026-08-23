@@ -15,21 +15,15 @@ function staffTokens(registrations) {
   ];
 }
 
-export function buildRegistrationPatch(existingRegistrations, registrationKey, entry) {
-  const registrations = { ...(existingRegistrations || {}) };
-
-  for (const [key, reg] of Object.entries(registrations)) {
-    if (key !== registrationKey && reg?.token === entry.token) {
-      delete registrations[key];
-    }
-  }
-
-  registrations[registrationKey] = entry;
+/** Keep only the current signed-in session's registration (PWA, native, or desktop web). */
+export function buildRegistrationPatch(_existingRegistrations, registrationKey, entry) {
+  const registrations = { [registrationKey]: entry };
 
   return {
     fcm_registrations: registrations,
     fcm_tokens: uniqueTokens(registrations),
     staff_fcm_tokens: staffTokens(registrations),
+    active_push_registration_key: registrationKey,
   };
 }
 

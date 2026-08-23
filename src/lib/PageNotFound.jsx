@@ -20,8 +20,9 @@ export default function PageNotFound({}) {
     });
     
     return (
-        <div className="min-h-screen flex items-center justify-center p-6 bg-slate-50">
-            <div className="max-w-md w-full">
+        <div className="page-adaptive bg-slate-50 safe-top safe-bottom">
+            <div className="page-adaptive-inner px-6 py-6">
+            <div className="max-w-md w-full mx-auto">
                 <div className="text-center space-y-6">
                     {/* 404 Error Code */}
                     <div className="space-y-2">
@@ -69,6 +70,7 @@ export default function PageNotFound({}) {
                         </button>
                     </div>
                 </div>
+            </div>
             </div>
         </div>
     )

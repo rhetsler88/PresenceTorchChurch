@@ -14,6 +14,11 @@ export default defineConfig({
     },
   },
   plugins: [react()],
+  server: {
+    headers: {
+      "Cross-Origin-Opener-Policy": "same-origin-allow-popups",
+    },
+  },
   build: {
     outDir: "dist",
     emptyOutDir: true,

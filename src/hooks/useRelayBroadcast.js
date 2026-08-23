@@ -3,7 +3,7 @@ import { Capacitor } from "@capacitor/core";
 import { api } from "@/api/client";
 import { uploadPublicAudio, uploadPrivateAudio } from "@/api/storage";
 import { ensureMicrophonePermission } from "@/lib/microphonePermissions";
-import { forceStopBackgroundAudio } from "@/lib/backgroundAudio";
+import { forceStopBackgroundAudio, resumeBackgroundAudioIfNeeded } from "@/lib/backgroundAudio";
 import { beginSensitiveOperation, endSensitiveOperation } from "@/lib/sensitiveOperation";
 
 const CHUNK_MS = 1000;
@@ -20,8 +20,9 @@ function isUploadPermissionError(err) {
 
 function getSupportedMime() {
   const isAndroid = Capacitor.getPlatform() === "android";
+  // Prefer WebM/Opus when supported — Cloud Speech transcribes it reliably; MP4/AAC often fails.
   const types = isAndroid
-    ? ["audio/mp4", "audio/webm;codecs=opus", "audio/webm", "audio/ogg;codecs=opus", "audio/3gpp"]
+    ? ["audio/webm;codecs=opus", "audio/webm", "audio/ogg;codecs=opus", "audio/mp4", "audio/3gpp"]
     : ["audio/webm;codecs=opus", "audio/webm", "audio/ogg;codecs=opus", "audio/mp4"];
   for (const type of types) {
     if (MediaRecorder.isTypeSupported(type)) return type;
@@ -114,6 +115,8 @@ export default function useRelayBroadcast({ channelId, userId, userName }) {
   const heardBroadcastsRef = useRef(new Set());
   const chunkIntervalRef = useRef(null);
   const sensitiveOpRef = useRef(false);
+  const relayUploadsActiveRef = useRef(true);
+  const stopInFlightRef = useRef(null);
 
   const releaseSensitiveOperation = useCallback(() => {
     if (!sensitiveOpRef.current) return;
@@ -219,6 +222,7 @@ export default function useRelayBroadcast({ channelId, userId, userName }) {
     fullChunksRef.current = [];
     initSegmentRef.current = null;
     pendingUploadsRef.current = [];
+    relayUploadsActiveRef.current = true;
     activeRef.current = true;
 
     const mimeType = getSupportedMime();
@@ -234,6 +238,7 @@ export default function useRelayBroadcast({ channelId, userId, userName }) {
     const appendRelayChunk = (event, isFinalChunk) => {
       if (!event.data || event.data.size === 0) return;
       if (archiveOnlyRef.current) return;
+      if (!relayUploadsActiveRef.current && !isFinalChunk) return;
 
       let uploadBlob;
       if (!initSegmentRef.current) {
@@ -313,6 +318,21 @@ export default function useRelayBroadcast({ channelId, userId, userName }) {
   }, [queueChunkUpload, beginRecordingSensitiveOperation, releaseSensitiveOperation]);
 
   const stopLiveRelay = useCallback(async () => {
+    relayUploadsActiveRef.current = false;
+
+    // Native uses one MediaRecorder for relay + archive — keep it running until stopRecording.
+    if (Capacitor.isNativePlatform()) {
+      const recorder = relayRecorderRef.current;
+      if (recorder?.state === "recording") {
+        try {
+          recorder.requestData();
+        } catch {
+          // Some Android builds reject requestData in certain states.
+        }
+      }
+      return;
+    }
+
     if (!relayRecorderRef.current) return;
     if (relayRecorderRef.current.state === "recording") {
       isStoppingRef.current = true;
@@ -323,73 +343,104 @@ export default function useRelayBroadcast({ channelId, userId, userName }) {
   }, []);
 
   const stopRecording = useCallback(async () => {
-    if (!activeRef.current && !relayRecorderRef.current && !fullRecorderRef.current) {
-      releaseSensitiveOperation();
-      return null;
+    if (stopInFlightRef.current) {
+      return stopInFlightRef.current;
     }
 
-    activeRef.current = false;
-    setIsRecording(false);
-
-    if (relayRecorderRef.current?.state === "recording") {
-      isStoppingRef.current = true;
-    }
-
-    await stopMediaRecorder(relayRecorderRef.current, chunkIntervalRef);
-    isStoppingRef.current = false;
-    relayRecorderRef.current = null;
-
-    if (fullRecorderRef.current?.state === "recording") {
-      fullRecorderRef.current.requestData();
-    }
-    await stopMediaRecorder(fullRecorderRef.current, chunkIntervalRef);
-    fullRecorderRef.current = null;
-
-    void Promise.allSettled(pendingUploadsRef.current);
-    pendingUploadsRef.current = [];
-
-    if (streamRef.current && ownsStreamRef.current) {
-      streamRef.current.getTracks().forEach((track) => track.stop());
-    }
-    streamRef.current = null;
-    ownsStreamRef.current = true;
-    archiveOnlyRef.current = false;
-    releaseSensitiveOperation();
-
-    const duration = (Date.now() - startTimeRef.current) / 1000;
-    const broadcastId = broadcastIdRef.current;
-    const fullBlob = fullChunksRef.current.length
-      ? new Blob(fullChunksRef.current, { type: mimeRef.current })
-      : null;
-    fullChunksRef.current = [];
-    initSegmentRef.current = null;
-
-    if (!fullBlob || fullBlob.size === 0) {
-      console.error("Recording produced no audio data");
-      return null;
-    }
-
-    try {
-      const file = new File([fullBlob], "message.webm", { type: mimeRef.current });
-      const { file_url, file_uri } = await uploadPrivateAudio(
-        file,
-        `${paramsRef.current.channelId}/messages/${broadcastId}.webm`
-      );
-      return {
-        file_url: file_uri || file_url,
-        file_uri: file_uri || file_url,
-        duration,
-        broadcast_id: broadcastId,
-      };
-    } catch (err) {
-      console.error("Private audio upload failed:", err);
-      if (isUploadPermissionError(err)) {
-        throw err;
+    const finalize = (async () => {
+      if (!activeRef.current && !relayRecorderRef.current && !fullRecorderRef.current) {
+        releaseSensitiveOperation();
+        return null;
       }
-      throw Object.assign(new Error("Private audio upload failed"), {
-        code: "app/recording-failed",
-        cause: err,
-      });
+
+      activeRef.current = false;
+      relayUploadsActiveRef.current = false;
+      setIsRecording(false);
+
+      if (relayRecorderRef.current?.state === "recording") {
+        isStoppingRef.current = true;
+      }
+
+      await stopMediaRecorder(relayRecorderRef.current, chunkIntervalRef);
+      isStoppingRef.current = false;
+      relayRecorderRef.current = null;
+
+      if (fullRecorderRef.current?.state === "recording") {
+        try {
+          fullRecorderRef.current.requestData();
+        } catch {
+          // ignore
+        }
+      }
+      await stopMediaRecorder(fullRecorderRef.current, chunkIntervalRef);
+      fullRecorderRef.current = null;
+
+      void Promise.allSettled(pendingUploadsRef.current);
+      pendingUploadsRef.current = [];
+
+      if (streamRef.current && ownsStreamRef.current) {
+        streamRef.current.getTracks().forEach((track) => track.stop());
+      }
+      streamRef.current = null;
+      ownsStreamRef.current = true;
+      archiveOnlyRef.current = false;
+      releaseSensitiveOperation();
+
+      const duration = Math.max(0.1, (Date.now() - startTimeRef.current) / 1000);
+      const broadcastId = broadcastIdRef.current;
+      const archiveChunks = fullChunksRef.current.length
+        ? fullChunksRef.current
+        : initSegmentRef.current
+          ? [initSegmentRef.current]
+          : [];
+      const fullBlob = archiveChunks.length
+        ? new Blob(archiveChunks, { type: mimeRef.current })
+        : null;
+      fullChunksRef.current = [];
+      initSegmentRef.current = null;
+
+      if (!fullBlob || fullBlob.size === 0) {
+        console.error("Recording produced no audio data", {
+          duration,
+          channelId: paramsRef.current.channelId,
+          mime: mimeRef.current,
+        });
+        return null;
+      }
+
+      try {
+        const ext = mimeRef.current.includes("mp4") ? "mp4" : "webm";
+        const file = new File([fullBlob], `message.${ext}`, { type: mimeRef.current });
+        const { file_url, file_uri } = await uploadPrivateAudio(
+          file,
+          `${paramsRef.current.channelId}/messages/${broadcastId}.${ext}`
+        );
+        return {
+          file_url: file_uri || file_url,
+          file_uri: file_uri || file_url,
+          duration,
+          broadcast_id: broadcastId,
+        };
+      } catch (err) {
+        console.error("Private audio upload failed:", err);
+        if (isUploadPermissionError(err)) {
+          throw err;
+        }
+        throw Object.assign(new Error("Private audio upload failed"), {
+          code: "app/recording-failed",
+          cause: err,
+        });
+      }
+    })();
+
+    stopInFlightRef.current = finalize;
+    try {
+      return await finalize;
+    } finally {
+      stopInFlightRef.current = null;
+      if (Capacitor.isNativePlatform()) {
+        void resumeBackgroundAudioIfNeeded();
+      }
     }
   }, [releaseSensitiveOperation]);
 

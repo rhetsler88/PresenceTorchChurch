@@ -5,9 +5,9 @@ import PwaInstallPrompt from "@/components/pwa/PwaInstallPrompt";
 
 export default function Login() {
   return (
-    <div className="h-dvh overflow-hidden flex flex-col bg-background dark safe-top safe-bottom px-4 py-3">
-      <div className="flex-1 min-h-0 w-full max-w-sm mx-auto flex flex-col justify-center">
-        <div className="flex flex-col items-center mb-3 shrink-0">
+    <div className="page-adaptive bg-background dark safe-top safe-bottom">
+      <div className="page-adaptive-inner w-full max-w-sm mx-auto px-4 py-6">
+        <div className="flex flex-col items-center mb-3">
           <img
             src="/logo-full.png"
             alt="Presence Torch Church"
@@ -16,7 +16,7 @@ export default function Login() {
           />
         </div>
 
-        <div className="bg-card border border-border rounded-2xl p-4 min-h-0 overflow-hidden">
+        <div className="bg-card border border-border rounded-2xl p-4">
           <h2 className="text-base font-semibold text-foreground text-center mb-0.5">
             Sign in to continue
           </h2>
@@ -27,11 +27,11 @@ export default function Login() {
           <AuthSignInPanel />
         </div>
 
-        <div className="mt-2 shrink-0">
+        <div className="mt-2">
           <PwaInstallPrompt />
         </div>
 
-        <p className="text-center text-[11px] text-muted-foreground mt-2 shrink-0">
+        <p className="text-center text-[11px] text-muted-foreground mt-2">
           <Link to="/privacy" className="hover:text-foreground underline-offset-2 hover:underline">
             Privacy Policy
           </Link>

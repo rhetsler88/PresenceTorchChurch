@@ -174,8 +174,9 @@ export default function Admin() {
 
   if (!isAdmin && !isDirectorUser && !isLeadUser) {
     return (
-      <div className="min-h-screen safe-top flex items-center justify-center px-6">
-        <div className="text-center max-w-sm">
+      <div className="page-adaptive safe-top safe-bottom">
+        <div className="page-adaptive-inner flex items-center justify-center px-6 py-6">
+          <div className="text-center max-w-sm w-full">
           <Shield className="w-12 h-12 text-muted-foreground/30 mx-auto mb-3" />
           <p className="text-sm font-semibold text-foreground mb-1">Admin access required</p>
           <p className="text-xs text-muted-foreground">
@@ -183,6 +184,7 @@ export default function Admin() {
             <span className="font-mono">users/{currentUser.id}.role</span> to{" "}
             <span className="font-mono">admin</span> or <span className="font-mono">super_admin</span>.
           </p>
+          </div>
         </div>
       </div>
     );

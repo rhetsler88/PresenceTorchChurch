@@ -12,37 +12,39 @@ import {
 } from "@/lib/userUtils";
 import { isDailyCodeVerified } from "@/lib/dailyCode";
 import { usePassiveTalkListen } from "@/components/ptt/PassiveTalkListenProvider";
-import usePttBroadcast from "@/hooks/useRelayBroadcast";
+import { usePassiveMonitor } from "@/components/monitor/PassiveMonitorProvider";
+import usePttBroadcast from "@/hooks/usePttBroadcast";
 import { playBusyTone, playClearTone, unlockAudioForPTT } from "@/lib/pttTones";
 import { logVoiceMessageFailure } from "@/lib/voiceMessageLogging";
 import { claimPttChannels, cleanupStalePTTSignals, releasePttSignals } from "@/lib/pttSignals";
 import { deviceDayKey } from "@/lib/deviceDate";
 import { toast } from "@/lib/toast";
 import { recordSessionInteraction } from "@/lib/logoutOnClose";
+import { getLastPttSurface } from "@/lib/lastPttSurface";
+import { resolveMonitorTargetChannelIds } from "@/lib/monitorBroadcastSettings";
 
-function resolveGlobalPttChannel(user, channels, passiveTalkChannelId) {
+function resolveTalkChannel(user, channels, passiveTalkChannelId) {
   if (!user?.id || !channels?.length) return null;
-
-  if (canAccessMonitorPage(user)) {
-    const sendable = getMonitorChannels(user, channels).filter((channel) =>
-      canSendOnChannelForChannel(user, channel)
-    );
-    if (sendable.length === 0) return null;
-    const lastId = localStorage.getItem("lastChannelId");
-    return sendable.find((channel) => channel.id === lastId) || sendable[0];
-  }
-
   if (!passiveTalkChannelId) return null;
   const channel = channels.find((c) => c.id === passiveTalkChannelId);
   if (!channel || !canSendOnChannelForChannel(user, channel)) return null;
   return channel;
 }
 
-/** App-wide PTT when Talk/Monitor pages are not mounted (headset / media keys). */
+function resolveMonitorSendableChannels(user, channels) {
+  return getMonitorChannels(user, channels).filter((channel) =>
+    canSendOnChannelForChannel(user, channel)
+  );
+}
+
+/** App-wide PTT fallback when Talk/Monitor pages are not mounted. */
 export default function useGlobalPTT() {
   const { user, refreshChannelMembership } = useAuth();
   const passiveTalk = usePassiveTalkListen();
+  const passiveMonitor = usePassiveMonitor();
   const queryClient = useQueryClient();
+  const lastSurface = getLastPttSurface();
+  const monitorMode = lastSurface === "monitor" && canAccessMonitorPage(user);
 
   const { data: channels = [] } = useQuery({
     queryKey: ["channels"],
@@ -50,27 +52,52 @@ export default function useGlobalPTT() {
     enabled: Boolean(user?.id),
   });
 
-  const activeChannel = useMemo(
-    () => resolveGlobalPttChannel(user, channels, passiveTalk?.listenChannelId),
-    [user, channels, passiveTalk?.listenChannelId]
+  const sendableMonitorChannels = useMemo(
+    () => (monitorMode ? resolveMonitorSendableChannels(user, channels) : []),
+    [monitorMode, user, channels]
   );
 
-  const channelId = activeChannel?.id ?? null;
+  const sendableChannelIds = useMemo(
+    () => sendableMonitorChannels.map((channel) => channel.id).filter(Boolean),
+    [sendableMonitorChannels]
+  );
+
+  const monitorTargetIds = useMemo(
+    () => (monitorMode
+      ? resolveMonitorTargetChannelIds({ sendableChannelIds, user })
+      : []),
+    [monitorMode, sendableChannelIds, user]
+  );
+
+  const talkChannel = useMemo(
+    () => (!monitorMode
+      ? resolveTalkChannel(user, channels, passiveTalk?.listenChannelId)
+      : null),
+    [monitorMode, user, channels, passiveTalk?.listenChannelId]
+  );
+
+  const primaryChannelId = monitorMode
+    ? (monitorTargetIds[0] ?? sendableChannelIds[0] ?? null)
+    : (talkChannel?.id ?? null);
+
   const canSendPtt = Boolean(
-    activeChannel
-    && user
-    && canSendOnChannelForChannel(user, activeChannel)
+    user
     && (bypassesDailyCode(user) || isDailyCodeVerified(user))
+    && primaryChannelId
+    && (monitorMode
+      ? monitorTargetIds.length > 0
+      : talkChannel && canSendOnChannelForChannel(user, talkChannel))
   );
 
   const pttSignalRef = useRef(null);
+  const pttSignalRefs = useRef([]);
   const pttRecordingActiveRef = useRef(false);
   const pttStartInFlightRef = useRef(null);
   const pttStopPendingRef = useRef(false);
   const isPTTPressedRef = useRef(false);
 
-  const { startRecording, stopRecording, stopLiveTransmit } = usePttBroadcast({
-    channelId,
+  const { startRecording, stopRecording } = usePttBroadcast({
+    channelId: primaryChannelId,
     userId: user?.id,
     userName: user ? getDisplayName(user) : "",
     listenActive: false,
@@ -79,7 +106,7 @@ export default function useGlobalPTT() {
 
   const sendMutation = useMutation({
     mutationFn: async () => {
-      if (!channelId || !user?.id) {
+      if (!primaryChannelId || !user?.id) {
         throw Object.assign(new Error("No active channel"), { code: "app/no-session" });
       }
 
@@ -93,9 +120,35 @@ export default function useGlobalPTT() {
 
       const { file_url, duration, broadcast_id } = result;
       const now = new Date();
+      const targetIds = monitorMode ? monitorTargetIds : [primaryChannelId];
+
       try {
-        return await api.entities.VoiceMessage.create({
-          channel_id: channelId,
+        if (monitorMode && targetIds.length > 1) {
+          const created = await Promise.all(
+            targetIds.map((channelId) =>
+              api.entities.VoiceMessage.create({
+                channel_id: channelId,
+                sender_id: user.id,
+                sender_name: getDisplayName(user),
+                sender_email: user.email || "",
+                audio_url: file_url,
+                duration_seconds: Math.round(duration * 10) / 10,
+                is_transcribed: false,
+                device_time: now.toLocaleTimeString("en-US", {
+                  hour: "numeric",
+                  minute: "2-digit",
+                  hour12: true,
+                }),
+                device_date: deviceDayKey(now),
+                broadcast_id,
+              })
+            )
+          );
+          return created;
+        }
+
+        return api.entities.VoiceMessage.create({
+          channel_id: primaryChannelId,
           sender_id: user.id,
           sender_name: getDisplayName(user),
           sender_email: user.email || "",
@@ -116,7 +169,8 @@ export default function useGlobalPTT() {
           source: "global-ptt",
           stage: "create",
           error: err,
-          channelId,
+          channelId: primaryChannelId,
+          channelIds: targetIds,
           broadcastId: broadcast_id,
           durationSeconds: duration,
           user,
@@ -126,7 +180,7 @@ export default function useGlobalPTT() {
       }
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["messages", channelId] });
+      queryClient.invalidateQueries({ queryKey: ["messages", primaryChannelId] });
       queryClient.invalidateQueries({ queryKey: ["all-messages"] });
       queryClient.invalidateQueries({ queryKey: ["all-channel-messages"] });
     },
@@ -138,7 +192,7 @@ export default function useGlobalPTT() {
           source: "global-ptt",
           stage: isRecordingStage ? "recording" : "create",
           error: err,
-          channelId,
+          channelId: primaryChannelId,
           user,
         });
       }
@@ -148,21 +202,34 @@ export default function useGlobalPTT() {
   });
 
   const finishPttStop = useCallback(() => {
-    const signalId = pttSignalRef.current;
+    const signalIds = monitorMode
+      ? [...pttSignalRefs.current]
+      : (pttSignalRef.current ? [pttSignalRef.current] : []);
     pttSignalRef.current = null;
-    if (signalId) {
-      api.entities.PTTSignal.delete(signalId).catch(() => {});
-    }
-    void stopLiveTransmit();
+    pttSignalRefs.current = [];
+    signalIds.forEach((id) => {
+      api.entities.PTTSignal.delete(id).catch(() => {});
+    });
+
     if (pttRecordingActiveRef.current) {
       pttRecordingActiveRef.current = false;
       sendMutation.mutate();
     }
-  }, [sendMutation, stopLiveTransmit]);
+  }, [monitorMode, sendMutation]);
+
+  const isChannelBusy = useCallback(() => {
+    if (monitorMode) {
+      return Boolean(passiveMonitor?.isLiveReceiving);
+    }
+    return Boolean(
+      passiveTalk?.isLiveReceiving
+      && passiveTalk?.listenChannelId === primaryChannelId
+    );
+  }, [monitorMode, passiveMonitor?.isLiveReceiving, passiveTalk?.isLiveReceiving, passiveTalk?.listenChannelId, primaryChannelId]);
 
   const handlePTTStart = useCallback(async () => {
     if (
-      !activeChannel
+      !primaryChannelId
       || !user?.id
       || !canSendPtt
       || pttStartInFlightRef.current
@@ -172,8 +239,14 @@ export default function useGlobalPTT() {
       return;
     }
 
-    if (passiveTalk?.isLiveReceiving) {
+    if (isChannelBusy()) {
       playBusyTone();
+      return;
+    }
+
+    const targetIds = monitorMode ? monitorTargetIds : [primaryChannelId];
+    if (targetIds.length === 0) {
+      toast.error("No channels available to respond on");
       return;
     }
 
@@ -188,7 +261,30 @@ export default function useGlobalPTT() {
       const broadcastId = crypto.randomUUID();
       try {
         await auth.currentUser?.getIdToken(true);
-        const started = await startRecording({ broadcastId });
+
+        if (monitorMode && pttSignalRefs.current.length) {
+          await releasePttSignals(pttSignalRefs.current);
+          pttSignalRefs.current = [];
+        }
+
+        await cleanupStalePTTSignals({
+          channelIds: targetIds,
+          channelId: targetIds[0],
+          excludeSenderId: user.id,
+        }).catch(() => {});
+
+        const claimPromise = claimPttChannels({
+          channelIds: targetIds,
+          senderId: user.id,
+          senderName: getDisplayName(user),
+          broadcastId,
+          primaryChannelId: targetIds[0],
+        });
+
+        const started = await startRecording({
+          broadcastId,
+          publishChannelIds: monitorMode ? targetIds : undefined,
+        });
 
         if (pttStopPendingRef.current) {
           if (started) {
@@ -199,25 +295,31 @@ export default function useGlobalPTT() {
         }
 
         if (!started) {
+          if (monitorMode) {
+            try {
+              const { signalIds } = await claimPromise;
+              await releasePttSignals(signalIds);
+            } catch {
+              /* claim may still be in flight */
+            }
+          }
           return { micDenied: true };
         }
 
         pttRecordingActiveRef.current = true;
 
-        void cleanupStalePTTSignals({
-          channelId,
-          excludeSenderId: user.id,
-        }).catch(() => {});
-
-        claimPttChannels({
-          channelIds: [channelId],
-          senderId: user.id,
-          senderName: getDisplayName(user),
-          broadcastId,
-          primaryChannelId: channelId,
-        }).then(({ signalIds }) => {
-          pttSignalRef.current = signalIds[0] ?? null;
-        }).catch(() => {});
+        if (monitorMode) {
+          try {
+            const { signalIds } = await claimPromise;
+            pttSignalRefs.current = signalIds;
+          } catch {
+            pttSignalRefs.current = [];
+          }
+        } else {
+          claimPromise.then(({ signalIds }) => {
+            pttSignalRef.current = signalIds[0] ?? null;
+          }).catch(() => {});
+        }
 
         return { ok: true };
       } catch (error) {
@@ -244,7 +346,10 @@ export default function useGlobalPTT() {
 
     if (result.startFailed || result.micDenied) {
       await stopRecording().catch(() => {});
-      if (pttSignalRef.current) {
+      if (monitorMode) {
+        await releasePttSignals(pttSignalRefs.current).catch(() => {});
+        pttSignalRefs.current = [];
+      } else if (pttSignalRef.current) {
         await releasePttSignals([pttSignalRef.current]).catch(() => {});
         pttSignalRef.current = null;
       }
@@ -254,11 +359,12 @@ export default function useGlobalPTT() {
       }
     }
   }, [
-    activeChannel,
+    primaryChannelId,
     user,
     canSendPtt,
-    channelId,
-    passiveTalk?.isLiveReceiving,
+    monitorMode,
+    monitorTargetIds,
+    isChannelBusy,
     startRecording,
     stopRecording,
     finishPttStop,
@@ -279,8 +385,8 @@ export default function useGlobalPTT() {
     () => ({
       onPress: handlePTTStart,
       onRelease: handlePTTStop,
-      enabled: Boolean(canSendPtt && channelId),
+      enabled: Boolean(canSendPtt && primaryChannelId),
     }),
-    [handlePTTStart, handlePTTStop, canSendPtt, channelId]
+    [handlePTTStart, handlePTTStop, canSendPtt, primaryChannelId]
   );
 }

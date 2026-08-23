@@ -4,6 +4,7 @@ import { formatActiveChannelsBody } from "@/lib/backgroundAudioNotification";
 const BackgroundAudio = registerPlugin("BackgroundAudio");
 
 let sessionRefCount = 0;
+let backgroundSessionPaused = false;
 let activeTitle = "Presence Torch";
 let activeBody = formatActiveChannelsBody(1);
 let activeSilent = false;
@@ -92,12 +93,22 @@ export async function stopBackgroundAudio() {
   }
 }
 
-/** Stop native background listen before mic capture — ignores ref count. */
+/** Pause native background listen for mic capture — keeps ref count for restart. */
 export async function forceStopBackgroundAudio() {
-  if (!isBackgroundAudioAvailable()) return;
-  sessionRefCount = 0;
-  activeTitle = "Presence Torch";
-  activeBody = formatActiveChannelsBody(1);
-  activeSilent = false;
+  if (!isBackgroundAudioAvailable() || sessionRefCount === 0) return;
+  backgroundSessionPaused = true;
   await BackgroundAudio.stopSession().catch(() => {});
+}
+
+/** Restart background listen after PTT if passive providers still hold a ref. */
+export async function resumeBackgroundAudioIfNeeded() {
+  if (!isBackgroundAudioAvailable() || sessionRefCount === 0 || !backgroundSessionPaused) {
+    return;
+  }
+  backgroundSessionPaused = false;
+  await BackgroundAudio.startSession({
+    title: activeTitle,
+    body: activeBody,
+    silent: activeSilent,
+  }).catch(() => {});
 }

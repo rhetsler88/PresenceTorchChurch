@@ -15,6 +15,8 @@ import android.media.AudioTrack;
 import android.os.Build;
 import android.os.IBinder;
 import android.os.PowerManager;
+import android.support.v4.media.session.MediaSessionCompat;
+import android.view.KeyEvent;
 import androidx.core.app.NotificationCompat;
 
 /**
@@ -44,6 +46,7 @@ public class BackgroundAudioService extends Service {
     private boolean silentNotification = false;
     private String currentTitle;
     private String currentBody;
+    private MediaSessionCompat mediaSession;
 
     public static boolean isSessionActive() {
         return sessionActive;
@@ -117,6 +120,7 @@ public class BackgroundAudioService extends Service {
 
     private void startForegroundSession(String title) {
         createNotificationChannel();
+        activateMediaButtonSession();
         promoteToForeground(title);
         acquireWakeLock();
         requestAudioFocus();
@@ -159,9 +163,44 @@ public class BackgroundAudioService extends Service {
         stopSilentLoop();
         abandonAudioFocus();
         releaseWakeLock();
+        deactivateMediaButtonSession();
         sessionActive = false;
         stopForeground(STOP_FOREGROUND_REMOVE);
         stopSelf();
+    }
+
+    /** Route headset/media keys to HeadsetPTT while the listen session is foregrounded. */
+    private void activateMediaButtonSession() {
+        if (mediaSession == null) {
+            mediaSession = new MediaSessionCompat(this, "PresenceTorchBackgroundListen");
+            mediaSession.setFlags(
+                MediaSessionCompat.FLAG_HANDLES_MEDIA_BUTTONS
+                    | MediaSessionCompat.FLAG_HANDLES_TRANSPORT_CONTROLS
+            );
+            mediaSession.setCallback(
+                new MediaSessionCompat.Callback() {
+                    @Override
+                    public boolean onMediaButtonEvent(Intent mediaButtonIntent) {
+                        KeyEvent event = mediaButtonIntent.getParcelableExtra(
+                            Intent.EXTRA_KEY_EVENT
+                        );
+                        if (event != null && HeadsetPTTPlugin.forwardKeyEvent(event)) {
+                            return true;
+                        }
+                        return super.onMediaButtonEvent(mediaButtonIntent);
+                    }
+                }
+            );
+        }
+        mediaSession.setActive(true);
+    }
+
+    private void deactivateMediaButtonSession() {
+        if (mediaSession != null) {
+            mediaSession.setActive(false);
+            mediaSession.release();
+            mediaSession = null;
+        }
     }
 
     private Notification buildNotification(String title) {

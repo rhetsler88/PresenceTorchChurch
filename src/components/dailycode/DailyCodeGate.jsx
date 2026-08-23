@@ -100,8 +100,9 @@ function DailyCodeEntry({ onVerified, organization }) {
   const verse = getDailyVerse();
 
   return (
-    <div className="flex-1 flex flex-col items-center justify-center p-4 min-h-screen">
-      <div className="w-full max-w-sm">
+    <div className="page-adaptive-fill safe-bottom">
+      <div className="page-adaptive-inner items-center px-4 py-6">
+        <div className="w-full max-w-sm">
         <div className="rounded-2xl overflow-hidden shadow-lg mb-4">
           <img
             src={dailyCodeBanner}
@@ -200,6 +201,7 @@ function DailyCodeEntry({ onVerified, organization }) {
             </>
           )}
         </button>
+        </div>
       </div>
     </div>
   );

@@ -579,6 +579,54 @@ async function diagnoseUserAccess(db, auth, email, { getCodeDateKey }) {
   };
 }
 
+function looksLikeEmail(value) {
+  return typeof value === "string" && value.includes("@") && !/\s/.test(value);
+}
+
+function inferEmailFromProfile(data) {
+  if (data?.email?.trim()?.includes("@")) {
+    return data.email.trim().toLowerCase();
+  }
+  for (const field of ["first_name", "full_name"]) {
+    const value = data?.[field]?.trim();
+    if (looksLikeEmail(value)) return value.toLowerCase();
+  }
+  return null;
+}
+
+/** Backfill users/{id}.email from Firebase Auth (or name fields) for admin visibility. */
+async function backfillMissingUserEmails(db, auth) {
+  const usersSnap = await db.collection("users").get();
+  let updated = 0;
+  let alreadyHadEmail = 0;
+  let unresolved = 0;
+
+  for (const docSnap of usersSnap.docs) {
+    const data = docSnap.data() || {};
+    if (data.email?.trim()?.includes("@")) {
+      alreadyHadEmail += 1;
+      continue;
+    }
+
+    let email = null;
+    try {
+      const authUser = await auth.getUser(docSnap.id);
+      email = authUser.email?.trim().toLowerCase() || null;
+    } catch {
+      email = inferEmailFromProfile(data);
+    }
+
+    if (email) {
+      await docSnap.ref.set({ email }, { merge: true });
+      updated += 1;
+    } else {
+      unresolved += 1;
+    }
+  }
+
+  return { updated, alreadyHadEmail, unresolved, total: usersSnap.size };
+}
+
 module.exports = {
   resolveMemberUid,
   memberListIncludes,
@@ -586,6 +634,7 @@ module.exports = {
   syncMemberProfilesForChannel,
   syncChannelAccessForAuthUser,
   backfillAllChannelMemberships,
+  backfillMissingUserEmails,
   repairUserAccess,
   diagnoseUserAccess,
   mergeElevatedProfileRole,

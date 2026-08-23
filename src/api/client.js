@@ -40,7 +40,7 @@ import seedData from "../../scripts/seed-data.json";
 import { isDefaultSetupComplete } from "@/lib/defaultSeed";
 import { markOAuthRedirectPending, recordLoginTime, clearLoginTime, markNativeGoogleSignInPending, clearNativeGoogleSignInPending } from "@/lib/logoutOnClose";
 import { syncNativeActiveSession, syncNativeGoogleSignInPending, revokeNativeGoogleSignInSession } from "@/lib/sessionGuardNative";
-import { markPasswordLoginSession } from "@/lib/passwordRotation";
+import { markPasswordLoginSession, clearPasswordLoginSession } from "@/lib/passwordRotation";
 import { verifyFirebaseConnection } from "@/lib/firebaseConnection";
 import { addUserChannelMembership } from "@/lib/channelMembership";
 import { clearDailyCodeSession } from "@/lib/dailyCode";
@@ -713,20 +713,24 @@ export const authApi = {
     }
 
     const provider = new GoogleAuthProvider();
+    markOAuthRedirectPending();
 
     try {
       await signInWithPopup(auth, provider);
       recordLoginTime();
+      clearOAuthRedirectPending();
       return;
     } catch (err) {
       const useRedirect =
         err?.code === "auth/popup-blocked" ||
         err?.code === "auth/cancelled-popup-request" ||
         String(err?.message || "").includes("Cross-Origin-Opener-Policy");
-      if (!useRedirect) throw err;
+      if (!useRedirect) {
+        clearOAuthRedirectPending();
+        throw err;
+      }
     }
 
-    markOAuthRedirectPending();
     await signInWithRedirect(auth, provider);
   },
 
@@ -982,6 +986,12 @@ export const adminApi = {
   async backfillChannelMemberships() {
     await waitForFirestoreAuth({ forceRefresh: true });
     const callable = httpsCallable(functions, "backfillChannelMemberships");
+    return (await callable()).data;
+  },
+
+  async backfillMissingUserEmails() {
+    await waitForFirestoreAuth({ forceRefresh: true });
+    const callable = httpsCallable(functions, "backfillMissingUserEmails");
     return (await callable()).data;
   },
 

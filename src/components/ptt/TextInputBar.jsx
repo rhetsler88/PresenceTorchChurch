@@ -15,7 +15,7 @@ export default function TextInputBar({ onSend, disabled }) {
   };
 
   return (
-    <form onSubmit={handleSubmit} className="w-full max-w-md px-4">
+    <form onSubmit={handleSubmit} className="w-full max-w-md">
       <div className="flex items-center gap-2 bg-card border border-border rounded-full pr-1.5 pl-4 py-1">
         <Input
           type="text"

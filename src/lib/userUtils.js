@@ -18,6 +18,22 @@ export function getDisplayName(user) {
   return "Unknown";
 }
 
+function looksLikeEmail(value) {
+  return typeof value === "string" && value.includes("@") && !/\s/.test(value);
+}
+
+/** Email stored on the profile, or inferred from name fields when onboarding copied it there. */
+export function getProfileEmail(user) {
+  if (!user) return "";
+  const stored = user.email?.trim();
+  if (stored?.includes("@")) return stored;
+  for (const field of ["first_name", "full_name"]) {
+    const value = user[field]?.trim();
+    if (looksLikeEmail(value)) return value.toLowerCase();
+  }
+  return stored || "";
+}
+
 /** True when the user has a first or full name on their profile. */
 export function userHasDisplayName(user) {
   if (!user) return false;

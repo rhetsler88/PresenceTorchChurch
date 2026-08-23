@@ -11,6 +11,16 @@ export function isIncomingTextMessage(event, userId) {
   );
 }
 
+export function isIncomingVoiceMessage(event, userId) {
+  return (
+    event?.type === "create"
+    && event.data?.audio_url
+    && !event.data?.text_content
+    && event.data?.created_by_id !== userId
+    && !isProtectionLevelChangeMessage(event.data)
+  );
+}
+
 export function maybePlayTextMessageTone(event, userId, heardBroadcastIds = null) {
   if (!isIncomingTextMessage(event, userId)) return;
 

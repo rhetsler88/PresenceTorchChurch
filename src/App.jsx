@@ -51,10 +51,12 @@ const AuthenticatedApp = () => {
       return <Login />;
     }
     return (
-      <div className="fixed inset-0 flex items-center justify-center bg-background dark p-4">
-        <div className="text-center max-w-sm">
-          <p className="text-sm text-destructive font-medium mb-2">Something went wrong</p>
-          <p className="text-xs text-muted-foreground">{authError.message}</p>
+      <div className="page-adaptive bg-background dark safe-top safe-bottom">
+        <div className="page-adaptive-inner flex items-center justify-center px-4 py-6">
+          <div className="text-center max-w-sm w-full">
+            <p className="text-sm text-destructive font-medium mb-2">Something went wrong</p>
+            <p className="text-xs text-muted-foreground">{authError.message}</p>
+          </div>
         </div>
       </div>
     );

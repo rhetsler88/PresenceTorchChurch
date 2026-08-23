@@ -59,8 +59,8 @@ export default function UserNotRegisteredError() {
   };
 
   return (
-    <div className="flex flex-col items-center justify-center min-h-screen bg-background safe-top p-4">
-      <div className="max-w-md w-full">
+    <div className="page-adaptive bg-background safe-top safe-bottom">
+      <div className="page-adaptive-inner w-full max-w-md mx-auto px-4 py-6">
         {step !== 3 && (
           <button
             onClick={() => logout(true)}

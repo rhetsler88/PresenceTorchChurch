@@ -51,7 +51,6 @@ public class BackgroundAudioPlugin: CAPPlugin, CAPBridgedPlugin {
 
     private func activatePlaybackSession(title: String) {
         if sessionActive {
-            updateNowPlayingInfo(title: title)
             return
         }
 
@@ -68,7 +67,6 @@ public class BackgroundAudioPlugin: CAPPlugin, CAPBridgedPlugin {
         }
 
         startSilentLoop()
-        updateNowPlayingInfo(title: title)
         sessionActive = true
     }
 
@@ -76,7 +74,6 @@ public class BackgroundAudioPlugin: CAPPlugin, CAPBridgedPlugin {
         guard sessionActive else { return }
 
         stopSilentLoop()
-        MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
 
         do {
             try AVAudioSession.sharedInstance().setActive(false, options: [.notifyOthersOnDeactivation])
@@ -88,12 +85,7 @@ public class BackgroundAudioPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     private func updateNowPlayingInfo(title: String) {
-        var info = [String: Any]()
-        info[MPMediaItemPropertyTitle] = title
-        info[MPMediaItemPropertyArtist] = currentBody
-        info[MPNowPlayingInfoPropertyPlaybackRate] = 1.0
-        info[MPNowPlayingInfoPropertyElapsedPlaybackTime] = 0.0
-        MPNowPlayingInfoCenter.default().nowPlayingInfo = info
+        // Leave MPNowPlayingInfoCenter to HeadsetPTT so earbud tap-to-talk keeps working.
     }
 
     private func startSilentLoop() {

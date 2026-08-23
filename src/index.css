@@ -121,10 +121,17 @@
     padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 0.5rem);
   }
   .bottom-tab-bar-offset {
-    bottom: calc(env(safe-area-inset-bottom, 0px) + 4.25rem);
+    bottom: calc(env(safe-area-inset-bottom, 0px) + 5rem);
   }
   .pb-talk-controls {
-    padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 13rem);
+    padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 15.5rem);
+  }
+  .talk-controls-shell {
+    background-color: hsl(var(--card));
+    border-top: 1px solid hsl(var(--border));
+    border-top-left-radius: 1rem;
+    border-top-right-radius: 1rem;
+    box-shadow: 0 -4px 16px -4px rgb(0 0 0 / 0.12);
   }
   .h-dvh {
     height: 100vh;
@@ -133,6 +140,33 @@
   .min-h-dvh {
     min-height: 100vh;
     min-height: 100dvh;
+  }
+  /* Full-viewport page: centered when content fits, scrolls when it overflows (small phones, keyboard, etc.) */
+  .page-adaptive {
+    min-height: 100vh;
+    min-height: 100dvh;
+    overflow-y: auto;
+    overscroll-behavior-y: contain;
+    -webkit-overflow-scrolling: touch;
+  }
+  .page-adaptive-inner {
+    box-sizing: border-box;
+    min-height: 100vh;
+    min-height: 100dvh;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+  }
+  /* Same scroll behavior when nested inside a flex shell (e.g. AppLayout daily-code gate) */
+  .page-adaptive-fill {
+    flex: 1 1 0%;
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior-y: contain;
+    -webkit-overflow-scrolling: touch;
+  }
+  .page-adaptive-fill > .page-adaptive-inner {
+    min-height: 100%;
   }
 }
 

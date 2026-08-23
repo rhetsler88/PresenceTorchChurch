@@ -27,6 +27,7 @@ const {
 const {
   syncMemberProfilesForChannel,
   backfillAllChannelMemberships,
+  backfillMissingUserEmails,
   repairUserAccess,
   syncChannelAccessForAuthUser,
   diagnoseUserAccess,
@@ -139,8 +140,29 @@ async function runSpeechToText(storagePath) {
   }
 
   const bucket = getStorage().bucket();
-  const [buffer] = await bucket.file(storagePath).download();
+  const gcsUri = `gs://${bucket.name}/${storagePath}`;
   const client = new speech.SpeechClient();
+
+  // Auto-detect container/codec from GCS (handles MP4/AAC, WebM, etc.).
+  try {
+    const [operation] = await client.longRunningRecognize({
+      audio: { uri: gcsUri },
+      config: {
+        languageCode: "en-US",
+        enableAutomaticPunctuation: true,
+      },
+    });
+    const [response] = await operation.promise();
+    const text = (response.results || [])
+      .map((r) => r.alternatives?.[0]?.transcript || "")
+      .join(" ")
+      .trim();
+    if (text) return text;
+  } catch (err) {
+    console.warn("longRunningRecognize (auto-detect) failed:", err.message);
+  }
+
+  const [buffer] = await bucket.file(storagePath).download();
   const audioContent = buffer.toString("base64");
 
   for (const config of SPEECH_TRY_CONFIGS) {
@@ -159,22 +181,7 @@ async function runSpeechToText(storagePath) {
     }
   }
 
-  // Long-form fallback for larger recordings.
-  const gcsUri = `gs://${bucket.name}/${storagePath}`;
-  try {
-    const [operation] = await client.longRunningRecognize({
-      audio: { uri: gcsUri },
-      config: SPEECH_TRY_CONFIGS[0],
-    });
-    const [response] = await operation.promise();
-    return (response.results || [])
-      .map((r) => r.alternatives?.[0]?.transcript || "")
-      .join(" ")
-      .trim();
-  } catch (longErr) {
-    console.warn("longRunningRecognize failed:", longErr.message);
-    return "";
-  }
+  return "";
 }
 
 async function transcribeAndUpdate(messageId, audioUrl) {
@@ -273,6 +280,21 @@ exports.backfillChannelMemberships = onCall(CALLABLE_OPTIONS, async (request) =>
   }
 
   return backfillAllChannelMemberships(db, getAuth());
+});
+
+exports.backfillMissingUserEmails = onCall(CALLABLE_OPTIONS, async (request) => {
+  if (!request.auth) {
+    throw new HttpsError("unauthenticated", "Sign in required");
+  }
+
+  const db = getFirestore();
+  const callerSnap = await db.collection("users").doc(request.auth.uid).get();
+  const role = callerSnap.data()?.role || "user";
+  if (role !== "admin" && role !== "super_admin") {
+    throw new HttpsError("permission-denied", "Admin access required");
+  }
+
+  return backfillMissingUserEmails(db, getAuth());
 });
 
 exports.syncMyChannelAccess = onCall(CALLABLE_OPTIONS, async (request) => {
@@ -806,10 +828,6 @@ function buildTextMessagePushMessage({ token, channelId, channelName, messageId,
 
   return {
     token,
-    notification: {
-      title: "Presence Torch",
-      body,
-    },
     data: {
       type: "text_message",
       channelId,
@@ -817,6 +835,8 @@ function buildTextMessagePushMessage({ token, channelId, channelName, messageId,
       messageId,
       unreadCount: String(count),
       notificationTag: tag,
+      title: "Presence Torch",
+      body,
     },
     android: {
       priority: "high",
@@ -1065,14 +1085,12 @@ exports.sendRedAlertPush = onDocumentUpdated("channels/{channelId}", async (even
   const staleTokens = new Set();
 
   const pushPayload = {
-    notification: {
-      title: "RED ALERT",
-      body: `Code Red — ${channelName} — Secure Now`,
-    },
     data: {
       type: "red_alert",
       channelName,
       channelId,
+      title: "RED ALERT",
+      body: `Code Red — ${channelName} — Secure Now`,
     },
     android: {
       priority: "high",

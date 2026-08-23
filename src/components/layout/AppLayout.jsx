@@ -14,6 +14,7 @@ import PasswordRotationReminder from "@/components/auth/PasswordRotationReminder
 import GooglePasswordSetupPrompt from "@/components/auth/GooglePasswordSetupPrompt";
 import useRedAlert from "@/hooks/useRedAlert";
 import { getLastAppRoute, saveLastAppRoute } from "@/lib/lastAppRoute";
+import { pttSurfaceFromPath, saveLastPttSurface } from "@/lib/lastPttSurface";
 import { recordSessionInteraction } from "@/lib/logoutOnClose";
 
 export default function AppLayout() {
@@ -53,6 +54,8 @@ export default function AppLayout() {
 
   useEffect(() => {
     saveLastAppRoute(location.pathname + location.search);
+    const surface = pttSurfaceFromPath(location.pathname);
+    if (surface) saveLastPttSurface(surface);
     if (user) {
       recordSessionInteraction();
     }
@@ -61,6 +64,8 @@ export default function AppLayout() {
   useEffect(() => {
     const onPause = () => {
       saveLastAppRoute(location.pathname + location.search);
+      const surface = pttSurfaceFromPath(location.pathname);
+      if (surface) saveLastPttSurface(surface);
     };
     window.addEventListener("pause", onPause);
     return () => window.removeEventListener("pause", onPause);

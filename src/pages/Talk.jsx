@@ -174,7 +174,6 @@ export default function Talk() {
   const {
     startRecording,
     stopRecording,
-    stopLiveTransmit,
   } = usePttBroadcast({
     channelId: effectiveChannelId,
     userId: user?.id,
@@ -638,8 +637,6 @@ export default function Talk() {
       api.entities.PTTSignal.delete(signalId).catch(() => {});
     }
 
-    void stopLiveTransmit();
-
     if (pttRecordingActiveRef.current) {
       pttRecordingActiveRef.current = false;
       sendMutation.mutate({
@@ -651,7 +648,7 @@ export default function Talk() {
 
     pttSessionChannelIdRef.current = null;
     pttSessionUserRef.current = null;
-  }, [sendMutation, effectiveChannelId, user, stopLiveTransmit]);
+  }, [sendMutation, effectiveChannelId, user]);
 
   const releasePttSignal = useCallback((signalId) => {
     if (!signalId) return;
@@ -815,10 +812,13 @@ export default function Talk() {
     finishPttStop();
   }, [finishPttStop]);
 
-  useRegisterPagePTTHandlers({
-    onPress: handlePTTStart,
-    onRelease: handlePTTStop,
-  });
+  useRegisterPagePTTHandlers(
+    {
+      onPress: handlePTTStart,
+      onRelease: handlePTTStop,
+    },
+    { surface: "talk" }
+  );
 
   const handlePlayMessage = (msg) => {
     if (selectionMode) return;
@@ -939,7 +939,7 @@ export default function Talk() {
       </div>
 
       {selectionMode ? (
-        <div className="fixed inset-x-0 z-40 bottom-tab-bar-offset flex items-center justify-between gap-3 px-4 py-2 bg-card border-t border-border">
+        <div className="talk-controls-shell fixed inset-x-0 z-40 bottom-tab-bar-offset flex items-center justify-between gap-3 px-4 py-3">
           <span className="text-sm font-medium text-foreground">
             {selectedIds.size} selected · tap to toggle · hold to select
           </span>
@@ -960,7 +960,7 @@ export default function Talk() {
           </div>
         </div>
       ) : (
-        <div className="fixed inset-x-0 z-40 bottom-tab-bar-offset flex flex-col items-center gap-1.5 px-4 pt-1 pb-0.5 bg-gradient-to-t from-background from-70% via-background/95 to-transparent">
+        <div className="talk-controls-shell fixed inset-x-0 z-40 bottom-tab-bar-offset flex flex-col items-center gap-2 px-4 pt-3 pb-2">
           <PTTButton
             isPressed={isPTTPressed}
             onStart={handlePTTStart}

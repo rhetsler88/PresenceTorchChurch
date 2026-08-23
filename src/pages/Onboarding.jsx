@@ -161,8 +161,9 @@ export default function Onboarding() {
 
   if (done) {
     return (
-      <div className="min-h-dvh flex items-center justify-center p-4 bg-background safe-top">
-        <div className="w-full max-w-md bg-card border border-border rounded-2xl p-8 text-center">
+      <div className="page-adaptive bg-background safe-top safe-bottom">
+        <div className="page-adaptive-inner w-full max-w-md mx-auto px-4 py-6">
+          <div className="bg-card border border-border rounded-2xl p-8 text-center">
           <div className="inline-flex items-center justify-center w-16 h-16 mb-6 rounded-full bg-green-100 dark:bg-green-900/30">
             <MailCheck className="w-8 h-8 text-green-600 dark:text-green-400" />
           </div>
@@ -196,14 +197,15 @@ export default function Onboarding() {
           <Button onClick={() => navigate("/channels")} className="w-full">
             Continue
           </Button>
+          </div>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-dvh flex items-center justify-center p-4 bg-background safe-top">
-      <div className="w-full max-w-md">
+    <div className="page-adaptive bg-background safe-top safe-bottom">
+      <div className="page-adaptive-inner w-full max-w-md mx-auto px-4 py-6">
         <button
           onClick={() => logout(true)}
           className="mb-4 text-xs text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1.5"

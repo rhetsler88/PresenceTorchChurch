@@ -19,7 +19,8 @@ import useAgoraMultiListen from "@/hooks/useAgoraMultiListen";
 import usePttReceiver from "@/hooks/usePttReceiver";
 import useBackgroundRelayListen from "@/hooks/useBackgroundRelayListen";
 import { playClearTone } from "@/lib/pttTones";
-import { maybePlayTextMessageTone } from "@/lib/textMessageNotifications";
+import { maybePlayTextMessageTone, isIncomingVoiceMessage } from "@/lib/textMessageNotifications";
+import { hasHeardBroadcast } from "@/lib/heardBroadcasts";
 import { cleanupStalePTTSignals } from "@/lib/pttSignals";
 
 const PassiveTalkListenContext = createContext(null);
@@ -133,6 +134,15 @@ export function PassiveTalkListenProvider({ user, children }) {
       (event) => {
         if (event.data?.channel_id !== listenChannelId) return;
         maybePlayTextMessageTone(event, user.id, heardBroadcastsRef.current);
+        // Voice archives are never auto-played — live Agora/relay only.
+        if (isIncomingVoiceMessage(event, user.id) && hasHeardBroadcast(
+          event.data?.broadcast_id,
+          heardBroadcastsRef,
+          relayHeardRef,
+          agoraHeardRef
+        )) {
+          return;
+        }
       },
       { channel_id: listenChannelId }
     );

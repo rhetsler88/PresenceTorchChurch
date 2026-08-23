@@ -20,13 +20,19 @@ function collectTokens(list, tokenSet) {
   });
 }
 
-function collectRegistrationTokens(registrations, tokenSet, { staffOnly = false } = {}) {
+/** One active token per user — most recently updated registration wins. */
+function collectActiveRegistrationToken(registrations, tokenSet, { staffOnly = false } = {}) {
   if (!registrations || typeof registrations !== "object") return;
-  Object.values(registrations).forEach((entry) => {
-    if (!entry?.token) return;
-    if (staffOnly && !entry.staff) return;
-    tokenSet.add(entry.token);
-  });
+
+  const entries = Object.values(registrations).filter(
+    (entry) => entry?.token && (!staffOnly || entry.staff)
+  );
+  if (entries.length === 0) return;
+
+  entries.sort((a, b) =>
+    String(b.updatedAt || "").localeCompare(String(a.updatedAt || ""))
+  );
+  tokenSet.add(entries[0].token);
 }
 
 /**
@@ -42,14 +48,18 @@ function buildRedAlertTokenSets(usersSnap, channelData) {
     const userData = { id: doc.id, email: data.email, ...data };
 
     if (receivesChannelRedAlert(userData, channelData)) {
-      collectRegistrationTokens(data.fcm_registrations, channelTokens);
-      collectTokens(data.fcm_tokens, channelTokens);
+      const before = channelTokens.size;
+      collectActiveRegistrationToken(data.fcm_registrations, channelTokens);
+      if (channelTokens.size === before) collectTokens(data.fcm_tokens, channelTokens);
     }
 
     if (isStaffAlertRecipient(userData)) {
-      collectRegistrationTokens(data.fcm_registrations, staffTokens);
-      collectTokens(data.staff_fcm_tokens, staffTokens);
-      collectTokens(data.fcm_tokens, staffTokens);
+      const before = staffTokens.size;
+      collectActiveRegistrationToken(data.fcm_registrations, staffTokens, { staffOnly: true });
+      if (staffTokens.size === before) {
+        collectTokens(data.staff_fcm_tokens, staffTokens);
+        collectTokens(data.fcm_tokens, staffTokens);
+      }
     }
   });
 
@@ -81,8 +91,8 @@ function buildTextMessageRecipients(usersSnap, channelData, senderId) {
     if (!receivesChannelRedAlert(userData, channelData)) return;
 
     const tokens = new Set();
-    collectRegistrationTokens(data.fcm_registrations, tokens);
-    collectTokens(data.fcm_tokens, tokens);
+    collectActiveRegistrationToken(data.fcm_registrations, tokens);
+    if (tokens.size === 0) collectTokens(data.fcm_tokens, tokens);
     if (tokens.size === 0) return;
 
     recipients.push({

@@ -11,6 +11,7 @@ import { deviceDayKey, deviceDayLabel } from "@/lib/deviceDate";
 import { getDisplayName, getInitials, getInitialsFromName, getMonitorChannels, getReadableVoiceChannels, canSendOnChannelForChannel } from "@/lib/userUtils";
 import { playClearTone, playBusyTone, ensureAudioReady, unlockAudioForPTT } from "@/lib/pttTones";
 import { logVoiceMessageFailure } from "@/lib/voiceMessageLogging";
+import { markBroadcastHeard, hasHeardBroadcast } from "@/lib/heardBroadcasts";
 import { auth } from "@/lib/firebase";
 import { cleanupStalePTTSignals, claimPttChannels, releasePttSignals } from "@/lib/pttSignals";
 import { playAudioUrl, stopAudio } from "@/lib/audioPlayer";
@@ -413,7 +414,6 @@ export default function Monitor() {
   const {
     startRecording,
     stopRecording,
-    stopLiveTransmit,
     heardBroadcastsRef: pttHeardRef,
   } = usePttBroadcast({
     channelId: targetChannelId,
@@ -545,13 +545,14 @@ export default function Monitor() {
 
       if (event.type !== "create") return;
 
-      // Skip activity if already heard via live Agora/relay
-      if (event.data?.broadcast_id && (
-        heardBroadcastsRef.current.has(event.data.broadcast_id)
-        || pttHeardRef.current.has(event.data.broadcast_id)
-        || passiveHeardRef?.current?.has(event.data.broadcast_id)
-        || relayHeardRef?.current?.has(event.data.broadcast_id)
-        || agoraHeardRef?.current?.has(event.data.broadcast_id)
+      // Skip notifications for broadcasts already heard live (Agora/relay/PTT signal).
+      if (hasHeardBroadcast(
+        event.data?.broadcast_id,
+        heardBroadcastsRef,
+        pttHeardRef,
+        passiveHeardRef,
+        relayHeardRef,
+        agoraHeardRef
       )) {
         return;
       }
@@ -713,8 +714,18 @@ export default function Monitor() {
         api.entities.AudioChunk.deleteMany({ broadcast_id }).catch(() => {});
       }
 
+      // Invalidate caches; voice archives are never auto-played (live Agora/relay only).
       queryClient.invalidateQueries({ queryKey: ["all-channel-messages"] });
       queryClient.invalidateQueries({ queryKey: ["all-messages"] });
+
+      markBroadcastHeard(
+        broadcast_id,
+        heardBroadcastsRef,
+        pttHeardRef,
+        passiveHeardRef,
+        relayHeardRef,
+        agoraHeardRef
+      );
 
       // Transcribe each message in the background
       created.forEach(msg => {
@@ -779,13 +790,11 @@ export default function Monitor() {
       api.entities.PTTSignal.delete(id).catch(() => {});
     });
 
-    void stopLiveTransmit();
-
     if (pttRecordingActiveRef.current) {
       pttRecordingActiveRef.current = false;
       sendMutation.mutate();
     }
-  }, [sendMutation, stopLiveTransmit]);
+  }, [sendMutation]);
 
   const handlePTTStart = useCallback(async () => {
     if (isPTTPressed || !user?.id || pttStartInFlightRef.current || pttRecordingActiveRef.current) return;
@@ -859,7 +868,7 @@ export default function Monitor() {
         }
 
         pttRecordingActiveRef.current = true;
-        heardBroadcastsRef.current.add(broadcastId);
+        markBroadcastHeard(broadcastId, heardBroadcastsRef, pttHeardRef);
 
         let signalIds = [];
         try {
@@ -951,10 +960,13 @@ export default function Monitor() {
     finishPttStop();
   }, [finishPttStop]);
 
-  useRegisterPagePTTHandlers({
-    onPress: handlePTTStart,
-    onRelease: handlePTTStop,
-  });
+  useRegisterPagePTTHandlers(
+    {
+      onPress: handlePTTStart,
+      onRelease: handlePTTStop,
+    },
+    { surface: "monitor" }
+  );
 
   const showReceiving = isLiveReceiving && !isPTTPressed;
 

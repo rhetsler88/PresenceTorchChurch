@@ -269,6 +269,12 @@ export function shouldLogoutAfterClose() {
     return shouldLogout;
   }
 
+  // Returning from Google OAuth or mid-popup sign-in — not a tab-close logout.
+  if (isOAuthRedirectPending()) {
+    markTabSessionAlive();
+    return false;
+  }
+
   const isReload = isSameTabReload();
   markTabSessionAlive();
   if (isReload) {

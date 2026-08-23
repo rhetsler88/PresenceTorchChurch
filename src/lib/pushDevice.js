@@ -3,7 +3,7 @@ import { Preferences } from "@capacitor/preferences";
 
 const DEVICE_ID_KEY = "ptc_push_device_id";
 
-function isMobileWebUserAgent() {
+export function isMobileWebUserAgent() {
   if (typeof navigator === "undefined") return false;
   return /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
 }

@@ -91,6 +91,7 @@ export default function ChannelCard({
         <div onClick={(e) => e.stopPropagation()} className="px-4 py-2 w-full">
           <ProtectionLevelControl
             level={protectionLevel || "green"}
+            channelName={channel.name}
             onChange={onProtectionChange}
           />
         </div>

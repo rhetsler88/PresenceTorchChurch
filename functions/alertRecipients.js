@@ -73,6 +73,34 @@ function buildRedAlertTokenSets(usersSnap, channelData) {
   };
 }
 
+function collectYellowProtectionTokens(usersSnap, channelDocs) {
+  const tokens = new Set();
+  const staffTokens = new Set();
+
+  channelDocs.forEach((channelDoc) => {
+    const channelData = channelDoc.data();
+    const { channelTokens, staffTokens: channelStaff } = buildRedAlertTokenSets(usersSnap, channelData);
+    channelTokens.forEach((token) => tokens.add(token));
+    channelStaff.forEach((token) => staffTokens.add(token));
+  });
+
+  staffTokens.forEach((token) => {
+    if (!tokens.has(token)) tokens.add(token);
+  });
+
+  return [...tokens];
+}
+
+/** FCM tokens for yellow protection alerts — one channel or all channels (deduped). */
+function buildYellowProtectionTokens(usersSnap, channelData, { allChannels = false, channelsSnap = null } = {}) {
+  if (allChannels && channelsSnap) {
+    return collectYellowProtectionTokens(usersSnap, channelsSnap.docs);
+  }
+  if (!channelData) return [];
+  const { channelTokens, staffTokens } = buildRedAlertTokenSets(usersSnap, channelData);
+  return [...new Set([...channelTokens, ...staffTokens])];
+}
+
 /** FCM tokens for channel members except the sender (text message alerts). */
 function buildTextMessageTokenSet(usersSnap, channelData, senderId) {
   return buildTextMessageRecipients(usersSnap, channelData, senderId).flatMap(
@@ -168,5 +196,6 @@ module.exports = {
   buildRedAlertTokenSets,
   buildTextMessageTokenSet,
   buildTextMessageRecipients,
+  buildYellowProtectionTokens,
   removeStaleTokensFromUserData,
 };

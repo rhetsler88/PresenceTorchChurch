@@ -68,6 +68,21 @@ messaging.onBackgroundMessage((payload) => {
       tag,
       data,
     });
+    return;
+  }
+
+  if (data.type === "protection_level_yellow") {
+    const title = data.title || "Presence Torch";
+    const body = data.body || `${data.channelName || "A channel"} level changed to YELLOW.`;
+    const tag = data.notificationTag || `yellow_protection_${data.channelId || "all"}`;
+
+    self.registration.showNotification(title, {
+      body,
+      icon: "/icons/icon-192.png",
+      badge: "/icons/icon-192.png",
+      tag,
+      data,
+    });
   }
 });
 

@@ -147,6 +147,9 @@ async function registerNativePushListeners(uid) {
     if (data.type === "text_message") {
       handleTextMessagePayload();
     }
+    if (data.type === "protection_level_yellow") {
+      handleTextMessagePayload();
+    }
   });
 
   await PushNotifications.addListener("pushNotificationActionPerformed", (action) => {
@@ -155,7 +158,7 @@ async function registerNativePushListeners(uid) {
       handleRedAlertPayload(data);
       return;
     }
-    if (data.type === "text_message") {
+    if (data.type === "text_message" || data.type === "protection_level_yellow") {
       void clearTextMessageNotificationsOnForeground();
     }
   });
@@ -269,6 +272,9 @@ async function initWebPush(uid, userProfile) {
       return;
     }
     if (data.type === "text_message") {
+      handleTextMessagePayload();
+    }
+    if (data.type === "protection_level_yellow") {
       handleTextMessagePayload();
     }
   });

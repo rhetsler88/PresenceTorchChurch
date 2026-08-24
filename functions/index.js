@@ -14,6 +14,7 @@ const { RtcTokenBuilder, RtcRole } = require("agora-access-token");
 const {
   buildRedAlertTokenSets,
   buildTextMessageRecipients,
+  buildYellowProtectionTokens,
   removeStaleTokensFromUserData,
 } = require("./alertRecipients");
 const {
@@ -49,6 +50,7 @@ const agoraAppCertificate = defineSecret("AGORA_APP_CERTIFICATE");
 const recaptchaSecretKey = defineSecret("RECAPTCHA_SECRET_KEY");
 
 const THROTTLE_MS = 15000;
+const YELLOW_BATCH_WAIT_MS = 800;
 const VOICE_MESSAGE_RETENTION_DAYS = 15;
 const CLEANUP_BATCH_SIZE = 500;
 
@@ -876,6 +878,154 @@ function buildTextMessagePushMessage({ token, channelId, channelName, messageId,
   };
 }
 
+function buildYellowProtectionPushMessage({ token, label, channelId = "all" }) {
+  const body = `${label} level changed to YELLOW.`;
+  const tag = channelId === "all" ? "yellow_protection_all" : `yellow_protection_${channelId}`;
+
+  return {
+    token,
+    data: {
+      type: "protection_level_yellow",
+      channelId,
+      channelName: label,
+      title: "Presence Torch",
+      body,
+      notificationTag: tag,
+    },
+    android: {
+      priority: "high",
+      collapseKey: tag,
+      notification: {
+        channelId: "text_messages",
+        tag,
+        sound: "default",
+        defaultVibrateTimings: true,
+        priority: "default",
+      },
+    },
+    apns: {
+      payload: {
+        aps: {
+          alert: {
+            title: "Presence Torch",
+            body,
+          },
+          sound: "default",
+          "thread-id": tag,
+        },
+      },
+    },
+    webpush: {
+      notification: {
+        title: "Presence Torch",
+        body,
+        icon: "https://app.presencetorch.net/icons/icon-192.png",
+        tag,
+      },
+      fcmOptions: {
+        link: "https://app.presencetorch.net/",
+      },
+    },
+  };
+}
+
+async function incrementYellowPushCoordinator(db, channelId, channelName) {
+  const ref = db.doc("system/yellowPushCoordinator");
+  return db.runTransaction(async (tx) => {
+    const snap = await tx.get(ref);
+    const data = snap.data() || {};
+    if (data.sent) return { skip: true };
+
+    const count = (data.count || 0) + 1;
+    tx.set(
+      ref,
+      {
+        count,
+        firstChannelId: data.firstChannelId || channelId,
+        firstChannelName: data.firstChannelName || channelName,
+        windowStart: data.windowStart || Date.now(),
+        sent: false,
+      },
+      { merge: true }
+    );
+    return { skip: false, count };
+  });
+}
+
+async function claimYellowPushSend(db) {
+  const ref = db.doc("system/yellowPushCoordinator");
+  return db.runTransaction(async (tx) => {
+    const snap = await tx.get(ref);
+    const data = snap.data();
+    if (!data || data.sent) return null;
+
+    tx.set(ref, { sent: true }, { merge: true });
+
+    if (data.count >= 2) {
+      return { scope: "all", label: "All Channels", channelId: "all" };
+    }
+
+    return {
+      scope: "channel",
+      label: data.firstChannelName || "A channel",
+      channelId: data.firstChannelId || "channel",
+    };
+  });
+}
+
+async function sendYellowProtectionMulticast(db, messaging, usersSnap, tokens, pushMeta) {
+  if (tokens.length === 0) return;
+
+  const chunkSize = 500;
+  const staleTokens = new Set();
+  const messages = tokens.map((token) =>
+    buildYellowProtectionPushMessage({
+      token,
+      label: pushMeta.label,
+      channelId: pushMeta.channelId,
+    })
+  );
+
+  for (let i = 0; i < messages.length; i += chunkSize) {
+    const chunk = messages.slice(i, i + chunkSize);
+    const response = await messaging.sendEach(chunk);
+
+    response.responses.forEach((result, index) => {
+      if (result.success) return;
+      const code = result.error?.code;
+      if (
+        code === "messaging/registration-token-not-registered" ||
+        code === "messaging/invalid-registration-token"
+      ) {
+        staleTokens.add(chunk[index].token);
+      }
+    });
+  }
+
+  if (staleTokens.size > 0) {
+    const batch = db.batch();
+    usersSnap.forEach((userDoc) => {
+      const { data, changed } = removeStaleTokensFromUserData(userDoc.data(), staleTokens);
+      if (!changed) return;
+      const patch = {};
+      if (data.fcm_registrations !== undefined) patch.fcm_registrations = data.fcm_registrations;
+      if (data.fcm_tokens !== undefined) patch.fcm_tokens = data.fcm_tokens;
+      if (data.staff_fcm_tokens !== undefined) patch.staff_fcm_tokens = data.staff_fcm_tokens;
+      batch.update(userDoc.ref, patch);
+    });
+    await batch.commit();
+  }
+
+  await db.collection("alertLogs").add({
+    type: "protection_level_yellow",
+    scope: pushMeta.scope,
+    channelId: pushMeta.channelId,
+    label: pushMeta.label,
+    sentAt: FieldValue.serverTimestamp(),
+    tokenCount: tokens.length,
+  });
+}
+
 exports.sendTextMessagePush = onDocumentCreated(
   { document: "voiceMessages/{messageId}" },
   async (event) => {
@@ -1055,6 +1205,39 @@ exports.recordProtectionLevelHistory = onCall(CALLABLE_OPTIONS, async (request) 
     console.error("recordProtectionLevelHistory failed:", err);
     throw new HttpsError("internal", "Could not record protection level history");
   }
+});
+
+exports.sendYellowProtectionPush = onDocumentUpdated("channels/{channelId}", async (event) => {
+  const before = event.data.before.data();
+  const after = event.data.after.data();
+
+  if (!before || !after) return;
+  if (before.protection_level === "yellow" || after.protection_level !== "yellow") return;
+
+  const db = getFirestore();
+  const channelId = event.params.channelId;
+  const channelName = after.name || "A channel";
+  const increment = await incrementYellowPushCoordinator(db, channelId, channelName);
+  if (increment.skip) return;
+
+  await new Promise((resolve) => setTimeout(resolve, YELLOW_BATCH_WAIT_MS));
+
+  const pushMeta = await claimYellowPushSend(db);
+  if (!pushMeta) return;
+
+  const usersSnap = await db.collection("users").get();
+  const messaging = getMessaging();
+  let tokens = [];
+
+  if (pushMeta.scope === "all") {
+    const channelsSnap = await db.collection("channels").get();
+    tokens = buildYellowProtectionTokens(usersSnap, null, { allChannels: true, channelsSnap });
+  } else {
+    tokens = buildYellowProtectionTokens(usersSnap, after);
+  }
+
+  await sendYellowProtectionMulticast(db, messaging, usersSnap, tokens, pushMeta);
+  await db.doc("system/yellowPushCoordinator").delete().catch(() => {});
 });
 
 exports.sendRedAlertPush = onDocumentUpdated("channels/{channelId}", async (event) => {

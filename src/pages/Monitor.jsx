@@ -124,6 +124,7 @@ function ChannelMonitorCard({
       <div className="px-4 py-2 border-b border-border">
         <ProtectionLevelControl
           level={channel.protection_level}
+          channelName={channel.name}
           onChange={(lvl) => onSetProtectionLevel(channel.id, lvl)}
         />
       </div>

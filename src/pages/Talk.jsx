@@ -664,7 +664,7 @@ export default function Talk() {
       || !user?.id
       || !canSendPtt
       || pttStartInFlightRef.current
-      || isPTTPressed
+      || isPTTPressedRef.current
       || pttRecordingActiveRef.current
     ) {
       return;
@@ -676,7 +676,6 @@ export default function Talk() {
 
     recordSessionInteraction();
     unlockAudioForPTT();
-    playClearTone();
 
     pttSessionChannelIdRef.current = effectiveChannelId;
     pttSessionUserRef.current = user;
@@ -711,6 +710,7 @@ export default function Talk() {
 
         pttRecordingActiveRef.current = true;
         activeLiveBroadcastRef.current = broadcastId;
+        playClearTone();
 
         void cleanupStalePTTSignals({
           channelId: effectiveChannelId,
@@ -733,7 +733,6 @@ export default function Talk() {
           return { pendingSend: true, signalId: null };
         }
 
-        playClearTone();
         return { ok: true };
       } catch (e) {
         return { startFailed: true, error: e };
@@ -786,7 +785,6 @@ export default function Talk() {
     }
   }, [
     activeChannel,
-    isPTTPressed,
     channelLiveActive,
     isChannelBusy,
     startRecording,

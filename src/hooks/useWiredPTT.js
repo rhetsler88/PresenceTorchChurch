@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { Capacitor } from "@capacitor/core";
-import { isNativeHeadsetPTTAvailable, startNativeHeadsetPTT } from "@/lib/headsetPTT";
+import { isNativeHeadsetPTTAvailable, startNativeHeadsetPTT, setNativeEarbudToggleMode, setNativeHeadsetTransmitting } from "@/lib/headsetPTT";
 import { getEarbudToggleMode, PTT_TOGGLE_MAX_MS } from "@/lib/pttSettings";
 
 /** Keys commonly sent by HID / media-style Bluetooth PTT buttons. */
@@ -75,6 +75,7 @@ export default function useWiredPTT({ onPress, onRelease }) {
     clearAutoStopTimer();
     toggleActiveRef.current = false;
     pressedRef.current = false;
+    void setNativeHeadsetTransmitting(false);
     callbacksRef.current.onRelease?.();
   }, [clearAutoStopTimer]);
 
@@ -84,6 +85,7 @@ export default function useWiredPTT({ onPress, onRelease }) {
     toggleStartedAtRef.current = Date.now();
     pressedRef.current = true;
     clearAutoStopTimer();
+    void setNativeHeadsetTransmitting(true);
     callbacksRef.current.onPress?.();
     autoStopTimerRef.current = setTimeout(() => {
       stopTogglePtt();
@@ -102,10 +104,22 @@ export default function useWiredPTT({ onPress, onRelease }) {
     }
   }, [startTogglePtt, stopTogglePtt]);
 
+  /** iOS wired/Bluetooth remotes often send play on first press and pause on second. */
+  const handleToggleRemoteDown = useCallback(() => {
+    if (toggleActiveRef.current) return;
+    startTogglePtt();
+  }, [startTogglePtt]);
+
+  const handleToggleRemoteUp = useCallback(() => {
+    if (!toggleActiveRef.current) return;
+    stopTogglePtt();
+  }, [stopTogglePtt]);
+
   const handlePress = useCallback(() => {
     if (pressedRef.current) return;
     pressedRef.current = true;
     clearReleaseTimer();
+    void setNativeHeadsetTransmitting(true);
     callbacksRef.current.onPress?.();
   }, [clearReleaseTimer]);
 
@@ -113,6 +127,7 @@ export default function useWiredPTT({ onPress, onRelease }) {
     if (!pressedRef.current) return;
     releaseTimerRef.current = setTimeout(() => {
       pressedRef.current = false;
+      void setNativeHeadsetTransmitting(false);
       callbacksRef.current.onRelease?.();
     }, 150);
   }, []);
@@ -130,15 +145,27 @@ export default function useWiredPTT({ onPress, onRelease }) {
 
   useEffect(() => {
     if (!isNativeHeadsetPTTAvailable()) return undefined;
+    void setNativeEarbudToggleMode(earbudToggleMode);
+  }, [earbudToggleMode]);
+
+  useEffect(() => {
+    if (!isNativeHeadsetPTTAvailable()) return undefined;
 
     let cleanup = () => {};
     let cancelled = false;
 
-    startNativeHeadsetPTT(
-      earbudToggleMode
-        ? { onTap: handleMediaTap }
-        : { onDown: handleHoldMediaDown, onUp: handleHoldMediaUp }
-    ).then((stop) => {
+    const isIOS = Capacitor.getPlatform() === "ios";
+    const nativeHandlers = earbudToggleMode
+      ? (isIOS
+        ? {
+            onTap: handleMediaTap,
+            onDown: handleToggleRemoteDown,
+            onUp: handleToggleRemoteUp,
+          }
+        : { onTap: handleMediaTap })
+      : { onDown: handleHoldMediaDown, onUp: handleHoldMediaUp };
+
+    startNativeHeadsetPTT({ ...nativeHandlers, earbudToggleMode }).then((stop) => {
       if (cancelled) {
         stop();
         return;
@@ -150,7 +177,14 @@ export default function useWiredPTT({ onPress, onRelease }) {
       cancelled = true;
       cleanup();
     };
-  }, [earbudToggleMode, handleMediaTap, handleHoldMediaDown, handleHoldMediaUp]);
+  }, [
+    earbudToggleMode,
+    handleMediaTap,
+    handleToggleRemoteDown,
+    handleToggleRemoteUp,
+    handleHoldMediaDown,
+    handleHoldMediaUp,
+  ]);
 
   useEffect(() => {
     if (Capacitor.isNativePlatform()) return undefined;

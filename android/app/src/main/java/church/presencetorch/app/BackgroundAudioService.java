@@ -32,8 +32,7 @@ public class BackgroundAudioService extends Service {
     public static final String EXTRA_SILENT = "silent";
 
     private static final int NOTIFICATION_ID = 41001;
-    private static final String CHANNEL_ID = "presence_torch_background_listen_v2";
-    private static final String CHANNEL_ID_SILENT = "presence_torch_background_listen_silent_v2";
+    private static final String CHANNEL_ID = "presence_torch_background_listen_v3";
     private static final int SAMPLE_RATE = 44100;
 
     private static volatile boolean sessionActive = false;
@@ -213,29 +212,32 @@ public class BackgroundAudioService extends Service {
             PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE
         );
 
-        String channelId = silentNotification ? CHANNEL_ID_SILENT : CHANNEL_ID;
-        NotificationCompat.Builder builder = new NotificationCompat.Builder(this, channelId)
+        String displayTitle = (title != null && !title.isEmpty())
+            ? title
+            : getString(R.string.background_audio_default_title);
+        String displayBody = (currentBody != null && !currentBody.isEmpty())
+            ? currentBody
+            : getString(R.string.background_audio_notification_text);
+
+        NotificationCompat.Builder builder = new NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(R.mipmap.ic_launcher)
+            .setContentTitle(displayTitle)
+            .setContentText(displayBody)
             .setOngoing(true)
+            .setAutoCancel(false)
             .setOnlyAlertOnce(true)
             .setContentIntent(pendingIntent)
             .setCategory(NotificationCompat.CATEGORY_SERVICE)
-            .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE);
+            .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
+            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC);
 
         if (silentNotification) {
             builder
-                .setContentTitle("")
-                .setContentText("")
-                .setPriority(NotificationCompat.PRIORITY_MIN)
                 .setSilent(true)
                 .setShowWhen(false)
-                .setVisibility(NotificationCompat.VISIBILITY_SECRET);
+                .setPriority(NotificationCompat.PRIORITY_LOW);
         } else {
-            builder
-                .setContentTitle(title)
-                .setContentText(currentBody != null ? currentBody : getString(R.string.background_audio_notification_text))
-                .setPriority(NotificationCompat.PRIORITY_DEFAULT)
-                .setVisibility(NotificationCompat.VISIBILITY_PUBLIC);
+            builder.setPriority(NotificationCompat.PRIORITY_DEFAULT);
         }
 
         return builder.build();
@@ -252,9 +254,9 @@ public class BackgroundAudioService extends Service {
         }
 
         NotificationChannel channel = new NotificationChannel(
-            silentNotification ? CHANNEL_ID_SILENT : CHANNEL_ID,
+            CHANNEL_ID,
             getString(R.string.background_audio_channel_name),
-            silentNotification ? NotificationManager.IMPORTANCE_MIN : NotificationManager.IMPORTANCE_DEFAULT
+            silentNotification ? NotificationManager.IMPORTANCE_LOW : NotificationManager.IMPORTANCE_DEFAULT
         );
         channel.setDescription(getString(R.string.background_audio_channel_description));
         channel.setShowBadge(false);
@@ -400,6 +402,12 @@ public class BackgroundAudioService extends Service {
         releaseWakeLock();
         sessionActive = false;
         super.onDestroy();
+    }
+
+    @Override
+    public void onTaskRemoved(Intent rootIntent) {
+        stopForegroundSession();
+        super.onTaskRemoved(rootIntent);
     }
 
     @Override

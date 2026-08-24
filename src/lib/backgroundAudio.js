@@ -93,6 +93,17 @@ export async function stopBackgroundAudio() {
   }
 }
 
+/** Stop every native background listen session (sign-out / task removed). */
+export async function stopAllBackgroundAudio() {
+  if (!isBackgroundAudioAvailable()) return;
+  sessionRefCount = 0;
+  backgroundSessionPaused = false;
+  await BackgroundAudio.stopSession().catch(() => {});
+  activeTitle = "Presence Torch";
+  activeBody = formatActiveChannelsBody(1);
+  activeSilent = false;
+}
+
 /** Pause native background listen for mic capture — keeps ref count for restart. */
 export async function forceStopBackgroundAudio() {
   if (!isBackgroundAudioAvailable() || sessionRefCount === 0) return;

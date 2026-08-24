@@ -3,6 +3,7 @@ package church.presencetorch.app;
 import android.content.Context;
 import android.media.AudioManager;
 import android.support.v4.media.session.MediaSessionCompat;
+import android.support.v4.media.session.PlaybackStateCompat;
 import android.view.KeyEvent;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
@@ -19,10 +20,14 @@ public class HeadsetPTTPlugin extends Plugin {
     private AudioManager audioManager;
     private AudioManager.OnAudioFocusChangeListener audioFocusListener;
     private boolean listening = false;
+    private boolean earbudToggleMode = false;
+    private boolean transmitting = false;
     private long lastDownEventTime = -1;
     private int lastDownKeyCode = -1;
     private long lastUpEventTime = -1;
     private int lastUpKeyCode = -1;
+    private long lastToggleTapEventTime = -1;
+    private int lastToggleTapKeyCode = -1;
 
     @Override
     public void load() {
@@ -60,7 +65,28 @@ public class HeadsetPTTPlugin extends Plugin {
     public void stopListening(PluginCall call) {
         getActivity().runOnUiThread(() -> {
             listening = false;
+            transmitting = false;
             deactivateMediaSession();
+            call.resolve();
+        });
+    }
+
+    @PluginMethod
+    public void setEarbudToggleMode(PluginCall call) {
+        Boolean enabled = call.getBoolean("enabled", false);
+        getActivity().runOnUiThread(() -> {
+            earbudToggleMode = enabled != null && enabled;
+            updatePlaybackState();
+            call.resolve();
+        });
+    }
+
+    @PluginMethod
+    public void setTransmitting(PluginCall call) {
+        Boolean active = call.getBoolean("transmitting", false);
+        getActivity().runOnUiThread(() -> {
+            transmitting = active != null && active;
+            updatePlaybackState();
             call.resolve();
         });
     }
@@ -81,6 +107,25 @@ public class HeadsetPTTPlugin extends Plugin {
         int keyCode = event.getKeyCode();
         long eventTime = event.getEventTime();
 
+        // Pixel Buds and most Android remotes deliver a full click as DOWN then UP.
+        // Toggle mode fires one pttTap on UP so the release of the first click does not stop TX,
+        // and the second click UP reliably stops even while the mic holds audio focus.
+        if (earbudToggleMode) {
+            if (action == KeyEvent.ACTION_UP) {
+                if (eventTime == lastToggleTapEventTime && keyCode == lastToggleTapKeyCode) {
+                    return true;
+                }
+                lastToggleTapEventTime = eventTime;
+                lastToggleTapKeyCode = keyCode;
+                notifyPttTap();
+                return true;
+            }
+            if (action == KeyEvent.ACTION_DOWN) {
+                return true;
+            }
+            return false;
+        }
+
         if (action == KeyEvent.ACTION_DOWN) {
             if (eventTime == lastDownEventTime && keyCode == lastDownKeyCode) {
                 return true;
@@ -88,7 +133,6 @@ public class HeadsetPTTPlugin extends Plugin {
             lastDownEventTime = eventTime;
             lastDownKeyCode = keyCode;
             notifyPttDown();
-            notifyPttTap();
             return true;
         }
 
@@ -159,6 +203,30 @@ public class HeadsetPTTPlugin extends Plugin {
         }
 
         mediaSession.setActive(true);
+        updatePlaybackState();
+    }
+
+    private void updatePlaybackState() {
+        if (mediaSession == null) {
+            return;
+        }
+
+        long actions =
+            PlaybackStateCompat.ACTION_PLAY
+                | PlaybackStateCompat.ACTION_PAUSE
+                | PlaybackStateCompat.ACTION_PLAY_PAUSE
+                | PlaybackStateCompat.ACTION_STOP;
+
+        int state = transmitting
+            ? PlaybackStateCompat.STATE_PLAYING
+            : PlaybackStateCompat.STATE_PAUSED;
+
+        mediaSession.setPlaybackState(
+            new PlaybackStateCompat.Builder()
+                .setActions(actions)
+                .setState(state, PlaybackStateCompat.PLAYBACK_POSITION_UNKNOWN, transmitting ? 1.0f : 0.0f)
+                .build()
+        );
     }
 
     private void deactivateMediaSession() {

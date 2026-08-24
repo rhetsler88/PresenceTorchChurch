@@ -1,16 +1,85 @@
 import { useState, useRef, useCallback, useEffect } from "react";
+import { Capacitor } from "@capacitor/core";
 import { ensureBluetoothPermissions } from "@/lib/bluetoothPermissions";
+import {
+  BLE_OPTIONAL_SERVICES,
+  PTT_CHAR_UUID,
+  PTT_SERVICE_UUID,
+  parseBleButtonState,
+} from "@/lib/blePttConstants";
 
-// Common service UUIDs for Bluetooth PTT / HID buttons
-const OPTIONAL_SERVICES = [
-  "00001812-0000-1000-8000-00805f9b34fb", // Human Interface Device
-  "00001800-0000-1000-8000-00805f9b34fb", // Generic Access
-  "00001801-0000-1000-8000-00805f9b34fb", // Generic Attribute
-  "0000180f-0000-1000-8000-00805f9b34fb", // Battery Service
-  "0000180a-0000-1000-8000-00805f9b34fb", // Device Information
-  "0000fe59-0000-1000-8000-00805f9b34fb", // Common custom (Nordic UART)
-  "0000fff0-0000-1000-8000-00805f9b34fb", // Common custom button service
-];
+function hasWebBluetooth() {
+  return typeof navigator !== "undefined" && !!navigator.bluetooth;
+}
+
+function hasNativeBlePlugin() {
+  return Capacitor.isNativePlatform();
+}
+
+async function loadBleClient() {
+  const mod = await import("@capacitor-community/bluetooth-le");
+  return mod.BleClient;
+}
+
+async function subscribeWebBluetoothNotifications(device, onValueChanged) {
+  const server = await device.gatt.connect();
+  const services = await server.getPrimaryServices();
+  const foundCharacteristics = [];
+
+  for (const service of services) {
+    try {
+      const characteristics = await service.getCharacteristics();
+      for (const char of characteristics) {
+        if (char.properties.notify) {
+          char.addEventListener("characteristicvaluechanged", onValueChanged);
+          await char.startNotifications();
+          foundCharacteristics.push(char);
+        }
+      }
+    } catch {
+      // Some services may not be accessible — skip them
+    }
+  }
+
+  return foundCharacteristics;
+}
+
+async function subscribeNativeBleNotifications(deviceId, onValueChanged) {
+  const BleClient = await loadBleClient();
+  await BleClient.discoverServices(deviceId);
+  const services = await BleClient.getServices(deviceId);
+  const subscribed = [];
+
+  const trySubscribe = async (serviceUuid, characteristicUuid) => {
+    try {
+      await BleClient.startNotifications(
+        deviceId,
+        serviceUuid,
+        characteristicUuid,
+        (value) => onValueChanged({ target: { value } })
+      );
+      subscribed.push({ serviceUuid, characteristicUuid });
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
+  if (await trySubscribe(PTT_SERVICE_UUID, PTT_CHAR_UUID)) {
+    return subscribed;
+  }
+
+  for (const service of services) {
+    for (const characteristic of service.characteristics ?? []) {
+      if (!characteristic.properties?.notify) continue;
+      if (await trySubscribe(service.uuid, characteristic.uuid)) {
+        return subscribed;
+      }
+    }
+  }
+
+  return subscribed;
+}
 
 export default function useBluetoothPTT({ onPress, onRelease }) {
   const [isConnected, setIsConnected] = useState(false);
@@ -18,21 +87,22 @@ export default function useBluetoothPTT({ onPress, onRelease }) {
   const [isConnecting, setIsConnecting] = useState(false);
   const [error, setError] = useState(null);
   const deviceRef = useRef(null);
-  const characteristicsRef = useRef([]);
+  const nativeDeviceIdRef = useRef(null);
+  const nativeSubscriptionsRef = useRef([]);
+  const webCharacteristicsRef = useRef([]);
   const pressStateRef = useRef(false);
   const callbacksRef = useRef({ onPress, onRelease });
+  const bleInitializedRef = useRef(false);
+
+  const isSupported = hasWebBluetooth() || hasNativeBlePlugin();
 
   useEffect(() => {
     callbacksRef.current = { onPress, onRelease };
   }, [onPress, onRelease]);
 
-  const isSupported = typeof navigator !== "undefined" && !!navigator.bluetooth;
-
   const handleValueChanged = useCallback((event) => {
-    const value = event.target.value;
-    const data = new Uint8Array(value.buffer);
-    // Treat any non-zero byte as a button press
-    const isPressed = data.some(byte => byte !== 0);
+    const value = event.target?.value ?? event;
+    const isPressed = parseBleButtonState(value);
 
     if (isPressed && !pressStateRef.current) {
       pressStateRef.current = true;
@@ -47,68 +117,120 @@ export default function useBluetoothPTT({ onPress, onRelease }) {
     setIsConnected(false);
     setDeviceName(null);
     pressStateRef.current = false;
+    nativeDeviceIdRef.current = null;
+    nativeSubscriptionsRef.current = [];
+    webCharacteristicsRef.current = [];
   }, []);
 
+  const connectNative = useCallback(async () => {
+    const BleClient = await loadBleClient();
+    if (!bleInitializedRef.current) {
+      await BleClient.initialize({ androidNeverForLocation: true });
+      bleInitializedRef.current = true;
+    }
+
+    await ensureBluetoothPermissions();
+
+    const device = await BleClient.requestDevice({
+      services: [PTT_SERVICE_UUID, ...BLE_OPTIONAL_SERVICES],
+      optionalServices: BLE_OPTIONAL_SERVICES,
+    });
+
+    await BleClient.connect(device.deviceId, () => handleDisconnected());
+    nativeDeviceIdRef.current = device.deviceId;
+
+    const subscriptions = await subscribeNativeBleNotifications(
+      device.deviceId,
+      handleValueChanged
+    );
+
+    if (subscriptions.length === 0) {
+      await BleClient.disconnect(device.deviceId);
+      nativeDeviceIdRef.current = null;
+      setError(
+        "Device connected but no PTT button notifications were found. Check that the button exposes service FFF0 / characteristic FFF1."
+      );
+      return;
+    }
+
+    nativeSubscriptionsRef.current = subscriptions;
+    deviceRef.current = device;
+    setDeviceName(device.name || "BLE PTT Button");
+    setIsConnected(true);
+  }, [handleDisconnected, handleValueChanged]);
+
+  const connectWeb = useCallback(async () => {
+    /** @type {BluetoothDevice} */
+    const device = await navigator.bluetooth.requestDevice({
+      acceptAllDevices: true,
+      optionalServices: BLE_OPTIONAL_SERVICES,
+    });
+
+    deviceRef.current = device;
+    device.addEventListener("gattserverdisconnected", handleDisconnected);
+
+    const foundCharacteristics = await subscribeWebBluetoothNotifications(
+      device,
+      handleValueChanged
+    );
+
+    if (foundCharacteristics.length === 0) {
+      device.removeEventListener("gattserverdisconnected", handleDisconnected);
+      device.gatt.disconnect();
+      deviceRef.current = null;
+      setError(
+        "Device connected but no button events were detected. Most buttons work when paired in your phone's Bluetooth settings — no in-app pairing needed. Open Talk and press the button."
+      );
+      return;
+    }
+
+    webCharacteristicsRef.current = foundCharacteristics;
+    setDeviceName(device.name || "Bluetooth Button");
+    setIsConnected(true);
+  }, [handleDisconnected, handleValueChanged]);
+
   const connect = useCallback(async () => {
-    if (!navigator.bluetooth) return;
+    if (!isSupported) return;
     setIsConnecting(true);
     setError(null);
     try {
-      await ensureBluetoothPermissions();
-      /** @type {any} */
-      /** @type {any} */
-      const device = await navigator.bluetooth.requestDevice({
-        acceptAllDevices: true,
-        optionalServices: OPTIONAL_SERVICES,
-      });
-
-      deviceRef.current = device;
-      device.addEventListener("gattserverdisconnected", handleDisconnected);
-
-      const server = await device.gatt.connect();
-      const services = await server.getPrimaryServices();
-      const foundCharacteristics = [];
-
-      for (const service of services) {
-        try {
-          const characteristics = await service.getCharacteristics();
-          for (const char of characteristics) {
-            if (char.properties.notify) {
-              char.addEventListener("characteristicvaluechanged", handleValueChanged);
-              await char.startNotifications();
-              foundCharacteristics.push(char);
-            }
-          }
-        } catch {
-          // Some services may not be accessible — skip them
-        }
+      if (hasWebBluetooth()) {
+        await connectWeb();
+      } else {
+        await connectNative();
       }
-
-      if (foundCharacteristics.length === 0) {
-        device.removeEventListener("gattserverdisconnected", handleDisconnected);
-        device.gatt.disconnect();
-        deviceRef.current = null;
-        setError(
-          "Device connected but no button events were detected. Most buttons work when paired in your phone's Bluetooth settings — no in-app pairing needed. Open Talk and press the button."
-        );
-        return;
-      }
-
-      characteristicsRef.current = foundCharacteristics;
-      setDeviceName(device.name || "Bluetooth Button");
-      setIsConnected(true);
     } catch (err) {
       setError(err.message || "Failed to connect");
     } finally {
       setIsConnecting(false);
     }
-  }, [handleValueChanged, handleDisconnected]);
+  }, [connectNative, connectWeb, isSupported]);
 
-  const disconnect = useCallback(() => {
+  const disconnect = useCallback(async () => {
+    if (nativeDeviceIdRef.current) {
+      try {
+        const BleClient = await loadBleClient();
+        for (const sub of nativeSubscriptionsRef.current) {
+          await BleClient.stopNotifications(
+            nativeDeviceIdRef.current,
+            sub.serviceUuid,
+            sub.characteristicUuid
+          ).catch(() => {});
+        }
+        await BleClient.disconnect(nativeDeviceIdRef.current).catch(() => {});
+      } catch {
+        // ignore native disconnect errors
+      }
+    }
+
     if (deviceRef.current?.gatt?.connected) {
       deviceRef.current.gatt.disconnect();
     }
-    characteristicsRef.current = [];
+
+    deviceRef.current = null;
+    nativeDeviceIdRef.current = null;
+    nativeSubscriptionsRef.current = [];
+    webCharacteristicsRef.current = [];
     setIsConnected(false);
     setDeviceName(null);
     setError(null);
@@ -117,11 +239,9 @@ export default function useBluetoothPTT({ onPress, onRelease }) {
 
   useEffect(() => {
     return () => {
-      if (deviceRef.current?.gatt?.connected) {
-        deviceRef.current.gatt.disconnect();
-      }
+      void disconnect();
     };
-  }, []);
+  }, [disconnect]);
 
   return { isSupported, isConnected, isConnecting, deviceName, error, connect, disconnect };
 }

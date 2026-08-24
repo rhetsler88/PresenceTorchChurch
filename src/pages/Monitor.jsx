@@ -813,7 +813,6 @@ export default function Monitor() {
 
     recordSessionInteraction();
     unlockAudioForPTT();
-    playClearTone();
     isPTTPressedRef.current = true;
     setIsPTTPressed(true);
     pttStopPendingRef.current = false;
@@ -869,6 +868,7 @@ export default function Monitor() {
 
         pttRecordingActiveRef.current = true;
         markBroadcastHeard(broadcastId, heardBroadcastsRef, pttHeardRef);
+        playClearTone();
 
         let signalIds = [];
         try {
@@ -885,7 +885,6 @@ export default function Monitor() {
           return { pendingSend: true };
         }
 
-        playClearTone();
         return { ok: true };
       } catch (e) {
         return { startFailed: true, error: e };

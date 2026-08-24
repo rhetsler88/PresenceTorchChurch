@@ -5,6 +5,7 @@ import { doc, getDoc, setDoc, collection, query, where, limit, getDocs } from "f
 import { auth, db } from "@/lib/firebase";
 import { authApi } from "@/api/client";
 import { initPushNotifications, teardownPushNotifications, refreshWebPushAfterInstall } from "@/lib/pushNotifications";
+import { stopAllBackgroundAudio } from "@/lib/backgroundAudio";
 import { clearDailyCodeSession } from "@/lib/dailyCode";
 import {
   clearOAuthRedirectPending,
@@ -593,6 +594,7 @@ export const AuthProvider = ({ children }) => {
       clearDailyCodeSession();
       clearBackgroundPending();
       clearLastAppRoute();
+      await stopAllBackgroundAudio();
       await teardownPushNotifications();
       await authApi.logout();
       applySignedOut();

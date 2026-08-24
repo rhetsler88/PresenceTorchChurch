@@ -9,6 +9,8 @@ public class HeadsetPTTPlugin: CAPPlugin, CAPBridgedPlugin {
     public let pluginMethods: [CAPPluginMethod] = [
         CAPPluginMethod(name: "startListening", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "stopListening", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "setEarbudToggleMode", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "setTransmitting", returnType: CAPPluginReturnPromise),
     ]
 
     private var isListening = false
@@ -33,6 +35,14 @@ public class HeadsetPTTPlugin: CAPPlugin, CAPBridgedPlugin {
             self.clearNowPlayingInfo()
             call.resolve()
         }
+    }
+
+    @objc func setEarbudToggleMode(_ call: CAPPluginCall) {
+        call.resolve()
+    }
+
+    @objc func setTransmitting(_ call: CAPPluginCall) {
+        call.resolve()
     }
 
     private func activateAudioSession() {

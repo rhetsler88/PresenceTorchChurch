@@ -10,6 +10,14 @@ const config: CapacitorConfig = {
       skipNativeAuth: true,
       providers: ['google.com'],
     },
+    BluetoothLe: {
+      displayStrings: {
+        scanning: 'Scanning for PTT buttons…',
+        cancel: 'Cancel',
+        availableDevices: 'Available PTT buttons',
+        noDeviceFound: 'No PTT button found',
+      },
+    },
   },
 };
 

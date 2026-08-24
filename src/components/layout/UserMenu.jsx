@@ -70,15 +70,16 @@ export default function UserMenu() {
             Earbud tap-to-talk
           </DropdownMenuCheckboxItem>
           <DropdownMenuLabel className="text-xs text-muted-foreground font-normal leading-snug whitespace-normal">
-            Tap once on earbuds to start talking, tap again to stop, or auto-stops after 30 seconds.
+            Tap once on earbuds to start talking, tap again to stop, or auto-stops after 45 seconds.
             Dedicated PTT buttons still use push-and-hold.
           </DropdownMenuLabel>
-          {bluetooth?.isSupported && (
+          {bluetooth && (
             <>
               <DropdownMenuItem
-                disabled={bluetooth.isConnecting}
+                disabled={!bluetooth.isSupported || bluetooth.isConnecting}
                 onSelect={(event) => {
                   event.preventDefault();
+                  if (!bluetooth.isSupported) return;
                   if (bluetooth.isConnected) {
                     bluetooth.disconnect();
                     return;
@@ -101,9 +102,14 @@ export default function UserMenu() {
                 )}
               </DropdownMenuItem>
               <DropdownMenuLabel className="text-xs text-muted-foreground font-normal leading-snug whitespace-normal">
-                Most Bluetooth buttons work when paired in your phone&apos;s Bluetooth settings.
-                Open Talk or Monitor and press the button — no in-app pairing needed.
+                Pair a BLE GATT button (service FFF0) or use buttons already paired in your phone&apos;s Bluetooth settings.
+                Hold-to-talk on external buttons; earbud tap-to-talk uses the toggle above.
               </DropdownMenuLabel>
+              {!bluetooth.isSupported && (
+                <DropdownMenuLabel className="text-xs text-muted-foreground font-normal leading-snug whitespace-normal">
+                  BLE pairing requires the mobile app (Android or iOS).
+                </DropdownMenuLabel>
+              )}
               {bluetooth.error && (
                 <DropdownMenuLabel className="text-xs text-destructive font-normal leading-snug whitespace-normal">
                   {bluetooth.error}

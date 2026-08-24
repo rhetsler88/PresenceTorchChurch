@@ -252,7 +252,6 @@ export default function useGlobalPTT() {
 
     recordSessionInteraction();
     unlockAudioForPTT();
-    playClearTone();
     isPTTPressedRef.current = true;
     pttStopPendingRef.current = false;
     pttRecordingActiveRef.current = false;
@@ -307,6 +306,7 @@ export default function useGlobalPTT() {
         }
 
         pttRecordingActiveRef.current = true;
+        playClearTone();
 
         if (monitorMode) {
           try {

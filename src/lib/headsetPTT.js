@@ -6,22 +6,15 @@ export function isNativeHeadsetPTTAvailable() {
   return Capacitor.isNativePlatform() && Capacitor.isPluginAvailable("HeadsetPTT");
 }
 
-export async function setNativeEarbudToggleMode(enabled) {
-  if (!isNativeHeadsetPTTAvailable()) return;
-  await HeadsetPTT.setEarbudToggleMode({ enabled: !!enabled }).catch(() => {});
-}
-
 export async function setNativeHeadsetTransmitting(transmitting) {
   if (!isNativeHeadsetPTTAvailable()) return;
   await HeadsetPTT.setTransmitting({ transmitting: !!transmitting }).catch(() => {});
 }
 
-export async function startNativeHeadsetPTT({ onDown, onUp, onTap, earbudToggleMode = false } = {}) {
+export async function startNativeHeadsetPTT({ onDown, onUp } = {}) {
   if (!isNativeHeadsetPTTAvailable()) {
     return () => {};
   }
-
-  await setNativeEarbudToggleMode(earbudToggleMode);
 
   const handles = [];
   if (onDown) {
@@ -29,9 +22,6 @@ export async function startNativeHeadsetPTT({ onDown, onUp, onTap, earbudToggleM
   }
   if (onUp) {
     handles.push(await HeadsetPTT.addListener("pttUp", () => onUp()));
-  }
-  if (onTap) {
-    handles.push(await HeadsetPTT.addListener("pttTap", () => onTap()));
   }
 
   await HeadsetPTT.startListening();

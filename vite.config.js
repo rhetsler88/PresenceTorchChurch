@@ -55,6 +55,7 @@ export default defineConfig({
       },
       workbox: {
         globPatterns: ['**/*.{js,css,html,ico,png,svg,webp,woff2,wasm}'],
+        globIgnores: ['**/denoise_voice_core_bg*.wasm'],
         importScripts: ['firebase-messaging-sw.js'],
         navigateFallback: 'index.html',
         navigateFallbackDenylist: [/^\/api\//],

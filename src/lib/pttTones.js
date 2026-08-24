@@ -91,13 +91,24 @@ export function playBusyTone() {
 }
 
 let lastTextMessageToneAt = 0;
+let lastYellowProtectionToneAt = 0;
 
 // Single short ding — incoming text message on a channel
 export function playTextMessageTone() {
   const now = Date.now();
   if (now - lastTextMessageToneAt < 300) return;
   lastTextMessageToneAt = now;
-  void playTone(880, 0.12, 0, 0.28, "sine");
+  void playTone(880, 0.14, 0, 0.4, "sine");
+}
+
+// Three rising beeps — protection level changed to YELLOW
+export function playYellowProtectionTone() {
+  const now = Date.now();
+  if (now - lastYellowProtectionToneAt < 600) return;
+  lastYellowProtectionToneAt = now;
+  void playTone(740, 0.16, 0, 0.5, "sine");
+  void playTone(880, 0.16, 0.2, 0.5, "sine");
+  void playTone(1040, 0.2, 0.4, 0.5, "sine");
 }
 
 // 8 urgent alert beeps — protection level changed to RED

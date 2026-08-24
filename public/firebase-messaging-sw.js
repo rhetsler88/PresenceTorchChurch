@@ -72,7 +72,7 @@ messaging.onBackgroundMessage((payload) => {
   }
 
   if (data.type === "protection_level_yellow") {
-    const title = data.title || "Presence Torch";
+    const title = data.title || "YELLOW ALERT";
     const body = data.body || `${data.channelName || "A channel"} level changed to YELLOW.`;
     const tag = data.notificationTag || `yellow_protection_${data.channelId || "all"}`;
 
@@ -81,6 +81,8 @@ messaging.onBackgroundMessage((payload) => {
       icon: "/icons/icon-192.png",
       badge: "/icons/icon-192.png",
       tag,
+      renotify: true,
+      vibrate: [200, 100, 200, 100, 200],
       data,
     });
   }

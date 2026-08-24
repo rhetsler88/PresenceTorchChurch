@@ -6,20 +6,17 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-  DropdownMenuCheckboxItem,
 } from "@/components/ui/dropdown-menu";
-import { Bluetooth, BluetoothConnected, Headphones, UserCog, LogOut, Shield } from "lucide-react";
+import { Bluetooth, BluetoothConnected, UserCog, LogOut, Shield } from "lucide-react";
 import { useAuth } from "@/lib/AuthContext";
 import { getDisplayName, getInitials } from "@/lib/userUtils";
 import { ADMIN_APP_URL } from "@/lib/appLinks";
 import { useBluetoothPTTContext } from "@/components/ptt/BluetoothPTTContext";
-import usePttSettings from "@/hooks/usePttSettings";
 import EditProfileDialog from "@/components/profile/EditProfileDialog";
 
 export default function UserMenu() {
   const { user, logout } = useAuth();
   const bluetooth = useBluetoothPTTContext();
-  const { earbudToggleMode, setEarbudToggleMode } = usePttSettings();
   const [showEditProfile, setShowEditProfile] = useState(false);
 
   if (!user) return null;
@@ -59,22 +56,9 @@ export default function UserMenu() {
             <UserCog className="w-4 h-4" />
             Edit profile
           </DropdownMenuItem>
-          <DropdownMenuSeparator />
-          <DropdownMenuCheckboxItem
-            checked={earbudToggleMode}
-            onCheckedChange={setEarbudToggleMode}
-            onSelect={(event) => event.preventDefault()}
-            className="gap-2"
-          >
-            <Headphones className="w-4 h-4" />
-            Earbud tap-to-talk
-          </DropdownMenuCheckboxItem>
-          <DropdownMenuLabel className="text-xs text-muted-foreground font-normal leading-snug whitespace-normal">
-            Tap once on earbuds to start talking, tap again to stop, or auto-stops after 45 seconds.
-            Dedicated PTT buttons still use push-and-hold.
-          </DropdownMenuLabel>
           {bluetooth && (
             <>
+              <DropdownMenuSeparator />
               <DropdownMenuItem
                 disabled={!bluetooth.isSupported || bluetooth.isConnecting}
                 onSelect={(event) => {
@@ -97,13 +81,13 @@ export default function UserMenu() {
                 ) : (
                   <>
                     <Bluetooth className="w-4 h-4" />
-                    {bluetooth.isConnecting ? "Pairing BLE button..." : "Pair BLE button (advanced)"}
+                    {bluetooth.isConnecting ? "Pairing BLE button..." : "Pair BLE button"}
                   </>
                 )}
               </DropdownMenuItem>
               <DropdownMenuLabel className="text-xs text-muted-foreground font-normal leading-snug whitespace-normal">
                 Pair a BLE GATT button (service FFF0) or use buttons already paired in your phone&apos;s Bluetooth settings.
-                Hold-to-talk on external buttons; earbud tap-to-talk uses the toggle above.
+                Press and hold to talk on Talk or Monitor.
               </DropdownMenuLabel>
               {!bluetooth.isSupported && (
                 <DropdownMenuLabel className="text-xs text-muted-foreground font-normal leading-snug whitespace-normal">
@@ -118,12 +102,15 @@ export default function UserMenu() {
             </>
           )}
           {isPlatformAdmin && (
-            <DropdownMenuItem asChild>
-              <a href={ADMIN_APP_URL}>
-                <Shield className="w-4 h-4" />
-                Admin dashboard
-              </a>
-            </DropdownMenuItem>
+            <>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem asChild>
+                <a href={ADMIN_APP_URL}>
+                  <Shield className="w-4 h-4" />
+                  Admin dashboard
+                </a>
+              </DropdownMenuItem>
+            </>
           )}
           <DropdownMenuSeparator />
           <DropdownMenuItem

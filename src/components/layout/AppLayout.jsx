@@ -16,6 +16,7 @@ import useRedAlert from "@/hooks/useRedAlert";
 import { getLastAppRoute, saveLastAppRoute } from "@/lib/lastAppRoute";
 import { pttSurfaceFromPath, saveLastPttSurface } from "@/lib/lastPttSurface";
 import { recordSessionInteraction } from "@/lib/logoutOnClose";
+import { prewarmMicDenoise } from "@/lib/micDenoise";
 
 export default function AppLayout() {
   const location = useLocation();
@@ -60,6 +61,12 @@ export default function AppLayout() {
       recordSessionInteraction();
     }
   }, [location.pathname, location.search, user]);
+
+  useEffect(() => {
+    if (!user?.id) return undefined;
+    void prewarmMicDenoise();
+    return undefined;
+  }, [user?.id]);
 
   useEffect(() => {
     const onPause = () => {

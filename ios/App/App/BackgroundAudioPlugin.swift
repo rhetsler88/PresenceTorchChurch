@@ -85,7 +85,7 @@ public class BackgroundAudioPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     private func updateNowPlayingInfo(title: String) {
-        // Leave MPNowPlayingInfoCenter to HeadsetPTT so earbud tap-to-talk keeps working.
+        // Leave MPNowPlayingInfoCenter to HeadsetPTT so wired headset buttons keep working.
     }
 
     private func startSilentLoop() {

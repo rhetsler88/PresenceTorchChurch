@@ -1,7 +1,10 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { Capacitor } from "@capacitor/core";
-import { isNativeHeadsetPTTAvailable, startNativeHeadsetPTT, setNativeEarbudToggleMode, setNativeHeadsetTransmitting } from "@/lib/headsetPTT";
-import { getEarbudToggleMode, PTT_TOGGLE_MAX_MS } from "@/lib/pttSettings";
+import {
+  isNativeHeadsetPTTAvailable,
+  startNativeHeadsetPTT,
+  setNativeHeadsetTransmitting,
+} from "@/lib/headsetPTT";
 
 /** Keys commonly sent by HID / media-style Bluetooth PTT buttons. */
 const PTT_KEY_CODES = new Set([
@@ -10,8 +13,6 @@ const PTT_KEY_CODES = new Set([
   "MediaPlayPause", "MediaStop", "MediaTrackNext", "MediaTrackPrevious",
   "AudioVolumeMute",
 ]);
-
-const MEDIA_TAP_DEBOUNCE_MS = 300;
 
 function isEditableTarget(target) {
   if (!(target instanceof Element)) return false;
@@ -32,13 +33,8 @@ export default function useWiredPTT({ onPress, onRelease }) {
     return "mediaSession" in navigator;
   });
 
-  const [earbudToggleMode, setEarbudToggleMode] = useState(() => getEarbudToggleMode());
   const pressedRef = useRef(false);
-  const toggleActiveRef = useRef(false);
-  const toggleStartedAtRef = useRef(0);
   const releaseTimerRef = useRef(null);
-  const autoStopTimerRef = useRef(null);
-  const lastMediaTapRef = useRef(0);
   const mediaKeyDownSeenRef = useRef(false);
   const callbacksRef = useRef({ onPress, onRelease });
 
@@ -46,74 +42,12 @@ export default function useWiredPTT({ onPress, onRelease }) {
     callbacksRef.current = { onPress, onRelease };
   }, [onPress, onRelease]);
 
-  useEffect(() => {
-    const sync = () => setEarbudToggleMode(getEarbudToggleMode());
-    window.addEventListener("ptt-settings-changed", sync);
-    window.addEventListener("storage", sync);
-    return () => {
-      window.removeEventListener("ptt-settings-changed", sync);
-      window.removeEventListener("storage", sync);
-    };
-  }, []);
-
   const clearReleaseTimer = useCallback(() => {
     if (releaseTimerRef.current) {
       clearTimeout(releaseTimerRef.current);
       releaseTimerRef.current = null;
     }
   }, []);
-
-  const clearAutoStopTimer = useCallback(() => {
-    if (autoStopTimerRef.current) {
-      clearTimeout(autoStopTimerRef.current);
-      autoStopTimerRef.current = null;
-    }
-  }, []);
-
-  const stopTogglePtt = useCallback(() => {
-    if (!toggleActiveRef.current) return;
-    clearAutoStopTimer();
-    toggleActiveRef.current = false;
-    pressedRef.current = false;
-    void setNativeHeadsetTransmitting(false);
-    callbacksRef.current.onRelease?.();
-  }, [clearAutoStopTimer]);
-
-  const startTogglePtt = useCallback(() => {
-    if (toggleActiveRef.current || pressedRef.current) return;
-    toggleActiveRef.current = true;
-    toggleStartedAtRef.current = Date.now();
-    pressedRef.current = true;
-    clearAutoStopTimer();
-    void setNativeHeadsetTransmitting(true);
-    callbacksRef.current.onPress?.();
-    autoStopTimerRef.current = setTimeout(() => {
-      stopTogglePtt();
-    }, PTT_TOGGLE_MAX_MS);
-  }, [clearAutoStopTimer, stopTogglePtt]);
-
-  const handleMediaTap = useCallback(() => {
-    const now = Date.now();
-    if (now - lastMediaTapRef.current < MEDIA_TAP_DEBOUNCE_MS) return;
-    lastMediaTapRef.current = now;
-
-    if (toggleActiveRef.current) {
-      stopTogglePtt();
-    } else {
-      startTogglePtt();
-    }
-  }, [startTogglePtt, stopTogglePtt]);
-
-  /** iOS wired/Bluetooth remotes often send play on first press and pause on second. */
-  const handleToggleRemoteDown = useCallback(() => {
-    if (toggleActiveRef.current) return;
-    startTogglePtt();
-  }, [startTogglePtt]);
-
-  const handleToggleRemoteUp = useCallback(() => {
-    if (!toggleActiveRef.current) return;
-    stopTogglePtt();
-  }, [stopTogglePtt]);
 
   const handlePress = useCallback(() => {
     if (pressedRef.current) return;
@@ -145,27 +79,14 @@ export default function useWiredPTT({ onPress, onRelease }) {
 
   useEffect(() => {
     if (!isNativeHeadsetPTTAvailable()) return undefined;
-    void setNativeEarbudToggleMode(earbudToggleMode);
-  }, [earbudToggleMode]);
-
-  useEffect(() => {
-    if (!isNativeHeadsetPTTAvailable()) return undefined;
 
     let cleanup = () => {};
     let cancelled = false;
 
-    const isIOS = Capacitor.getPlatform() === "ios";
-    const nativeHandlers = earbudToggleMode
-      ? (isIOS
-        ? {
-            onTap: handleMediaTap,
-            onDown: handleToggleRemoteDown,
-            onUp: handleToggleRemoteUp,
-          }
-        : { onTap: handleMediaTap })
-      : { onDown: handleHoldMediaDown, onUp: handleHoldMediaUp };
-
-    startNativeHeadsetPTT({ ...nativeHandlers, earbudToggleMode }).then((stop) => {
+    startNativeHeadsetPTT({
+      onDown: handleHoldMediaDown,
+      onUp: handleHoldMediaUp,
+    }).then((stop) => {
       if (cancelled) {
         stop();
         return;
@@ -177,14 +98,7 @@ export default function useWiredPTT({ onPress, onRelease }) {
       cancelled = true;
       cleanup();
     };
-  }, [
-    earbudToggleMode,
-    handleMediaTap,
-    handleToggleRemoteDown,
-    handleToggleRemoteUp,
-    handleHoldMediaDown,
-    handleHoldMediaUp,
-  ]);
+  }, [handleHoldMediaDown, handleHoldMediaUp]);
 
   useEffect(() => {
     if (Capacitor.isNativePlatform()) return undefined;
@@ -196,7 +110,7 @@ export default function useWiredPTT({ onPress, onRelease }) {
     });
     navigator.mediaSession.playbackState = "paused";
 
-    const holdActionHandlers = {
+    const actionHandlers = {
       play: () => handlePress(),
       pause: () => handleRelease(),
       stop: () => handleRelease(),
@@ -218,24 +132,9 @@ export default function useWiredPTT({ onPress, onRelease }) {
       },
     };
 
-    const toggleActionHandlers = {
-      play: () => handleMediaTap(),
-      pause: () => handleMediaTap(),
-      stop: () => {
-        if (toggleActiveRef.current) stopTogglePtt();
-      },
-    };
-
-    const actionHandlers = earbudToggleMode ? toggleActionHandlers : holdActionHandlers;
-
     try {
       for (const [action, handler] of Object.entries(actionHandlers)) {
         navigator.mediaSession.setActionHandler(/** @type {MediaSessionAction} */ (action), handler);
-      }
-      if (earbudToggleMode) {
-        for (const action of ["previoustrack", "nexttrack", "seekbackward", "seekforward"]) {
-          navigator.mediaSession.setActionHandler(/** @type {MediaSessionAction} */ (action), null);
-        }
       }
     } catch {
       // Some actions may not be supported on all browsers.
@@ -243,7 +142,7 @@ export default function useWiredPTT({ onPress, onRelease }) {
 
     return () => {
       try {
-        for (const action of Object.keys(holdActionHandlers)) {
+        for (const action of Object.keys(actionHandlers)) {
           navigator.mediaSession.setActionHandler(/** @type {MediaSessionAction} */ (action), null);
         }
       } catch {
@@ -251,14 +150,7 @@ export default function useWiredPTT({ onPress, onRelease }) {
       }
       clearReleaseTimer();
     };
-  }, [
-    earbudToggleMode,
-    handlePress,
-    handleRelease,
-    handleMediaTap,
-    stopTogglePtt,
-    clearReleaseTimer,
-  ]);
+  }, [handlePress, handleRelease, clearReleaseTimer]);
 
   useEffect(() => {
     if (typeof window === "undefined") return undefined;
@@ -289,14 +181,13 @@ export default function useWiredPTT({ onPress, onRelease }) {
   useEffect(() => {
     return () => {
       clearReleaseTimer();
-      clearAutoStopTimer();
-      if (toggleActiveRef.current) {
-        toggleActiveRef.current = false;
+      if (pressedRef.current) {
         pressedRef.current = false;
+        void setNativeHeadsetTransmitting(false);
         callbacksRef.current.onRelease?.();
       }
     };
-  }, [clearAutoStopTimer, clearReleaseTimer]);
+  }, [clearReleaseTimer]);
 
-  return { isSupported, earbudToggleMode };
+  return { isSupported };
 }

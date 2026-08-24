@@ -1,10 +1,11 @@
 import { Capacitor } from "@capacitor/core";
 import { PushNotifications } from "@capacitor/push-notifications";
+import { LocalNotifications } from "@capacitor/local-notifications";
 import { getToken, isSupported, onMessage } from "firebase/messaging";
 import { doc, updateDoc } from "firebase/firestore";
 import { getFirebaseMessaging, db, auth } from "@/lib/firebase";
 import { triggerRedAlert, ensureRedAlertNotificationChannel } from "@/lib/redAlertActions";
-import { playTextMessageTone } from "@/lib/pttTones";
+import { playTextMessageTone, playYellowProtectionTone } from "@/lib/pttTones";
 import { isStaffAlertRecipient } from "@/lib/channelAlerts";
 import {
   getOrCreateDeviceId,
@@ -20,6 +21,7 @@ import { clearNativeTextMessageNotifications } from "@/lib/sessionGuardNative";
 
 const PUSH_CHANNEL_ID = "red_alerts";
 const TEXT_MESSAGE_CHANNEL_ID = "text_messages";
+const YELLOW_ALERT_CHANNEL_ID = "yellow_alerts";
 const VAPID_KEY = import.meta.env.VITE_FIREBASE_VAPID_KEY;
 const NATIVE_PUSH_INIT_DELAY_MS = 2000;
 
@@ -115,9 +117,73 @@ async function removeSessionRegistration(uid, registrationKey) {
   }
 }
 
+function formatTextMessageBody(count, channelName) {
+  const safeCount = Number.parseInt(String(count || "1"), 10);
+  const normalizedCount = Number.isFinite(safeCount) && safeCount > 0 ? safeCount : 1;
+  const label = normalizedCount === 1 ? "text message" : "text messages";
+  return `${normalizedCount} new ${label} in ${channelName || "Channel"}`;
+}
+
+async function showForegroundPushNotification({ title, body, tag, channelId, type, extra = {} }) {
+  if (Capacitor.isNativePlatform()) {
+    try {
+      await LocalNotifications.schedule({
+        notifications: [
+          {
+            id: Math.floor(Math.random() * 100000),
+            title,
+            body,
+            channelId,
+            sound: "default",
+            extra: { type, ...extra },
+          },
+        ],
+      });
+    } catch {
+      /* ignore */
+    }
+    return;
+  }
+
+  if ("Notification" in window && Notification.permission === "granted") {
+    try {
+      new Notification(title, { body, tag, renotify: true, data: { type, ...extra } });
+    } catch {
+      /* ignore */
+    }
+  }
+}
+
 /** Foreground only — FCM/system tray handles visible notifications in background. */
-function handleTextMessagePayload() {
+function handleTextMessagePayload(data = {}) {
   playTextMessageTone();
+  const channelName = data.channelName || data.channel_name || "Channel";
+  const count = data.unreadCount || data.unread_count || "1";
+  const channelId = data.channelId || data.channel_id || "channel";
+  const tag = data.notificationTag || `text_message_${channelId}`;
+  void showForegroundPushNotification({
+    title: data.title || "Presence Torch",
+    body: data.body || formatTextMessageBody(count, channelName),
+    tag,
+    channelId: TEXT_MESSAGE_CHANNEL_ID,
+    type: "text_message",
+    extra: { channelId, channelName },
+  });
+}
+
+function handleYellowProtectionPayload(data = {}) {
+  playYellowProtectionTone();
+  const channelName = data.channelName || data.channel_name || "A channel";
+  const channelId = data.channelId || data.channel_id || "all";
+  const tag = data.notificationTag || `yellow_protection_${channelId}`;
+  void showForegroundPushNotification({
+    title: data.title || "YELLOW ALERT",
+    body: data.body || `${channelName} level changed to YELLOW.`,
+    tag,
+    channelId: YELLOW_ALERT_CHANNEL_ID,
+    type: "protection_level_yellow",
+    extra: { channelId, channelName },
+  });
 }
 
 async function registerNativePushListeners(uid) {
@@ -145,10 +211,11 @@ async function registerNativePushListeners(uid) {
       return;
     }
     if (data.type === "text_message") {
-      handleTextMessagePayload();
+      handleTextMessagePayload(data);
+      return;
     }
     if (data.type === "protection_level_yellow") {
-      handleTextMessagePayload();
+      handleYellowProtectionPayload(data);
     }
   });
 
@@ -189,6 +256,18 @@ async function initNativePush(uid, userProfile) {
     await ensureRedAlertNotificationChannel();
 
     try {
+      await LocalNotifications.createChannel({
+        id: YELLOW_ALERT_CHANNEL_ID,
+        name: "Yellow Alerts",
+        importance: 5,
+        vibration: true,
+        sound: "default",
+      });
+    } catch {
+      /* ignore */
+    }
+
+    try {
       await PushNotifications.createChannel({
         id: PUSH_CHANNEL_ID,
         name: "Red Alerts",
@@ -205,11 +284,24 @@ async function initNativePush(uid, userProfile) {
         visibility: 1,
         sound: "default",
       });
+      await PushNotifications.createChannel({
+        id: YELLOW_ALERT_CHANNEL_ID,
+        name: "Yellow Alerts",
+        importance: 5,
+        vibration: true,
+        visibility: 1,
+        sound: "default",
+      });
     } catch {
       /* ignore */
     }
 
     const perm = await requestNativePushPermission();
+    try {
+      await LocalNotifications.requestPermissions();
+    } catch {
+      /* ignore */
+    }
     await registerNativeFcm(perm);
   } catch (err) {
     console.error("Native push init failed:", err);
@@ -272,10 +364,11 @@ async function initWebPush(uid, userProfile) {
       return;
     }
     if (data.type === "text_message") {
-      handleTextMessagePayload();
+      handleTextMessagePayload(data);
+      return;
     }
     if (data.type === "protection_level_yellow") {
-      handleTextMessagePayload();
+      handleYellowProtectionPayload(data);
     }
   });
 }

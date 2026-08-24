@@ -827,6 +827,7 @@ async function incrementTextMessageUnreadCount(db, userId, channelId, channelNam
 function buildTextMessagePushMessage({ token, channelId, channelName, messageId, count }) {
   const body = formatTextMessageNotificationBody(count, channelName);
   const tag = `text_message_${channelId}`;
+  const title = "Presence Torch";
 
   return {
     token,
@@ -837,7 +838,7 @@ function buildTextMessagePushMessage({ token, channelId, channelName, messageId,
       messageId,
       unreadCount: String(count),
       notificationTag: tag,
-      title: "Presence Torch",
+      title,
       body,
     },
     android: {
@@ -846,6 +847,8 @@ function buildTextMessagePushMessage({ token, channelId, channelName, messageId,
       notification: {
         channelId: "text_messages",
         tag,
+        title,
+        body,
         notificationCount: count,
         sound: "default",
         defaultVibrateTimings: true,
@@ -881,6 +884,7 @@ function buildTextMessagePushMessage({ token, channelId, channelName, messageId,
 function buildYellowProtectionPushMessage({ token, label, channelId = "all" }) {
   const body = `${label} level changed to YELLOW.`;
   const tag = channelId === "all" ? "yellow_protection_all" : `yellow_protection_${channelId}`;
+  const title = "YELLOW ALERT";
 
   return {
     token,
@@ -888,7 +892,7 @@ function buildYellowProtectionPushMessage({ token, label, channelId = "all" }) {
       type: "protection_level_yellow",
       channelId,
       channelName: label,
-      title: "Presence Torch",
+      title,
       body,
       notificationTag: tag,
     },
@@ -896,18 +900,20 @@ function buildYellowProtectionPushMessage({ token, label, channelId = "all" }) {
       priority: "high",
       collapseKey: tag,
       notification: {
-        channelId: "text_messages",
+        channelId: "yellow_alerts",
         tag,
+        title,
+        body,
         sound: "default",
         defaultVibrateTimings: true,
-        priority: "default",
+        priority: "high",
       },
     },
     apns: {
       payload: {
         aps: {
           alert: {
-            title: "Presence Torch",
+            title,
             body,
           },
           sound: "default",
@@ -917,7 +923,7 @@ function buildYellowProtectionPushMessage({ token, label, channelId = "all" }) {
     },
     webpush: {
       notification: {
-        title: "Presence Torch",
+        title,
         body,
         icon: "https://app.presencetorch.net/icons/icon-192.png",
         tag,

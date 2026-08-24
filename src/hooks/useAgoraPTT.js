@@ -8,7 +8,8 @@ import {
 } from "@/lib/agoraRemote";
 import { acquireAgoraClient, releaseAgoraClient, sessionKey } from "@/lib/agoraSession";
 import { configureAgoraSdk } from "@/lib/agoraInit";
-import { attachAinsToTrack, detachAinsFromTrack, isAinsAvailable } from "@/lib/agoraAins";
+import { AGORA_SPEECH_ENCODER } from "@/lib/agoraAudio";
+import { destroyMicDenoise, openMicWithDenoise } from "@/lib/micDenoise";
 import { playClearTone } from "@/lib/pttTones";
 
 configureAgoraSdk();
@@ -16,7 +17,7 @@ configureAgoraSdk();
 const RETRY_DELAYS_MS = [1000, 3000, 8000];
 const IDLE_LEAVE_MS = 30000;
 /** Debounce live-listen joins so rapid PTT on/off does not open/close Agora WS mid-handshake. */
-const JOIN_DEBOUNCE_MS = 400;
+const JOIN_DEBOUNCE_MS = 200;
 
 function isExpectedJoinCancel(err) {
   const code = String(err?.code || "");
@@ -100,7 +101,8 @@ export default function useAgoraPTT({
   const clientRef = useRef(null);
   const sessionKeyRef = useRef(null);
   const localAudioTrackRef = useRef(null);
-  const ainsProcessorRef = useRef(null);
+  const rawStreamRef = useRef(null);
+  const denoiseHandleRef = useRef(null);
   const streamRef = useRef(null);
   const broadcastIdRef = useRef(null);
   const startTimeRef = useRef(0);
@@ -149,6 +151,18 @@ export default function useAgoraPTT({
     onRemoteLiveAudioRef.current?.();
   }, []);
 
+  const releaseOwnedStream = useCallback(async () => {
+    if (!streamRef.current || !ownsStreamRef.current) return;
+    await destroyMicDenoise({
+      handle: denoiseHandleRef.current,
+      rawStream: rawStreamRef.current,
+      stream: streamRef.current,
+    });
+    streamRef.current = null;
+    rawStreamRef.current = null;
+    denoiseHandleRef.current = null;
+  }, []);
+
   const releaseConnection = useCallback(async () => {
     clearIdleLeaveTimer();
     joinGenRef.current += 1;
@@ -166,16 +180,11 @@ export default function useAgoraPTT({
     remoteSpeakerCountRef.current = 0;
 
     if (localAudioTrackRef.current) {
-      await detachAinsFromTrack(localAudioTrackRef.current, ainsProcessorRef.current);
-      ainsProcessorRef.current = null;
       localAudioTrackRef.current.stop();
       localAudioTrackRef.current.close();
       localAudioTrackRef.current = null;
     }
-    if (streamRef.current) {
-      streamRef.current.getTracks().forEach((track) => track.stop());
-      streamRef.current = null;
-    }
+    await releaseOwnedStream();
 
     const client = clientRef.current;
     const key = sessionKeyRef.current;
@@ -189,7 +198,7 @@ export default function useAgoraPTT({
     if (key) {
       await releaseAgoraClient(key).catch(() => {});
     }
-  }, [clearIdleLeaveTimer]);
+  }, [clearIdleLeaveTimer, releaseOwnedStream]);
 
   releaseConnectionRef.current = releaseConnection;
 
@@ -332,15 +341,19 @@ export default function useAgoraPTT({
       startTimeRef.current = Date.now();
 
       ownsStreamRef.current = !sharedStream;
-      const stream = sharedStream || await navigator.mediaDevices.getUserMedia({
-        audio: {
-          echoCancellation: true,
-          noiseSuppression: !isAinsAvailable(),
-          autoGainControl: true,
-        },
-      });
-      streamRef.current = stream;
-      if (!sharedStream) onStreamReady?.(stream);
+      let stream = sharedStream;
+      if (!sharedStream) {
+        const opened = await openMicWithDenoise();
+        stream = opened.stream;
+        streamRef.current = opened.stream;
+        rawStreamRef.current = opened.rawStream;
+        denoiseHandleRef.current = opened.handle;
+        onStreamReady?.(opened.stream);
+      } else {
+        streamRef.current = sharedStream;
+        rawStreamRef.current = null;
+        denoiseHandleRef.current = null;
+      }
 
       let client = clientRef.current;
       if (!client) {
@@ -352,17 +365,17 @@ export default function useAgoraPTT({
       if (!client) {
         console.error("Agora client not ready — join failed or still connecting");
         if (ownsStreamRef.current) {
-          stream.getTracks().forEach((track) => track.stop());
+          await releaseOwnedStream();
+        } else {
+          streamRef.current = null;
         }
-        streamRef.current = null;
         return false;
       }
 
       const localTrack = await AgoraRTC.createCustomAudioTrack({
         mediaStreamTrack: stream.getAudioTracks()[0],
-        encoderConfig: "speech_standard",
+        encoderConfig: AGORA_SPEECH_ENCODER,
       });
-      ainsProcessorRef.current = await attachAinsToTrack(localTrack);
       localAudioTrackRef.current = localTrack;
       await client.publish([localTrack]);
 
@@ -374,20 +387,19 @@ export default function useAgoraPTT({
       const client = clientRef.current;
       if (localAudioTrackRef.current) {
         await client?.unpublish([localAudioTrackRef.current]).catch(() => {});
-        await detachAinsFromTrack(localAudioTrackRef.current, ainsProcessorRef.current);
-        ainsProcessorRef.current = null;
         localAudioTrackRef.current.stop();
         localAudioTrackRef.current.close();
         localAudioTrackRef.current = null;
       }
-      if (streamRef.current && ownsStreamRef.current) {
-        streamRef.current.getTracks().forEach((track) => track.stop());
+      if (ownsStreamRef.current) {
+        await releaseOwnedStream();
+      } else {
+        streamRef.current = null;
       }
-      streamRef.current = null;
       scheduleIdleLeave();
       return false;
     }
-  }, [ensureJoined, clearIdleLeaveTimer, scheduleIdleLeave]);
+  }, [ensureJoined, clearIdleLeaveTimer, scheduleIdleLeave, releaseOwnedStream]);
 
   const stopRecording = useCallback(async ({ stopStream = true } = {}) => {
     const hadLiveTrack = activeRef.current || localAudioTrackRef.current;
@@ -401,8 +413,6 @@ export default function useAgoraPTT({
 
       if (localTrack && client) {
         await client.unpublish([localTrack]).catch(() => {});
-        await detachAinsFromTrack(localTrack, ainsProcessorRef.current);
-        ainsProcessorRef.current = null;
         localTrack.stop();
         localTrack.close();
         localAudioTrackRef.current = null;
@@ -411,11 +421,12 @@ export default function useAgoraPTT({
       scheduleIdleLeave();
     }
 
-    if (stopStream && streamRef.current && ownsStreamRef.current) {
-      streamRef.current.getTracks().forEach((track) => track.stop());
+    if (stopStream && ownsStreamRef.current) {
+      await releaseOwnedStream();
+    } else if (stopStream) {
+      streamRef.current = null;
     }
-    streamRef.current = null;
-  }, [scheduleIdleLeave]);
+  }, [scheduleIdleLeave, releaseOwnedStream]);
 
   const getMediaStream = useCallback(() => streamRef.current, []);
 

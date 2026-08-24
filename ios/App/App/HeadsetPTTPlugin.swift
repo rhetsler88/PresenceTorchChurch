@@ -9,7 +9,6 @@ public class HeadsetPTTPlugin: CAPPlugin, CAPBridgedPlugin {
     public let pluginMethods: [CAPPluginMethod] = [
         CAPPluginMethod(name: "startListening", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "stopListening", returnType: CAPPluginReturnPromise),
-        CAPPluginMethod(name: "setEarbudToggleMode", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "setTransmitting", returnType: CAPPluginReturnPromise),
     ]
 
@@ -35,10 +34,6 @@ public class HeadsetPTTPlugin: CAPPlugin, CAPBridgedPlugin {
             self.clearNowPlayingInfo()
             call.resolve()
         }
-    }
-
-    @objc func setEarbudToggleMode(_ call: CAPPluginCall) {
-        call.resolve()
     }
 
     @objc func setTransmitting(_ call: CAPPluginCall) {
@@ -92,7 +87,7 @@ public class HeadsetPTTPlugin: CAPPlugin, CAPBridgedPlugin {
             return .success
         }
         commandCenter.togglePlayPauseCommand.addTarget { [weak self] _ in
-            self?.handleRemoteTap()
+            self?.handleMomentaryPress()
             return .success
         }
         commandCenter.nextTrackCommand.addTarget { [weak self] _ in
@@ -131,11 +126,6 @@ public class HeadsetPTTPlugin: CAPPlugin, CAPBridgedPlugin {
         guard isListening else { return }
         pttHeld = false
         notifyListeners("pttUp", data: [:])
-    }
-
-    private func handleRemoteTap() {
-        guard isListening else { return }
-        notifyListeners("pttTap", data: [:])
     }
 
     private func handleMomentaryPress() {

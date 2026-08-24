@@ -5,6 +5,7 @@ import { uploadPublicAudio, uploadPrivateAudio } from "@/api/storage";
 import { ensureMicrophonePermission } from "@/lib/microphonePermissions";
 import { forceStopBackgroundAudio, resumeBackgroundAudioIfNeeded } from "@/lib/backgroundAudio";
 import { beginSensitiveOperation, endSensitiveOperation } from "@/lib/sensitiveOperation";
+import { destroyMicDenoise, openMicWithDenoise } from "@/lib/micDenoise";
 
 const CHUNK_MS = 1000;
 
@@ -99,6 +100,8 @@ export default function useRelayBroadcast({ channelId, userId, userName }) {
   paramsRef.current = { channelId, userId, userName };
 
   const streamRef = useRef(null);
+  const rawStreamRef = useRef(null);
+  const denoiseHandleRef = useRef(null);
   const ownsStreamRef = useRef(true);
   const archiveOnlyRef = useRef(false);
   const relayRecorderRef = useRef(null);
@@ -190,6 +193,8 @@ export default function useRelayBroadcast({ channelId, userId, userName }) {
 
     if (sharedStream) {
       streamRef.current = sharedStream;
+      rawStreamRef.current = null;
+      denoiseHandleRef.current = null;
       startTimeRef.current = Date.now();
     } else {
       try {
@@ -200,14 +205,10 @@ export default function useRelayBroadcast({ channelId, userId, userName }) {
             return false;
           }
         }
-        const stream = await navigator.mediaDevices.getUserMedia({
-          audio: {
-            echoCancellation: true,
-            noiseSuppression: true,
-            autoGainControl: true,
-          },
-        });
+        const { stream, handle, rawStream } = await openMicWithDenoise();
         streamRef.current = stream;
+        rawStreamRef.current = rawStream;
+        denoiseHandleRef.current = handle;
         startTimeRef.current = Date.now();
       } catch (err) {
         console.error("Microphone access denied:", err);
@@ -306,9 +307,15 @@ export default function useRelayBroadcast({ channelId, userId, userName }) {
       fullRecorderRef.current = null;
       clearRecorderTiming(chunkIntervalRef);
       if (streamRef.current && ownsStreamRef.current) {
-        streamRef.current.getTracks().forEach((track) => track.stop());
+        await destroyMicDenoise({
+          handle: denoiseHandleRef.current,
+          rawStream: rawStreamRef.current,
+          stream: streamRef.current,
+        });
       }
       streamRef.current = null;
+      rawStreamRef.current = null;
+      denoiseHandleRef.current = null;
       releaseSensitiveOperation();
       return false;
     }
@@ -379,9 +386,15 @@ export default function useRelayBroadcast({ channelId, userId, userName }) {
       pendingUploadsRef.current = [];
 
       if (streamRef.current && ownsStreamRef.current) {
-        streamRef.current.getTracks().forEach((track) => track.stop());
+        await destroyMicDenoise({
+          handle: denoiseHandleRef.current,
+          rawStream: rawStreamRef.current,
+          stream: streamRef.current,
+        });
       }
       streamRef.current = null;
+      rawStreamRef.current = null;
+      denoiseHandleRef.current = null;
       ownsStreamRef.current = true;
       archiveOnlyRef.current = false;
       releaseSensitiveOperation();

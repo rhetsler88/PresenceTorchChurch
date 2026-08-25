@@ -225,16 +225,6 @@ function MessageItem({
                 </span>
               </div>
             </div>
-            {message.audio_url && !message.transcript && (
-              <div className={`mt-2 pt-2 border-t ${
-                isMine ? "border-white/20" : "border-border"
-              }`}>
-                <div className="flex items-center gap-1">
-                  <FileText className="w-3 h-3 opacity-50" />
-                  <span className={`text-[10px] font-medium opacity-50 italic`}>Transcribing…</span>
-                </div>
-              </div>
-            )}
             {message.transcript && (
               <div className={`mt-2 pt-2 border-t ${
                 isMine ? "border-white/20" : "border-border"

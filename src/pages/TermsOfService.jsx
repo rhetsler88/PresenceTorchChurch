@@ -47,7 +47,7 @@ export default function TermsOfService() {
       <h2>4. Communications and content</h2>
       <ul>
         <li>You retain ownership of content you submit, but grant us and your organization the rights necessary to operate the Service (store, transmit, transcribe, display, and back up content).</li>
-        <li>Live and recorded voice communications may be transcribed automatically.</li>
+        <li>Voice messages may be transcribed when replayed in the app or when an authorized user exports the transcript log.</li>
         <li>Transcripts and messages may be visible to other authorized members and administrators based on channel settings.</li>
         <li>You are solely responsible for the content you transmit through the Service.</li>
       </ul>

@@ -15,6 +15,7 @@ import { markBroadcastHeard, hasHeardBroadcast } from "@/lib/heardBroadcasts";
 import { auth } from "@/lib/firebase";
 import { cleanupStalePTTSignals, claimPttChannels, releasePttSignals } from "@/lib/pttSignals";
 import { playAudioUrl, stopAudio } from "@/lib/audioPlayer";
+import { needsTranscription, requestTranscription } from "@/lib/transcription";
 import usePttBroadcast from "../hooks/usePttBroadcast";
 import { usePassiveMonitor } from "../components/monitor/PassiveMonitorProvider";
 import MonitorPTTBar from "../components/monitor/MonitorPTTBar";
@@ -577,6 +578,17 @@ export default function Monitor() {
     return unsub;
   }, [monitorChannelIds, monitorChannels, user, queryClient, heardBroadcastsRef, pttHeardRef, passiveHeardRef, relayHeardRef, agoraHeardRef]);
 
+  const transcribeOnReplay = useCallback(async (msg) => {
+    if (!needsTranscription(msg)) return;
+    try {
+      await requestTranscription(msg);
+      queryClient.invalidateQueries({ queryKey: ["all-channel-messages"] });
+      queryClient.invalidateQueries({ queryKey: ["all-messages"] });
+    } catch {
+      // Ignore — user can replay again or export will batch-transcribe.
+    }
+  }, [queryClient]);
+
   const handlePlayMessage = (msg) => {
     if (!msg.audio_url) return;
     if (playingId === msg.id) {
@@ -590,6 +602,7 @@ export default function Monitor() {
     isPlayingRef.current = true;
     setPlayingId(msg.id);
     setPlayingChannel(msg.channel_id);
+    void transcribeOnReplay(msg);
     playAudioUrl(msg.audio_url, {
       onEnded: () => {
         setPlayingId(null);
@@ -679,9 +692,8 @@ export default function Monitor() {
       });
       const deviceDate = deviceDayKey(now);
 
-      let created;
       try {
-        created = await Promise.all(targetIds.map(cid =>
+        await Promise.all(targetIds.map(cid =>
           api.entities.VoiceMessage.create({
             channel_id: cid,
             sender_name: getDisplayName(user) || "Monitor",
@@ -727,24 +739,6 @@ export default function Monitor() {
         relayHeardRef,
         agoraHeardRef
       );
-
-      // Transcribe each message in the background
-      created.forEach(msg => {
-        api.functions.invoke("transcribeAudio", {
-          audio_url: file_url,
-          message_id: msg.id,
-        }).then(() => {
-          queryClient.invalidateQueries({ queryKey: ["all-channel-messages"] });
-          queryClient.invalidateQueries({ queryKey: ["all-messages"] });
-        }).catch(async () => {
-          await api.entities.VoiceMessage.update(msg.id, {
-            transcript: "[Transcription unavailable]",
-            is_transcribed: true,
-          });
-          queryClient.invalidateQueries({ queryKey: ["all-channel-messages"] });
-          queryClient.invalidateQueries({ queryKey: ["all-messages"] });
-        });
-      });
 
       const mode = broadcastModeRef.current;
       if (mode === "multi") {

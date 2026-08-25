@@ -68,7 +68,7 @@ export default function TranscriptItem({ msg, channel, senderName }) {
         </div>
       </div>
       <p className="text-sm text-foreground/80 leading-relaxed pl-9 italic">
-        {msg.text_content || msg.transcript || (msg.audio_url ? "Transcribing…" : "—")}
+        {msg.text_content || msg.transcript || (msg.audio_url ? "No transcript" : "—")}
       </p>
       <div className="flex items-center gap-2 mt-2 pl-9">
         <Badge variant="secondary" className="text-[10px]">

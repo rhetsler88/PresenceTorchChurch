@@ -17,6 +17,7 @@ import { playClearTone, playBusyTone, unlockAudioForPTT } from "@/lib/pttTones";
 import { logVoiceMessageFailure } from "@/lib/voiceMessageLogging";
 import { cleanupStalePTTSignals, claimPttChannels, releasePttSignals } from "@/lib/pttSignals";
 import { playAudioUrl, stopAudio } from "@/lib/audioPlayer";
+import { needsTranscription, requestTranscription } from "@/lib/transcription";
 import { deviceDayKey } from "@/lib/deviceDate";
 import {
   getDisplayName,
@@ -521,7 +522,6 @@ export default function Talk() {
         api.entities.AudioChunk.deleteMany({ broadcast_id }).catch(() => {});
       }
 
-      transcribeMessage(msg.id, file_url, channelId);
       return msg;
     },
     onSuccess: (msg) => {
@@ -606,29 +606,24 @@ export default function Talk() {
     },
   });
 
-  const transcribeMessage = async (msgId, audioUrl, channelId) => {
-    const messageChannelId = channelId || effectiveChannelId;
+  const transcribeOnReplay = useCallback(async (msg) => {
+    if (!needsTranscription(msg)) return;
     try {
-      /** @type {any} */
-      const result = await api.functions.invoke("transcribeAudio", {
-        audio_url: audioUrl,
-        message_id: msgId,
-      });
-      const transcript = result?.transcript;
-      if (messageChannelId && transcript) {
+      const transcript = await requestTranscription(msg);
+      if (transcript && msg.channel_id) {
         mergeChannelMessage({
-          id: msgId,
-          channel_id: messageChannelId,
+          id: msg.id,
+          channel_id: msg.channel_id,
           transcript,
           is_transcribed: true,
         });
+        queryClient.invalidateQueries({ queryKey: ["all-messages"] });
+        queryClient.invalidateQueries({ queryKey: ["all-channel-messages"] });
       }
-      queryClient.invalidateQueries({ queryKey: ["all-messages"] });
-      queryClient.invalidateQueries({ queryKey: ["all-channel-messages"] });
     } catch {
-      // transcribeOnVoiceMessage Firestore trigger updates the doc; subscribe will merge it.
+      // Firestore subscribe will pick up server-side updates if any.
     }
-  };
+  }, [mergeChannelMessage, queryClient]);
 
   const finishPttStop = useCallback(() => {
     const signalId = pttSignalRef.current;
@@ -833,6 +828,7 @@ export default function Talk() {
     }
     setPlayingId(msg.id);
     setIsReceiving(true);
+    void transcribeOnReplay(msg);
     if (receivingTimeoutRef.current) clearTimeout(receivingTimeoutRef.current);
     receivingTimeoutRef.current = setTimeout(() => {
       setPlayingId(null);

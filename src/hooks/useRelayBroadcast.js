@@ -119,6 +119,7 @@ export default function useRelayBroadcast({ channelId, userId, userName }) {
   const chunkIntervalRef = useRef(null);
   const sensitiveOpRef = useRef(false);
   const relayUploadsActiveRef = useRef(true);
+  const appendRelayChunkRef = useRef(null);
   const stopInFlightRef = useRef(null);
 
   const releaseSensitiveOperation = useCallback(() => {
@@ -250,6 +251,7 @@ export default function useRelayBroadcast({ channelId, userId, userName }) {
       }
       queueChunkUpload(uploadBlob, isFinalChunk);
     };
+    appendRelayChunkRef.current = appendRelayChunk;
 
     if (useSingleRecorder) {
       const recorder = createMediaRecorder(streamRef.current, mimeType);
@@ -459,5 +461,38 @@ export default function useRelayBroadcast({ channelId, userId, userName }) {
 
   const getMediaStream = useCallback(() => streamRef.current, []);
 
-  return { isRecording, startRecording, stopLiveRelay, stopRecording, heardBroadcastsRef, getMediaStream };
+  /** Re-enable live chunk uploads when Agora publish fails after archive-only start. */
+  const enableLiveRelay = useCallback(() => {
+    if (!activeRef.current || !archiveOnlyRef.current) return;
+    archiveOnlyRef.current = false;
+    relayUploadsActiveRef.current = true;
+
+    if (Capacitor.isNativePlatform() || relayRecorderRef.current || !streamRef.current) {
+      return;
+    }
+
+    const appendRelayChunk = appendRelayChunkRef.current;
+    if (!appendRelayChunk) return;
+
+    const mimeType = mimeRef.current || getSupportedMime();
+    const relayRecorder = createMediaRecorder(streamRef.current, mimeType);
+    relayRecorder.onerror = (event) => {
+      console.error("Relay MediaRecorder error:", event);
+    };
+    relayRecorder.ondataavailable = (event) => {
+      appendRelayChunk(event, isStoppingRef.current);
+    };
+    relayRecorderRef.current = relayRecorder;
+    startRecorderTiming(relayRecorderRef.current, chunkIntervalRef);
+  }, []);
+
+  return {
+    isRecording,
+    startRecording,
+    stopLiveRelay,
+    stopRecording,
+    enableLiveRelay,
+    heardBroadcastsRef,
+    getMediaStream,
+  };
 }

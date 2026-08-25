@@ -48,7 +48,7 @@ export default function PrivacyPolicy() {
       <ul>
         <li>Provide push-to-talk messaging, channel access, and organization administration</li>
         <li>Transmit live audio and deliver voice messages to authorized channel members</li>
-        <li>Generate and display transcripts of voice messages</li>
+        <li>Generate and display transcripts when voice messages are replayed or when logs are exported</li>
         <li>Send push notifications for alerts and channel activity you are authorized to receive</li>
         <li>Authenticate users, prevent abuse, and protect the Service</li>
         <li>Maintain audit logs and transcript history according to organizational retention settings</li>
@@ -79,7 +79,7 @@ export default function PrivacyPolicy() {
 
       <h2>4. Data retention</h2>
       <ul>
-        <li>Voice messages and transcripts are retained for a limited period (currently up to 15 days), after which they are automatically deleted from our systems.</li>
+        <li>Voice messages and transcripts are retained for a limited period (currently up to 10 days), after which they are automatically deleted from our systems.</li>
         <li>Account information is kept while your account is active.</li>
         <li>You may request account deletion through the app, which removes your profile and associated data subject to organizational and legal requirements.</li>
       </ul>

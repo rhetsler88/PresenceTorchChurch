@@ -1,7 +1,7 @@
 import { etzDayKey } from "@/lib/etz";
 
 /** Matches server-side voice message cleanup retention. */
-export const TRANSCRIPT_RETENTION_DAYS = 15;
+export const TRANSCRIPT_RETENTION_DAYS = 10;
 
 export function getTranscriptRetentionCutoffDate() {
   const cutoff = new Date();

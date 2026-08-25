@@ -15,7 +15,8 @@ import { playClearTone } from "@/lib/pttTones";
 configureAgoraSdk();
 
 const RETRY_DELAYS_MS = [1000, 3000, 8000];
-const IDLE_LEAVE_MS = 30000;
+/** Keep Agora joined briefly after PTT — avoids rejoin latency without long idle billing. */
+const IDLE_LEAVE_MS = 3 * 60 * 1000;
 /** Debounce live-listen joins so rapid PTT on/off does not open/close Agora WS mid-handshake. */
 const JOIN_DEBOUNCE_MS = 200;
 

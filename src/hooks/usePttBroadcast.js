@@ -5,8 +5,8 @@ import useAgoraPTT from "./useAgoraPTT";
 import useAgoraMultiPublish from "./useAgoraMultiPublish";
 
 /**
- * PTT broadcast: Storage relay is the source of truth for live chunks and chat archive.
- * When Agora is configured, also publish the same mic stream over WebRTC for lower latency.
+ * PTT broadcast: Firebase relay archives every transmission; live chunks only when Agora is off.
+ * When Agora is configured, publish the same mic stream over WebRTC (archive-only relay).
  * Pass publishChannelIds with length > 1 to publish live audio on every channel (broadcast-all).
  */
 export default function usePttBroadcast(options) {
@@ -40,7 +40,8 @@ export default function usePttBroadcast(options) {
       ?? (channelId ? [channelId] : []);
     const broadcastId = externalBroadcastId || crypto.randomUUID();
 
-    const relayOk = await relay.startRecording({ broadcastId });
+    const useArchiveOnly = agoraEnabled && publishIds.length > 0;
+    const relayOk = await relay.startRecording({ broadcastId, archiveOnly: useArchiveOnly });
     if (!relayOk) return false;
 
     relayActiveRef.current = true;
@@ -69,7 +70,10 @@ export default function usePttBroadcast(options) {
             usingAgoraRef.current = ok;
           }
         } catch (err) {
-          console.warn("Agora publish failed; relay live audio still active:", err);
+          console.warn("Agora publish failed:", err);
+        }
+        if (!usingAgoraRef.current) {
+          relay.enableLiveRelay();
         }
       }
     }
@@ -82,6 +86,7 @@ export default function usePttBroadcast(options) {
     agoraMulti.startRecording,
     relay.startRecording,
     relay.getMediaStream,
+    relay.enableLiveRelay,
   ]);
 
   const stopLiveTransmit = useCallback(async () => {

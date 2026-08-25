@@ -927,6 +927,14 @@ export const functionsApi = {
       return result.data;
     }
 
+    if (name === "transcribeBatch") {
+      const callable = httpsCallable(functions, "transcribeBatch");
+      const result = await callable({
+        message_ids: params.message_ids,
+      });
+      return result.data;
+    }
+
     if (name === "exportTranscriptsToGoogleDoc") {
       const callable = httpsCallable(functions, "exportTranscriptsToGoogleDoc");
       const result = await callable({

@@ -11,18 +11,28 @@ import {
   getMessageDayKey,
   isMessageWithinRetention,
 } from "@/lib/transcriptRetention";
+import { needsTranscription, transcribeMessagesForExport } from "@/lib/transcription";
 import { toast } from "@/lib/toast";
 import DayGroup from "@/components/transcripts/DayGroup";
 import { exportContentToGoogleDoc } from "@/lib/googleDocsExport";
 
 const ETZ = "America/New_York";
 
-function buildExportContent({ messages, channelMap, resolveName, selectedDayLabels }) {
+function buildExportContent({
+  messages,
+  channelMap,
+  resolveName,
+  selectedDayLabels,
+  selectedChannelLabels,
+}) {
   const header = [
     `Presence Torch Transcript Log — ${etzFullTimestamp(new Date())}`,
     selectedDayLabels.length
       ? `Dates: ${selectedDayLabels.join(", ")}`
       : "Dates: (none selected)",
+    selectedChannelLabels.length
+      ? `Channels: ${selectedChannelLabels.join(", ")}`
+      : "Channels: (none selected)",
     `${messages.length} entries`,
     "",
   ].join("\n");
@@ -44,10 +54,22 @@ function buildExportContent({ messages, channelMap, resolveName, selectedDayLabe
   return `${header}\n${body}`;
 }
 
+function mergeTranscriptsIntoMessages(messages, transcriptsById) {
+  if (!transcriptsById || Object.keys(transcriptsById).length === 0) {
+    return messages;
+  }
+  return messages.map((m) => {
+    const transcript = transcriptsById[m.id];
+    if (!transcript) return m;
+    return { ...m, transcript, is_transcribed: true };
+  });
+}
+
 export default function Transcripts() {
   const [search, setSearch] = useState("");
-  const [isExporting, setIsExporting] = useState(false);
+  const [exportPhase, setExportPhase] = useState("idle");
   const [selectedDayKeys, setSelectedDayKeys] = useState(() => new Set());
+  const [selectedChannelIds, setSelectedChannelIds] = useState(() => new Set());
   const queryClient = useQueryClient();
 
   const { data: user } = useQuery({
@@ -65,12 +87,15 @@ export default function Transcripts() {
     queryFn: () => api.entities.Channel.list("-created_date", 100),
   });
 
-  const readableChannelIds = useMemo(() => {
+  const readableChannels = useMemo(() => {
     if (!user?.id || !user?.role || !channels.length) return [];
-    return getReadableVoiceChannels(user, channels)
-      .map((c) => c.id)
-      .filter(Boolean);
+    return getReadableVoiceChannels(user, channels);
   }, [user, channels]);
+
+  const readableChannelIds = useMemo(
+    () => readableChannels.map((c) => c.id).filter(Boolean),
+    [readableChannels]
+  );
 
   const readableChannelIdKey = readableChannelIds.join(",");
 
@@ -114,6 +139,17 @@ export default function Transcripts() {
     return unsub;
   }, [user?.id, readableChannelIdKey, queryClient, readableChannelIds]);
 
+  useEffect(() => {
+    setSelectedChannelIds((prev) => {
+      const valid = new Set(readableChannelIds);
+      const next = new Set([...prev].filter((id) => valid.has(id)));
+      if (next.size === 0 && readableChannelIds.length > 0) {
+        return new Set(readableChannelIds);
+      }
+      return next.size === prev.size ? prev : next;
+    });
+  }, [readableChannelIds]);
+
   const { data: users = [] } = useQuery({
     queryKey: ["users"],
     queryFn: () => api.entities.User.list(),
@@ -140,12 +176,14 @@ export default function Transcripts() {
     if (!search.trim()) return true;
     const q = search.toLowerCase();
     const name = resolveName(m);
+    const channelName = channelMap[m.channel_id]?.name?.toLowerCase() || "";
     return (
       m.transcript?.toLowerCase().includes(q)
       || m.text_content?.toLowerCase().includes(q)
       || name.toLowerCase().includes(q)
+      || channelName.includes(q)
     );
-  }), [messages, search, resolveName]);
+  }), [messages, search, resolveName, channelMap]);
 
   const groupedByDay = useMemo(() => {
     const groups = {};
@@ -194,9 +232,18 @@ export default function Transcripts() {
   }, []);
 
   const exportMessages = useMemo(() => {
-    if (selectedDayKeys.size === 0) return [];
-    return filtered.filter((m) => selectedDayKeys.has(getMessageDayKey(m)));
-  }, [filtered, selectedDayKeys]);
+    if (selectedDayKeys.size === 0 || selectedChannelIds.size === 0) return [];
+    return filtered.filter(
+      (m) =>
+        selectedDayKeys.has(getMessageDayKey(m))
+        && selectedChannelIds.has(m.channel_id)
+    );
+  }, [filtered, selectedDayKeys, selectedChannelIds]);
+
+  const pendingTranscriptionCount = useMemo(
+    () => exportMessages.filter(needsTranscription).length,
+    [exportMessages]
+  );
 
   const toggleDaySelection = useCallback((dayKey) => {
     setSelectedDayKeys((prev) => {
@@ -215,26 +262,60 @@ export default function Transcripts() {
     setSelectedDayKeys(new Set());
   }, []);
 
-  const handleExportToGoogleDoc = async () => {
-    if (exportMessages.length === 0 || selectedDayKeys.size === 0) return;
+  const toggleChannelSelection = useCallback((channelId) => {
+    setSelectedChannelIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(channelId)) next.delete(channelId);
+      else next.add(channelId);
+      return next;
+    });
+  }, []);
 
-    setIsExporting(true);
+  const selectAllChannels = useCallback(() => {
+    setSelectedChannelIds(new Set(readableChannelIds));
+  }, [readableChannelIds]);
+
+  const clearChannelSelection = useCallback(() => {
+    setSelectedChannelIds(new Set());
+  }, []);
+
+  const handleExportToGoogleDoc = async () => {
+    if (exportMessages.length === 0 || selectedDayKeys.size === 0 || selectedChannelIds.size === 0) {
+      return;
+    }
+
+    setExportPhase("transcribing");
     const selectedDayLabels = [...selectedDayKeys]
       .sort((a, b) => b.localeCompare(a))
       .map((dayKey) => dayLabel(dayKey));
+    const selectedChannelLabels = readableChannels
+      .filter((c) => selectedChannelIds.has(c.id))
+      .map((c) => c.name)
+      .sort((a, b) => a.localeCompare(b));
 
-    const content = buildExportContent({
-      messages: exportMessages,
-      channelMap,
-      resolveName,
-      selectedDayLabels,
-    });
-
-    const title = selectedDayLabels.length === 1
-      ? `Presence Torch Transcripts — ${selectedDayLabels[0]}`
-      : `Presence Torch Transcripts — ${selectedDayLabels.length} days`;
+    let messagesForExport = exportMessages;
 
     try {
+      if (pendingTranscriptionCount > 0) {
+        const transcriptsById = await transcribeMessagesForExport(exportMessages);
+        messagesForExport = mergeTranscriptsIntoMessages(exportMessages, transcriptsById);
+        queryClient.invalidateQueries({ queryKey: ["all-messages"] });
+      }
+
+      setExportPhase("exporting");
+
+      const content = buildExportContent({
+        messages: messagesForExport,
+        channelMap,
+        resolveName,
+        selectedDayLabels,
+        selectedChannelLabels,
+      });
+
+      const title = selectedDayLabels.length === 1
+        ? `Presence Torch Transcripts — ${selectedDayLabels[0]}`
+        : `Presence Torch Transcripts — ${selectedDayLabels.length} days`;
+
       const result = await exportContentToGoogleDoc({ title, content });
 
       if (result?.url) {
@@ -254,9 +335,16 @@ export default function Transcripts() {
         toast.error(message || "Could not export to Google Doc");
       }
     } finally {
-      setIsExporting(false);
+      setExportPhase("idle");
     }
   };
+
+  const isExporting = exportPhase !== "idle";
+  const exportButtonLabel = exportPhase === "transcribing"
+    ? `Transcribing (${pendingTranscriptionCount})…`
+    : exportPhase === "exporting"
+      ? "Creating…"
+      : "Export to Google Doc";
 
   return (
     <div className="min-h-screen w-full safe-top">
@@ -276,10 +364,54 @@ export default function Transcripts() {
               disabled={exportMessages.length === 0 || isExporting}
             >
               <FileUp className="w-4 h-4" />
-              <span>{isExporting ? "Creating..." : "Export to Google Doc"}</span>
+              <span>{exportButtonLabel}</span>
             </Button>
           )}
         </div>
+
+        {canExport && readableChannels.length > 0 && (
+          <div className="mt-4 w-full rounded-xl border border-border bg-card p-3">
+            <div className="flex items-center justify-between gap-2 mb-2">
+              <p className="text-xs font-semibold text-foreground">Select channels to export</p>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={selectAllChannels}
+                  className="text-[11px] text-primary hover:underline"
+                >
+                  Select all
+                </button>
+                <span className="text-muted-foreground/40">·</span>
+                <button
+                  type="button"
+                  onClick={clearChannelSelection}
+                  className="text-[11px] text-muted-foreground hover:text-foreground hover:underline"
+                >
+                  Clear
+                </button>
+              </div>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {readableChannels.map((channel) => {
+                const selected = selectedChannelIds.has(channel.id);
+                return (
+                  <button
+                    key={channel.id}
+                    type="button"
+                    onClick={() => toggleChannelSelection(channel.id)}
+                    className={`rounded-full px-3 py-1 text-[11px] font-medium border transition-colors ${
+                      selected
+                        ? "border-primary bg-primary/10 text-primary"
+                        : "border-border bg-background text-muted-foreground hover:text-foreground"
+                    }`}
+                  >
+                    {channel.name}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
 
         {canExport && availableDayKeys.length > 0 && (
           <div className="mt-4 w-full rounded-xl border border-border bg-card p-3">
@@ -323,9 +455,13 @@ export default function Transcripts() {
               })}
             </div>
             <p className="text-[10px] text-muted-foreground mt-2">
-              {selectedDayKeys.size > 0
-                ? `${exportMessages.length} entries selected`
-                : "Choose one or more dates, then export"}
+              {selectedDayKeys.size > 0 && selectedChannelIds.size > 0
+                ? `${exportMessages.length} entries selected${
+                    pendingTranscriptionCount > 0
+                      ? ` · ${pendingTranscriptionCount} will be transcribed on export`
+                      : ""
+                  }`
+                : "Choose channels and dates, then export"}
             </p>
           </div>
         )}

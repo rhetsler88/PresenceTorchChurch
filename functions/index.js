@@ -51,7 +51,7 @@ const recaptchaSecretKey = defineSecret("RECAPTCHA_SECRET_KEY");
 
 const THROTTLE_MS = 15000;
 const YELLOW_BATCH_WAIT_MS = 800;
-const VOICE_MESSAGE_RETENTION_DAYS = 15;
+const VOICE_MESSAGE_RETENTION_DAYS = 10;
 const CLEANUP_BATCH_SIZE = 500;
 
 function toGcsUri(audioUrl) {
@@ -790,15 +790,10 @@ exports.adminDeleteUser = onCall(
   }
 );
 
+// Transcription runs on replay or log export only — not on voice message create.
 exports.transcribeOnVoiceMessage = onDocumentCreated(
   { document: "voiceMessages/{messageId}" },
-  async (event) => {
-    const snapshot = event.data;
-    if (!snapshot) return;
-    const data = snapshot.data();
-    if (!data?.audio_url || data.text_content || data.is_transcribed) return;
-    await transcribeAndUpdate(event.params.messageId, data.audio_url);
-  }
+  async () => {}
 );
 
 function formatTextMessageNotificationBody(count, channelName) {
@@ -1374,6 +1369,73 @@ async function assertCanExportTranscripts(uid) {
     throw new HttpsError("permission-denied", "Export requires admin or director role");
   }
 }
+
+async function transcribeBatchByIds(messageIds) {
+  const db = getFirestore();
+  const transcripts = {};
+  /** @type {Map<string, string[]>} */
+  const pendingByAudioUrl = new Map();
+
+  for (const messageId of messageIds) {
+    if (!messageId || typeof messageId !== "string") continue;
+    const snap = await db.collection("voiceMessages").doc(messageId).get();
+    if (!snap.exists) continue;
+
+    const data = snap.data();
+    if (data.text_content) {
+      transcripts[messageId] = data.text_content;
+      continue;
+    }
+    if (data.is_transcribed || data.transcript) {
+      transcripts[messageId] = data.transcript || "[No speech detected]";
+      continue;
+    }
+    if (!data.audio_url) continue;
+
+    const bucket = pendingByAudioUrl.get(data.audio_url) || [];
+    bucket.push(messageId);
+    pendingByAudioUrl.set(data.audio_url, bucket);
+  }
+
+  for (const [audioUrl, ids] of pendingByAudioUrl) {
+    const primaryId = ids[0];
+    const result = await transcribeAndUpdate(primaryId, audioUrl);
+    const text = result?.transcript || "[Transcription unavailable]";
+    transcripts[primaryId] = text;
+
+    for (let i = 1; i < ids.length; i += 1) {
+      const siblingId = ids[i];
+      await db.collection("voiceMessages").doc(siblingId).update({
+        transcript: text,
+        is_transcribed: true,
+      });
+      transcripts[siblingId] = text;
+    }
+  }
+
+  return transcripts;
+}
+
+exports.transcribeBatch = onCall(
+  { ...CALLABLE_OPTIONS, timeoutSeconds: 540, memory: "512MiB" },
+  async (request) => {
+    if (!request.auth) {
+      throw new HttpsError("unauthenticated", "Sign in required");
+    }
+    await assertCanExportTranscripts(request.auth.uid);
+
+    const { message_ids: messageIds } = request.data || {};
+    if (!Array.isArray(messageIds) || messageIds.length === 0) {
+      throw new HttpsError("invalid-argument", "message_ids array is required");
+    }
+    if (messageIds.length > 200) {
+      throw new HttpsError("invalid-argument", "Too many messages (max 200 per export batch)");
+    }
+
+    const transcripts = await transcribeBatchByIds(messageIds);
+    return { transcripts };
+  }
+);
 
 exports.exportTranscriptsToGoogleDoc = onCall(CALLABLE_OPTIONS, async (request) => {
   if (!request.auth) {

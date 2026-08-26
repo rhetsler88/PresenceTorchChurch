@@ -12,11 +12,12 @@ import { PasswordInput } from "@/components/ui/password-input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
-import { UserCog, Fingerprint, Lock, UserX } from "lucide-react";
-import { api, getAuthErrorMessage } from "@/api/client";
+import { UserCog, Fingerprint, Lock, UserX, Link2, CheckCircle2 } from "lucide-react";
+import { api, getAuthErrorMessage, OAUTH_PROVIDER_IDS } from "@/api/client";
 import { useAuth } from "@/lib/AuthContext";
 import { toast } from "@/lib/toast";
 import { MIN_PASSWORD_LENGTH } from "@/lib/passwordPolicy";
+import { getProviderLabel } from "@/lib/accountLinking";
 import {
   clearBiometricCredentials,
   getBiometricLabel,
@@ -50,6 +51,10 @@ export default function EditProfileDialog({
   const [showBiometricSetup, setShowBiometricSetup] = useState(false);
   const [biometricPassword, setBiometricPassword] = useState("");
   const [enablingBiometric, setEnablingBiometric] = useState(false);
+  const [linkedProviders, setLinkedProviders] = useState([]);
+  const [linkingProvider, setLinkingProvider] = useState(null);
+  const [linkPassword, setLinkPassword] = useState("");
+  const [linkingOAuth, setLinkingOAuth] = useState(false);
 
   useEffect(() => {
     if (!open || nameOnly || !isBiometricPlatform()) return;
@@ -72,9 +77,12 @@ export default function EditProfileDialog({
       setConfirmPassword("");
       setShowBiometricSetup(false);
       setBiometricPassword("");
+      setLinkingProvider(null);
+      setLinkPassword("");
       return;
     }
     setCanSetPassword(api.auth.canSetPassword());
+    setLinkedProviders(api.auth.getLinkedProviderIds());
   }, [open, nameOnly, user]);
 
   useEffect(() => {
@@ -121,6 +129,7 @@ export default function EditProfileDialog({
     try {
       await api.auth.linkPasswordForCurrentUser(newPassword);
       setCanSetPassword(false);
+      setLinkedProviders(api.auth.getLinkedProviderIds());
       setNewPassword("");
       setConfirmPassword("");
       toast.success("Password set", {
@@ -149,6 +158,25 @@ export default function EditProfileDialog({
       return;
     }
     setShowBiometricSetup(true);
+  };
+
+  const handleLinkOAuthProvider = async (providerId) => {
+    if (!linkPassword) {
+      toast.error("Enter your password to verify your account");
+      return;
+    }
+    setLinkingOAuth(true);
+    try {
+      await api.auth.linkOAuthProviderForCurrentUser(providerId, linkPassword);
+      setLinkedProviders(api.auth.getLinkedProviderIds());
+      setLinkingProvider(null);
+      setLinkPassword("");
+      toast.success(`${getProviderLabel(providerId)} sign-in linked`);
+    } catch (err) {
+      toast.error(getAuthErrorMessage(err) || "Couldn't link sign-in method");
+    } finally {
+      setLinkingOAuth(false);
+    }
   };
 
   const handleEnableBiometric = async () => {
@@ -232,7 +260,7 @@ export default function EditProfileDialog({
                 <Label>Set a password</Label>
               </div>
               <p className="text-xs text-muted-foreground">
-                You signed in with Google. Add a password to sign in with email or enable {biometricLabel.toLowerCase()} sign-in.
+                You signed in with Google or Apple. Add a password to sign in with email or enable {biometricLabel.toLowerCase()} sign-in.
               </p>
               <div className="space-y-2">
                 <Label htmlFor="editNewPassword">New password</Label>
@@ -272,6 +300,97 @@ export default function EditProfileDialog({
               >
                 {settingPassword ? "Setting password..." : "Set password"}
               </Button>
+            </div>
+          )}
+
+          {!nameOnly && (
+            <div className="border-t border-border pt-4 space-y-3">
+              <div className="flex items-center gap-2">
+                <Link2 className="w-4 h-4 text-primary" />
+                <Label>Sign-in methods</Label>
+              </div>
+              <div className="space-y-2 text-sm">
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-muted-foreground">Email & password</span>
+                  {linkedProviders.includes("password") ? (
+                    <span className="inline-flex items-center gap-1 text-xs text-emerald-600">
+                      <CheckCircle2 className="w-3.5 h-3.5" />
+                      Linked
+                    </span>
+                  ) : (
+                    <span className="text-xs text-muted-foreground">Not set</span>
+                  )}
+                </div>
+                {[OAUTH_PROVIDER_IDS.google, OAUTH_PROVIDER_IDS.apple].map((providerId) => {
+                  const linked = linkedProviders.includes(providerId);
+                  const canLink = api.auth.canLinkOAuthProvider(providerId);
+                  const label = getProviderLabel(providerId);
+                  return (
+                    <div key={providerId} className="space-y-2">
+                      <div className="flex items-center justify-between gap-3">
+                        <span className="text-muted-foreground">{label}</span>
+                        {linked ? (
+                          <span className="inline-flex items-center gap-1 text-xs text-emerald-600">
+                            <CheckCircle2 className="w-3.5 h-3.5" />
+                            Linked
+                          </span>
+                        ) : canLink ? (
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className="h-8"
+                            onClick={() => {
+                              setLinkingProvider(providerId);
+                              setLinkPassword("");
+                            }}
+                          >
+                            Link
+                          </Button>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">Set a password first</span>
+                        )}
+                      </div>
+                      {linkingProvider === providerId && (
+                        <div className="space-y-2 rounded-lg border border-border p-3">
+                          <p className="text-xs text-muted-foreground">
+                            Enter your password to verify before linking {label}.
+                          </p>
+                          <PasswordInput
+                            autoComplete="current-password"
+                            value={linkPassword}
+                            onChange={(e) => setLinkPassword(e.target.value)}
+                            disabled={linkingOAuth}
+                          />
+                          <div className="flex gap-2">
+                            <Button
+                              type="button"
+                              size="sm"
+                              className="flex-1"
+                              disabled={linkingOAuth || !linkPassword}
+                              onClick={() => handleLinkOAuthProvider(providerId)}
+                            >
+                              {linkingOAuth ? "Linking..." : `Link ${label}`}
+                            </Button>
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="ghost"
+                              disabled={linkingOAuth}
+                              onClick={() => {
+                                setLinkingProvider(null);
+                                setLinkPassword("");
+                              }}
+                            >
+                              Cancel
+                            </Button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
             </div>
           )}
 

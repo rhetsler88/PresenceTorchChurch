@@ -66,7 +66,7 @@ export default function GooglePasswordSetupPrompt() {
               Set a password
             </AlertDialogTitle>
             <AlertDialogDescription>
-              You signed in with Google. Add a password so you can sign in with email and enable
+              You signed in with Google or Apple. Add a password so you can sign in with email and enable
               biometric sign-in on this device.
             </AlertDialogDescription>
           </AlertDialogHeader>

@@ -7,21 +7,18 @@ export default function Login() {
   return (
     <div className="page-adaptive bg-background dark safe-top safe-bottom">
       <div className="page-adaptive-inner w-full max-w-sm mx-auto px-4 py-6">
-        <div className="flex flex-col items-center mb-3">
+        <div className="bg-card border border-border rounded-2xl p-4">
           <img
-            src="/logo-full.png"
+            src="/logo-signin-banner.png"
             alt="Presence Torch Church"
-            className="w-full max-w-[168px] h-auto object-contain"
+            className="w-full h-auto object-contain mb-3"
             draggable={false}
           />
-        </div>
-
-        <div className="bg-card border border-border rounded-2xl p-4">
           <h2 className="text-base font-semibold text-foreground text-center mb-0.5">
             Sign in to continue
           </h2>
           <p className="text-xs text-muted-foreground text-center mb-3">
-            Use email or Google to access your organization&apos;s channels
+            Use email, Google, or Apple to access your organization&apos;s channels
           </p>
 
           <AuthSignInPanel />

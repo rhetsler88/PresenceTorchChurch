@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import { Fingerprint } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -8,8 +8,11 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Separator } from "@/components/ui/separator";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useAuth } from "@/lib/AuthContext";
-import { getAuthErrorMessage } from "@/api/client";
+import { getAuthErrorMessage, OAUTH_PROVIDER_IDS } from "@/api/client";
 import ReCaptcha from "@/components/auth/ReCaptcha";
+import OAuthSignInButtons from "@/components/auth/OAuthSignInButtons";
+import LinkAccountDialog from "@/components/auth/LinkAccountDialog";
+import { isAccountLinkRequiredError } from "@/lib/accountLinking";
 import {
   getBiometricLabel,
   hasBiometricSignIn,
@@ -20,13 +23,14 @@ import {
 } from "@/lib/biometricAuth";
 import { MIN_PASSWORD_LENGTH } from "@/lib/passwordPolicy";
 
-export default function AuthSignInPanel({ googleButtonLabel = "Sign in with Google" }) {
-  const { navigateToLogin, signInWithEmail, signUpWithEmail } = useAuth();
+export default function AuthSignInPanel() {
+  const { signInWithOAuth, signInWithEmail, signUpWithEmail } = useAuth();
   const [mode, setMode] = useState("sign-in");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [submitting, setSubmitting] = useState(false);
-  const [googleSigningIn, setGoogleSigningIn] = useState(false);
+  const [oauthProvider, setOauthProvider] = useState(null);
+  const [linkRequest, setLinkRequest] = useState(null);
   const [biometricSigningIn, setBiometricSigningIn] = useState(false);
   const [error, setError] = useState(null);
   const [biometricAvailable, setBiometricAvailable] = useState(false);
@@ -35,6 +39,8 @@ export default function AuthSignInPanel({ googleButtonLabel = "Sign in with Goog
   const [enableBiometricNextTime, setEnableBiometricNextTime] = useState(true);
   const [captchaToken, setCaptchaToken] = useState(null);
   const captchaRef = useRef(null);
+  const autoBiometricAttemptedRef = useRef(false);
+  const pendingBiometricCredentialsRef = useRef(null);
 
   const resetCaptcha = () => {
     setCaptchaToken(null);
@@ -43,6 +49,74 @@ export default function AuthSignInPanel({ googleButtonLabel = "Sign in with Goog
 
   const isCaptchaError = (err) =>
     err?.code === "auth/recaptcha-failed" || err?.code === "auth/recaptcha-required";
+
+  const isBiometricCancelled = (err) =>
+    err?.message?.includes("cancel") || err?.code === 10 || err?.code === 13;
+
+  const completeBiometricEmailSignIn = useCallback(
+    async (savedEmail, savedPassword, token) => {
+      setBiometricSigningIn(true);
+      setError(null);
+      try {
+        await signInWithEmail(savedEmail, savedPassword, token);
+        pendingBiometricCredentialsRef.current = null;
+      } catch (err) {
+        setError(getAuthErrorMessage(err) || "Biometric sign-in failed.");
+        if (isCaptchaError(err)) {
+          resetCaptcha();
+          pendingBiometricCredentialsRef.current = { savedEmail, savedPassword };
+        }
+        throw err;
+      } finally {
+        setBiometricSigningIn(false);
+      }
+    },
+    [signInWithEmail]
+  );
+
+  const promptBiometricSignIn = useCallback(
+    async ({ requireCaptcha = false } = {}) => {
+      if (
+        requireCaptcha &&
+        !captchaToken &&
+        !pendingBiometricCredentialsRef.current
+      ) {
+        setError('Please complete the "I\'m not a robot" check.');
+        return;
+      }
+
+      if (pendingBiometricCredentialsRef.current && captchaToken) {
+        const { savedEmail, savedPassword } = pendingBiometricCredentialsRef.current;
+        await completeBiometricEmailSignIn(savedEmail, savedPassword, captchaToken);
+        return;
+      }
+
+      if (pendingBiometricCredentialsRef.current && !captchaToken) {
+        setError('Please complete the "I\'m not a robot" check.');
+        return;
+      }
+
+      setBiometricSigningIn(true);
+      setError(null);
+      try {
+        const { email: savedEmail, password: savedPassword } = await signInWithBiometric();
+        if (captchaToken) {
+          await completeBiometricEmailSignIn(savedEmail, savedPassword, captchaToken);
+        } else {
+          pendingBiometricCredentialsRef.current = { savedEmail, savedPassword };
+        }
+      } catch (err) {
+        if (isBiometricCancelled(err)) {
+          setError(null);
+        } else {
+          setError(getAuthErrorMessage(err) || "Biometric sign-in failed.");
+        }
+      } finally {
+        setBiometricSigningIn(false);
+      }
+    },
+    [captchaToken, completeBiometricEmailSignIn]
+  );
 
   useEffect(() => {
     if (!isBiometricPlatform()) return;
@@ -58,6 +132,27 @@ export default function AuthSignInPanel({ googleButtonLabel = "Sign in with Goog
       setShowBiometricSignIn(stored);
     })();
   }, []);
+
+  useEffect(() => {
+    if (
+      !showBiometricSignIn ||
+      mode !== "sign-in" ||
+      autoBiometricAttemptedRef.current
+    ) {
+      return;
+    }
+
+    autoBiometricAttemptedRef.current = true;
+    void promptBiometricSignIn({ requireCaptcha: false });
+  }, [showBiometricSignIn, mode, promptBiometricSignIn]);
+
+  useEffect(() => {
+    if (!captchaToken || !pendingBiometricCredentialsRef.current) return;
+
+    const pending = pendingBiometricCredentialsRef.current;
+    pendingBiometricCredentialsRef.current = null;
+    void completeBiometricEmailSignIn(pending.savedEmail, pending.savedPassword, captchaToken);
+  }, [captchaToken, completeBiometricEmailSignIn]);
 
   const handleEmailSubmit = async (e) => {
     e.preventDefault();
@@ -87,80 +182,57 @@ export default function AuthSignInPanel({ googleButtonLabel = "Sign in with Goog
     }
   };
 
-  const handleBiometricSignIn = async () => {
-    if (!captchaToken) {
-      setError('Please complete the "I\'m not a robot" check.');
-      return;
-    }
-    setBiometricSigningIn(true);
-    setError(null);
-    try {
-      const { email: savedEmail, password: savedPassword } = await signInWithBiometric();
-      await signInWithEmail(savedEmail, savedPassword, captchaToken);
-    } catch (err) {
-      if (err?.message?.includes("cancel") || err?.code === 10 || err?.code === 13) {
-        setError(null);
-      } else {
-        setError(getAuthErrorMessage(err) || "Biometric sign-in failed.");
-      }
-    } finally {
-      setBiometricSigningIn(false);
-    }
+  const handleBiometricSignIn = () => {
+    void promptBiometricSignIn({ requireCaptcha: true });
   };
 
-  const handleGoogleSignIn = async () => {
+  const handleOAuthSignIn = async (providerKey) => {
     if (!captchaToken) {
       setError('Please complete the "I\'m not a robot" check.');
       return;
     }
-    setGoogleSigningIn(true);
+    setOauthProvider(providerKey);
     setError(null);
     try {
-      await navigateToLogin(captchaToken);
+      const providerId =
+        providerKey === "apple" ? OAUTH_PROVIDER_IDS.apple : OAUTH_PROVIDER_IDS.google;
+      await signInWithOAuth(captchaToken, providerId);
     } catch (err) {
+      if (isAccountLinkRequiredError(err)) {
+        setLinkRequest({
+          email: err.email,
+          providerId: err.providerId,
+          pendingCredential: err.pendingCredential,
+        });
+        setError(null);
+        return;
+      }
       setError(getAuthErrorMessage(err));
       if (isCaptchaError(err)) {
         resetCaptcha();
       }
     } finally {
-      setGoogleSigningIn(false);
+      setOauthProvider(null);
     }
   };
 
-  const busy = submitting || googleSigningIn || biometricSigningIn;
+  const busy = submitting || Boolean(oauthProvider) || biometricSigningIn;
   const canSubmit = !busy && Boolean(captchaToken);
 
   return (
+    <>
     <div className="relative space-y-2.5">
       {busy && (
         <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 rounded-2xl bg-background/90 backdrop-blur-sm">
           <div className="w-7 h-7 border-4 border-primary/20 border-t-primary rounded-full animate-spin" />
           <p className="text-xs text-muted-foreground font-medium">
-            {googleSigningIn ? "Signing in with Google..." : "Signing in..."}
+            {oauthProvider === "google"
+              ? "Signing in with Google..."
+              : oauthProvider === "apple"
+                ? "Signing in with Apple..."
+                : "Signing in..."}
           </p>
         </div>
-      )}
-      {showBiometricSignIn && (
-        <>
-          <Button
-            type="button"
-            variant="secondary"
-            className="w-full h-10"
-            onClick={handleBiometricSignIn}
-            disabled={!canSubmit}
-          >
-            <Fingerprint className="w-4 h-4 mr-2" />
-            {biometricSigningIn ? "Signing in..." : `Sign in with ${biometricLabel}`}
-          </Button>
-          <div className="relative py-0.5">
-            <div className="absolute inset-0 flex items-center">
-              <Separator className="w-full" />
-            </div>
-            <div className="relative flex justify-center text-[10px] uppercase">
-              <span className="bg-card px-2 text-muted-foreground">Or</span>
-            </div>
-          </div>
-        </>
       )}
       <Tabs
         value={mode}
@@ -268,15 +340,50 @@ export default function AuthSignInPanel({ googleButtonLabel = "Sign in with Goog
         </div>
       </div>
 
-      <Button
-        type="button"
-        variant="outline"
-        className="w-full h-10"
-        onClick={handleGoogleSignIn}
+      <OAuthSignInButtons
+        onGoogleSignIn={() => handleOAuthSignIn("google")}
+        onAppleSignIn={() => handleOAuthSignIn("apple")}
         disabled={!canSubmit}
-      >
-        {googleSigningIn ? "Signing in..." : googleButtonLabel}
-      </Button>
+        activeProvider={oauthProvider}
+      />
+
+      {showBiometricSignIn && (
+        <>
+          <div className="relative py-0.5">
+            <div className="absolute inset-0 flex items-center">
+              <Separator className="w-full" />
+            </div>
+            <div className="relative flex justify-center text-[10px] uppercase">
+              <span className="bg-card px-2 text-muted-foreground">Or</span>
+            </div>
+          </div>
+          <Button
+            type="button"
+            variant="secondary"
+            className="w-full h-10"
+            onClick={handleBiometricSignIn}
+            disabled={busy}
+          >
+            <Fingerprint className="w-4 h-4 mr-2" />
+            {biometricSigningIn ? "Signing in..." : `Sign in with ${biometricLabel}`}
+          </Button>
+        </>
+      )}
     </div>
+    <LinkAccountDialog
+      open={Boolean(linkRequest)}
+      onOpenChange={(open) => {
+        if (!open) setLinkRequest(null);
+      }}
+      email={linkRequest?.email || ""}
+      providerId={linkRequest?.providerId}
+      pendingCredential={linkRequest?.pendingCredential}
+      captchaToken={captchaToken}
+      onLinked={() => {
+        setLinkRequest(null);
+        setError(null);
+      }}
+    />
+  </>
   );
 }

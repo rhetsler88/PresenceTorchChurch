@@ -8,7 +8,7 @@ const config: CapacitorConfig = {
     FirebaseAuthentication: {
       // Keep native Google creds on the plugin; bridge into Firebase JS SDK for Firestore.
       skipNativeAuth: true,
-      providers: ['google.com'],
+      providers: ['google.com', 'apple.com'],
     },
     BluetoothLe: {
       displayStrings: {

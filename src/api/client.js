@@ -26,8 +26,10 @@ import {
   updatePassword,
   reauthenticateWithCredential,
   GoogleAuthProvider,
+  OAuthProvider,
   EmailAuthProvider,
   linkWithCredential,
+  linkWithPopup,
   signOut,
 } from "firebase/auth";
 import { Capacitor } from "@capacitor/core";
@@ -55,6 +57,13 @@ import {
   validateNewPasswordDifferent,
   validatePasswordLength,
 } from "@/lib/passwordPolicy";
+import {
+  OAUTH_PROVIDER_IDS,
+  buildOAuthProvider,
+  nativeCredentialToFirebaseCredential,
+  pendingCredentialFromAuthError,
+  createAccountLinkRequiredError,
+} from "@/lib/accountLinking";
 
 const functions = getFunctions(app, "us-east5");
 
@@ -158,8 +167,12 @@ export function formatAuthError(err) {
       return "reCAPTCHA verification failed. Please try again.";
     case "auth/account-exists-with-different-credential":
       return "This email is already registered with a different sign-in method.";
+    case "auth/account-link-required":
+      return "Verify your password to link this sign-in method to your existing account.";
+    case "auth/provider-already-linked":
+      return "This sign-in method is already linked to your account.";
     case "auth/credential-already-in-use":
-      return "This Google account is already linked to another user.";
+      return "This account is already linked to another user.";
     case "auth/no-google-credentials":
       return "Google Sign-In could not start. Confirm a Google account is on the device, Play App Signing SHA-1 is in Firebase, and you installed the latest closed-testing build.";
     case "auth/google-developer-error":
@@ -458,7 +471,114 @@ function userHasPasswordProvider(firebaseUser = auth.currentUser) {
 
 function userCanSetPassword(firebaseUser = auth.currentUser) {
   const providers = getAuthProviderIds(firebaseUser);
-  return providers.includes("google.com") && !providers.includes("password");
+  const hasOAuthProvider = providers.some(
+    (providerId) => providerId === "google.com" || providerId === "apple.com"
+  );
+  return hasOAuthProvider && !providers.includes("password");
+}
+
+const OAUTH_PROVIDERS = OAUTH_PROVIDER_IDS;
+
+function userHasOAuthProvider(firebaseUser = auth.currentUser, providerId) {
+  return getAuthProviderIds(firebaseUser).includes(providerId);
+}
+
+function userCanLinkOAuthProvider(firebaseUser = auth.currentUser, providerId) {
+  if (!firebaseUser) return false;
+  if (userHasOAuthProvider(firebaseUser, providerId)) return false;
+  return userHasPasswordProvider(firebaseUser);
+}
+
+async function persistOAuthSignIn() {
+  await auth.authStateReady();
+  const firebaseUser = auth.currentUser;
+  if (!firebaseUser) {
+    throw Object.assign(new Error("Sign-in did not persist. Please try again."), {
+      code: "auth/not-authenticated",
+    });
+  }
+  await firebaseUser.getIdToken(true);
+  await verifyFirebaseConnection();
+  recordLoginTime();
+  await syncNativeActiveSession(true).catch(() => {});
+}
+
+async function signInWithGoogleNative() {
+  try {
+    await revokeNativeGoogleSignInSession().catch(() => {});
+    return await FirebaseAuthentication.signInWithGoogle({ useCredentialManager: false });
+  } catch (err) {
+    throw enrichGoogleSignInError(err);
+  }
+}
+
+async function signInWithAppleNative() {
+  return await FirebaseAuthentication.signInWithApple();
+}
+
+async function fetchNativeOAuthCredential(providerId) {
+  markNativeGoogleSignInPending();
+  await syncNativeGoogleSignInPending(true).catch(() => {});
+  try {
+    const result =
+      providerId === OAUTH_PROVIDERS.google
+        ? await signInWithGoogleNative()
+        : await signInWithAppleNative();
+    const nativeCredential = result.credential;
+    if (!nativeCredential?.idToken) {
+      throw Object.assign(new Error("Sign-in was cancelled."), { code: "auth/popup-closed-by-user" });
+    }
+    return nativeCredentialToFirebaseCredential(providerId, nativeCredential);
+  } finally {
+    clearNativeGoogleSignInPending();
+    await syncNativeGoogleSignInPending(false).catch(() => {});
+  }
+}
+
+function throwIfAccountLinkRequired(error, providerId) {
+  if (error?.code !== "auth/account-exists-with-different-credential") {
+    return;
+  }
+  const pendingCredential = pendingCredentialFromAuthError(error, providerId);
+  if (!pendingCredential) {
+    return;
+  }
+  throw createAccountLinkRequiredError(error, providerId, pendingCredential);
+}
+
+async function signInWithOAuthNative(providerId) {
+  const firebaseCredential = await fetchNativeOAuthCredential(providerId);
+  try {
+    await signInWithCredential(auth, firebaseCredential);
+    await persistOAuthSignIn();
+  } catch (err) {
+    throwIfAccountLinkRequired(err, providerId);
+    throw err;
+  }
+}
+
+async function signInWithOAuthWeb(providerId) {
+  const provider = buildOAuthProvider(providerId);
+
+  markOAuthRedirectPending();
+  try {
+    await signInWithPopup(auth, provider);
+    recordLoginTime();
+    clearOAuthRedirectPending();
+    return;
+  } catch (err) {
+    throwIfAccountLinkRequired(err, providerId);
+    const useRedirect =
+      err?.code === "auth/popup-blocked" ||
+      err?.code === "auth/cancelled-popup-request" ||
+      String(err?.message || "").includes("Cross-Origin-Opener-Policy");
+    if (!useRedirect) {
+      clearOAuthRedirectPending();
+      throw err;
+    }
+  }
+
+  await signInWithRedirect(auth, provider);
 }
 
 export const organizationsApi = {
@@ -588,8 +708,12 @@ export function getAuthErrorMessage(err) {
       return "reCAPTCHA verification failed. Please try again.";
     case "auth/account-exists-with-different-credential":
       return "This email is already registered with a different sign-in method.";
+    case "auth/account-link-required":
+      return "Verify your password to link this sign-in method to your existing account.";
+    case "auth/provider-already-linked":
+      return "This sign-in method is already linked to your account.";
     case "auth/credential-already-in-use":
-      return "This Google account is already linked to another user.";
+      return "This account is already linked to another user.";
     case "auth/no-google-credentials":
       return "Google Sign-In could not start. Confirm a Google account is on the device, Play App Signing SHA-1 is in Firebase, and you installed the latest closed-testing build.";
     case "auth/google-developer-error":
@@ -625,14 +749,7 @@ function enrichGoogleSignInError(err) {
   return err;
 }
 
-async function signInWithGoogleNative() {
-  try {
-    await revokeNativeGoogleSignInSession().catch(() => {});
-    return await FirebaseAuthentication.signInWithGoogle({ useCredentialManager: false });
-  } catch (err) {
-    throw enrichGoogleSignInError(err);
-  }
-}
+export { OAUTH_PROVIDER_IDS };
 
 export const authApi = {
   async me() {
@@ -676,62 +793,17 @@ export const authApi = {
     window.location.href = "/";
   },
 
-  async redirectToLogin(captchaToken) {
+  async signInWithOAuth(captchaToken, providerId = OAUTH_PROVIDERS.google) {
     await verifyRecaptchaToken(captchaToken);
-
     if (Capacitor.isNativePlatform()) {
-      markNativeGoogleSignInPending();
-      await syncNativeGoogleSignInPending(true).catch(() => {});
-      try {
-        const result = await signInWithGoogleNative();
-        const idToken = result.credential?.idToken;
-        if (!idToken) {
-          throw Object.assign(new Error("Google sign-in was cancelled."), { code: "auth/popup-closed-by-user" });
-        }
-        const credential = GoogleAuthProvider.credential(
-          idToken,
-          result.credential?.accessToken ?? undefined,
-        );
-        await signInWithCredential(auth, credential);
-        await auth.authStateReady();
-        const firebaseUser = auth.currentUser;
-        if (!firebaseUser) {
-          throw Object.assign(new Error("Google sign-in did not persist. Please try again."), {
-            code: "auth/not-authenticated",
-          });
-        }
-        await firebaseUser.getIdToken(true);
-        await verifyFirebaseConnection();
-        recordLoginTime();
-        await syncNativeActiveSession(true).catch(() => {});
-      } catch (err) {
-        clearNativeGoogleSignInPending();
-        await syncNativeGoogleSignInPending(false).catch(() => {});
-        throw err;
-      }
+      await signInWithOAuthNative(providerId);
       return;
     }
+    await signInWithOAuthWeb(providerId);
+  },
 
-    const provider = new GoogleAuthProvider();
-    markOAuthRedirectPending();
-
-    try {
-      await signInWithPopup(auth, provider);
-      recordLoginTime();
-      clearOAuthRedirectPending();
-      return;
-    } catch (err) {
-      const useRedirect =
-        err?.code === "auth/popup-blocked" ||
-        err?.code === "auth/cancelled-popup-request" ||
-        String(err?.message || "").includes("Cross-Origin-Opener-Policy");
-      if (!useRedirect) {
-        clearOAuthRedirectPending();
-        throw err;
-      }
-    }
-
-    await signInWithRedirect(auth, provider);
+  async redirectToLogin(captchaToken) {
+    return authApi.signInWithOAuth(captchaToken, OAUTH_PROVIDERS.google);
   },
 
   async signInWithEmail(email, password, captchaToken) {
@@ -868,6 +940,64 @@ export const authApi = {
 
     // Reauthenticate can destabilize Capacitor Firebase on native; sign-in validates the password.
     await signInWithEmailAndPassword(auth, firebaseUser.email, password);
+  },
+
+  getLinkedProviderIds() {
+    return getAuthProviderIds(auth.currentUser);
+  },
+
+  canLinkOAuthProvider(providerId) {
+    return userCanLinkOAuthProvider(auth.currentUser, providerId);
+  },
+
+  async linkOAuthToExistingAccount({ email, password, pendingCredential, captchaToken }) {
+    if (!pendingCredential) {
+      throw Object.assign(new Error("Missing sign-in credentials. Please try again."), {
+        code: "auth/invalid-credential",
+      });
+    }
+    await verifyRecaptchaToken(captchaToken);
+    await signInWithEmailAndPassword(auth, email.trim(), password);
+    const firebaseUser = auth.currentUser;
+    if (!firebaseUser) {
+      throw Object.assign(new Error("Sign-in failed. Please try again."), {
+        code: "auth/not-authenticated",
+      });
+    }
+    await linkWithCredential(firebaseUser, pendingCredential);
+    markPasswordLoginSession();
+    await persistOAuthSignIn();
+  },
+
+  async linkOAuthProviderForCurrentUser(providerId, password) {
+    await waitForFirestoreAuth({ forceRefresh: true });
+    const firebaseUser = auth.currentUser;
+    if (!firebaseUser?.email) {
+      throw Object.assign(new Error("Your account does not have an email address."), {
+        code: "auth/missing-email",
+      });
+    }
+    if (!userCanLinkOAuthProvider(firebaseUser, providerId)) {
+      throw Object.assign(new Error("This sign-in method is already linked or cannot be added."), {
+        code: "auth/provider-already-linked",
+      });
+    }
+    if (!userHasPasswordProvider(firebaseUser)) {
+      throw Object.assign(new Error("Set a password on your account before linking additional sign-in methods."), {
+        code: "auth/operation-not-allowed",
+      });
+    }
+
+    await signInWithEmailAndPassword(auth, firebaseUser.email, password);
+
+    if (Capacitor.isNativePlatform()) {
+      const pendingCredential = await fetchNativeOAuthCredential(providerId);
+      await linkWithCredential(auth.currentUser, pendingCredential);
+    } else {
+      await linkWithPopup(auth.currentUser, buildOAuthProvider(providerId));
+    }
+
+    await auth.currentUser?.reload();
   },
 
   async syncMyChannelAccess() {

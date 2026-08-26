@@ -3,7 +3,7 @@ import { onAuthStateChanged, getRedirectResult } from "firebase/auth";
 import { Capacitor } from "@capacitor/core";
 import { doc, getDoc, setDoc, collection, query, where, limit, getDocs } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase";
-import { authApi } from "@/api/client";
+import { authApi, OAUTH_PROVIDER_IDS } from "@/api/client";
 import { initPushNotifications, teardownPushNotifications, refreshWebPushAfterInstall } from "@/lib/pushNotifications";
 import { stopAllBackgroundAudio } from "@/lib/backgroundAudio";
 import { clearDailyCodeSession } from "@/lib/dailyCode";
@@ -610,7 +610,10 @@ export const AuthProvider = ({ children }) => {
   };
   logoutRef.current = logout;
 
-  const navigateToLogin = (captchaToken) => authApi.redirectToLogin(captchaToken);
+  const navigateToLogin = (captchaToken) =>
+    authApi.signInWithOAuth(captchaToken, OAUTH_PROVIDER_IDS.google);
+  const signInWithOAuth = (captchaToken, providerId) =>
+    authApi.signInWithOAuth(captchaToken, providerId);
   const signInWithEmail = (email, password, captchaToken) =>
     authApi.signInWithEmail(email, password, captchaToken);
   const signUpWithEmail = (email, password, captchaToken) =>
@@ -640,6 +643,7 @@ export const AuthProvider = ({ children }) => {
         authChecked,
         logout,
         navigateToLogin,
+        signInWithOAuth,
         signInWithEmail,
         signUpWithEmail,
         registerWithEmail,

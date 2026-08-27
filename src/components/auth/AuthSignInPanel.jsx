@@ -40,7 +40,6 @@ export default function AuthSignInPanel() {
   const [captchaToken, setCaptchaToken] = useState(null);
   const captchaRef = useRef(null);
   const autoBiometricAttemptedRef = useRef(false);
-  const pendingBiometricCredentialsRef = useRef(null);
 
   const resetCaptcha = () => {
     setCaptchaToken(null);
@@ -53,70 +52,22 @@ export default function AuthSignInPanel() {
   const isBiometricCancelled = (err) =>
     err?.message?.includes("cancel") || err?.code === 10 || err?.code === 13;
 
-  const completeBiometricEmailSignIn = useCallback(
-    async (savedEmail, savedPassword, token) => {
-      setBiometricSigningIn(true);
-      setError(null);
-      try {
-        await signInWithEmail(savedEmail, savedPassword, token);
-        pendingBiometricCredentialsRef.current = null;
-      } catch (err) {
+  const promptBiometricSignIn = useCallback(async () => {
+    setBiometricSigningIn(true);
+    setError(null);
+    try {
+      const { email: savedEmail, password: savedPassword } = await signInWithBiometric();
+      await signInWithEmail(savedEmail, savedPassword);
+    } catch (err) {
+      if (isBiometricCancelled(err)) {
+        setError(null);
+      } else {
         setError(getAuthErrorMessage(err) || "Biometric sign-in failed.");
-        if (isCaptchaError(err)) {
-          resetCaptcha();
-          pendingBiometricCredentialsRef.current = { savedEmail, savedPassword };
-        }
-        throw err;
-      } finally {
-        setBiometricSigningIn(false);
       }
-    },
-    [signInWithEmail]
-  );
-
-  const promptBiometricSignIn = useCallback(
-    async ({ requireCaptcha = false } = {}) => {
-      if (
-        requireCaptcha &&
-        !captchaToken &&
-        !pendingBiometricCredentialsRef.current
-      ) {
-        setError('Please complete the "I\'m not a robot" check.');
-        return;
-      }
-
-      if (pendingBiometricCredentialsRef.current && captchaToken) {
-        const { savedEmail, savedPassword } = pendingBiometricCredentialsRef.current;
-        await completeBiometricEmailSignIn(savedEmail, savedPassword, captchaToken);
-        return;
-      }
-
-      if (pendingBiometricCredentialsRef.current && !captchaToken) {
-        setError('Please complete the "I\'m not a robot" check.');
-        return;
-      }
-
-      setBiometricSigningIn(true);
-      setError(null);
-      try {
-        const { email: savedEmail, password: savedPassword } = await signInWithBiometric();
-        if (captchaToken) {
-          await completeBiometricEmailSignIn(savedEmail, savedPassword, captchaToken);
-        } else {
-          pendingBiometricCredentialsRef.current = { savedEmail, savedPassword };
-        }
-      } catch (err) {
-        if (isBiometricCancelled(err)) {
-          setError(null);
-        } else {
-          setError(getAuthErrorMessage(err) || "Biometric sign-in failed.");
-        }
-      } finally {
-        setBiometricSigningIn(false);
-      }
-    },
-    [captchaToken, completeBiometricEmailSignIn]
-  );
+    } finally {
+      setBiometricSigningIn(false);
+    }
+  }, [signInWithEmail]);
 
   useEffect(() => {
     if (!isBiometricPlatform()) return;
@@ -143,20 +94,12 @@ export default function AuthSignInPanel() {
     }
 
     autoBiometricAttemptedRef.current = true;
-    void promptBiometricSignIn({ requireCaptcha: false });
+    void promptBiometricSignIn();
   }, [showBiometricSignIn, mode, promptBiometricSignIn]);
-
-  useEffect(() => {
-    if (!captchaToken || !pendingBiometricCredentialsRef.current) return;
-
-    const pending = pendingBiometricCredentialsRef.current;
-    pendingBiometricCredentialsRef.current = null;
-    void completeBiometricEmailSignIn(pending.savedEmail, pending.savedPassword, captchaToken);
-  }, [captchaToken, completeBiometricEmailSignIn]);
 
   const handleEmailSubmit = async (e) => {
     e.preventDefault();
-    if (!captchaToken) {
+    if (mode === "sign-up" && !captchaToken) {
       setError('Please complete the "I\'m not a robot" check.');
       return;
     }
@@ -164,7 +107,7 @@ export default function AuthSignInPanel() {
     setError(null);
     try {
       if (mode === "sign-in") {
-        await signInWithEmail(email, password, captchaToken);
+        await signInWithEmail(email, password);
         if (biometricAvailable && enableBiometricNextTime) {
           await saveBiometricCredentials(email, password);
           setShowBiometricSignIn(true);
@@ -174,7 +117,7 @@ export default function AuthSignInPanel() {
       }
     } catch (err) {
       setError(getAuthErrorMessage(err));
-      if (isCaptchaError(err)) {
+      if (mode === "sign-up" && isCaptchaError(err)) {
         resetCaptcha();
       }
     } finally {
@@ -182,21 +125,13 @@ export default function AuthSignInPanel() {
     }
   };
 
-  const handleBiometricSignIn = () => {
-    void promptBiometricSignIn({ requireCaptcha: true });
-  };
-
   const handleOAuthSignIn = async (providerKey) => {
-    if (!captchaToken) {
-      setError('Please complete the "I\'m not a robot" check.');
-      return;
-    }
     setOauthProvider(providerKey);
     setError(null);
     try {
       const providerId =
         providerKey === "apple" ? OAUTH_PROVIDER_IDS.apple : OAUTH_PROVIDER_IDS.google;
-      await signInWithOAuth(captchaToken, providerId);
+      await signInWithOAuth(providerId);
     } catch (err) {
       if (isAccountLinkRequiredError(err)) {
         setLinkRequest({
@@ -208,16 +143,14 @@ export default function AuthSignInPanel() {
         return;
       }
       setError(getAuthErrorMessage(err));
-      if (isCaptchaError(err)) {
-        resetCaptcha();
-      }
     } finally {
       setOauthProvider(null);
     }
   };
 
   const busy = submitting || Boolean(oauthProvider) || biometricSigningIn;
-  const canSubmit = !busy && Boolean(captchaToken);
+  const requiresCaptcha = mode === "sign-up";
+  const canSubmitEmail = !busy && (!requiresCaptcha || Boolean(captchaToken));
 
   return (
     <>
@@ -239,7 +172,9 @@ export default function AuthSignInPanel() {
         onValueChange={(value) => {
           setMode(value);
           setError(null);
-          resetCaptcha();
+          if (value === "sign-in") {
+            resetCaptcha();
+          }
         }}
         className="w-full"
       >
@@ -299,15 +234,17 @@ export default function AuthSignInPanel() {
             className="h-10"
           />
         </div>
-        <ReCaptcha
-          ref={captchaRef}
-          onChange={setCaptchaToken}
-          onExpired={resetCaptcha}
-        />
+        {requiresCaptcha && (
+          <ReCaptcha
+            ref={captchaRef}
+            onChange={setCaptchaToken}
+            onExpired={resetCaptcha}
+          />
+        )}
         <Button
           type="submit"
           className="w-full h-10"
-          disabled={!canSubmit}
+          disabled={!canSubmitEmail}
         >
           {submitting
             ? mode === "sign-in"
@@ -343,7 +280,7 @@ export default function AuthSignInPanel() {
       <OAuthSignInButtons
         onGoogleSignIn={() => handleOAuthSignIn("google")}
         onAppleSignIn={() => handleOAuthSignIn("apple")}
-        disabled={!canSubmit}
+        disabled={busy}
         activeProvider={oauthProvider}
       />
 
@@ -361,7 +298,7 @@ export default function AuthSignInPanel() {
             type="button"
             variant="secondary"
             className="w-full h-10"
-            onClick={handleBiometricSignIn}
+            onClick={() => void promptBiometricSignIn()}
             disabled={busy}
           >
             <Fingerprint className="w-4 h-4 mr-2" />
@@ -378,7 +315,6 @@ export default function AuthSignInPanel() {
       email={linkRequest?.email || ""}
       providerId={linkRequest?.providerId}
       pendingCredential={linkRequest?.pendingCredential}
-      captchaToken={captchaToken}
       onLinked={() => {
         setLinkRequest(null);
         setError(null);

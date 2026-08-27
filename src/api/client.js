@@ -793,8 +793,7 @@ export const authApi = {
     window.location.href = "/";
   },
 
-  async signInWithOAuth(captchaToken, providerId = OAUTH_PROVIDERS.google) {
-    await verifyRecaptchaToken(captchaToken);
+  async signInWithOAuth(providerId = OAUTH_PROVIDERS.google) {
     if (Capacitor.isNativePlatform()) {
       await signInWithOAuthNative(providerId);
       return;
@@ -802,12 +801,11 @@ export const authApi = {
     await signInWithOAuthWeb(providerId);
   },
 
-  async redirectToLogin(captchaToken) {
-    return authApi.signInWithOAuth(captchaToken, OAUTH_PROVIDERS.google);
+  async redirectToLogin() {
+    return authApi.signInWithOAuth(OAUTH_PROVIDERS.google);
   },
 
-  async signInWithEmail(email, password, captchaToken) {
-    await verifyRecaptchaToken(captchaToken);
+  async signInWithEmail(email, password) {
     await signInWithEmailAndPassword(auth, email.trim(), password);
     markPasswordLoginSession();
     recordLoginTime();
@@ -950,13 +948,12 @@ export const authApi = {
     return userCanLinkOAuthProvider(auth.currentUser, providerId);
   },
 
-  async linkOAuthToExistingAccount({ email, password, pendingCredential, captchaToken }) {
+  async linkOAuthToExistingAccount({ email, password, pendingCredential }) {
     if (!pendingCredential) {
       throw Object.assign(new Error("Missing sign-in credentials. Please try again."), {
         code: "auth/invalid-credential",
       });
     }
-    await verifyRecaptchaToken(captchaToken);
     await signInWithEmailAndPassword(auth, email.trim(), password);
     const firebaseUser = auth.currentUser;
     if (!firebaseUser) {

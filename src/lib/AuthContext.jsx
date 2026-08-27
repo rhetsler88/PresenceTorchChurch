@@ -610,12 +610,12 @@ export const AuthProvider = ({ children }) => {
   };
   logoutRef.current = logout;
 
-  const navigateToLogin = (captchaToken) =>
-    authApi.signInWithOAuth(captchaToken, OAUTH_PROVIDER_IDS.google);
-  const signInWithOAuth = (captchaToken, providerId) =>
-    authApi.signInWithOAuth(captchaToken, providerId);
-  const signInWithEmail = (email, password, captchaToken) =>
-    authApi.signInWithEmail(email, password, captchaToken);
+  const navigateToLogin = () =>
+    authApi.signInWithOAuth(OAUTH_PROVIDER_IDS.google);
+  const signInWithOAuth = (providerId) =>
+    authApi.signInWithOAuth(providerId);
+  const signInWithEmail = (email, password) =>
+    authApi.signInWithEmail(email, password);
   const signUpWithEmail = (email, password, captchaToken) =>
     authApi.signUpWithEmail(email, password, captchaToken);
 

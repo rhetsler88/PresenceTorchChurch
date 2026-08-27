@@ -21,7 +21,6 @@ export default function LinkAccountDialog({
   email,
   providerId,
   pendingCredential,
-  captchaToken,
   onLinked,
 }) {
   const [password, setPassword] = useState("");
@@ -50,7 +49,6 @@ export default function LinkAccountDialog({
         email,
         password,
         pendingCredential,
-        captchaToken,
       });
       toast.success(`${providerLabel} sign-in linked`, {
         description: "You can now sign in with either method.",

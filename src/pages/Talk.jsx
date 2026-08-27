@@ -14,8 +14,10 @@ import {
 } from "../components/ptt/PassiveTalkListenProvider";
 import { useRegisterPagePTTHandlers } from "@/components/ptt/PTTHandlerProvider";
 import { playClearTone, playBusyTone, unlockAudioForPTT } from "@/lib/pttTones";
+import { isAgoraEnabled } from "@/lib/agora";
 import { logVoiceMessageFailure } from "@/lib/voiceMessageLogging";
 import { cleanupStalePTTSignals, claimPttChannels, releasePttSignals } from "@/lib/pttSignals";
+import { recordLivePttSignal } from "@/lib/liveSpeakerRegistry";
 import { playAudioUrl, stopAudio } from "@/lib/audioPlayer";
 import { needsTranscription, requestTranscription } from "@/lib/transcription";
 import { deviceDayKey } from "@/lib/deviceDate";
@@ -367,7 +369,10 @@ export default function Talk() {
             activeBroadcastClearTimerRef.current = null;
           }
         }
-        playClearTone();
+        recordLivePttSignal(event.data);
+        if (!isAgoraEnabled()) {
+          playClearTone(event.data?.broadcast_id);
+        }
         setIsChannelBusy(true);
         if (channelBusyTimeoutRef.current) clearTimeout(channelBusyTimeoutRef.current);
         channelBusyTimeoutRef.current = setTimeout(() => {
@@ -408,7 +413,9 @@ export default function Talk() {
             activeLiveBroadcastRef.current = activeSignal.broadcast_id;
           }
           setIsChannelBusy(true);
-          playClearTone();
+          if (!isAgoraEnabled()) {
+            playClearTone(activeSignal?.broadcast_id);
+          }
         }
       })
       .catch(() => {});
@@ -705,7 +712,7 @@ export default function Talk() {
 
         pttRecordingActiveRef.current = true;
         activeLiveBroadcastRef.current = broadcastId;
-        playClearTone();
+        playClearTone(broadcastId);
 
         void cleanupStalePTTSignals({
           channelId: effectiveChannelId,
@@ -835,6 +842,7 @@ export default function Talk() {
       setIsReceiving(false);
     }, 30000);
     playAudioUrl(msg.audio_url, {
+      speakerUserId: msg.created_by_id,
       onEnded: () => {
         if (receivingTimeoutRef.current) { clearTimeout(receivingTimeoutRef.current); receivingTimeoutRef.current = null; }
         setPlayingId(null);

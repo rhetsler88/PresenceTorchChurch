@@ -16,6 +16,7 @@
 		E5F6A7B41FED79650016851F /* GoogleSignIn in Frameworks */ = {isa = PBXBuildFile; productRef = E5F6A7B31FED79650016851F /* GoogleSignIn */; };
 		A1B2C3D21FED79650016851F /* HeadsetPTTPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D11FED79650016851F /* HeadsetPTTPlugin.swift */; };
 		B2C3D4E51FED79650016851F /* BackgroundAudioPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2C3D4E41FED79650016851F /* BackgroundAudioPlugin.swift */; };
+		F1A2B3C41FED79650016851F /* NativeVoiceProcessingPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1A2B3C31FED79650016851F /* NativeVoiceProcessingPlugin.swift */; };
 		G1S2E3R4V5I6C7E90016851F /* GoogleService-Info.plist in Resources */ = {isa = PBXBuildFile; fileRef = G1S2E3R4V5I6C7E80016851F /* GoogleService-Info.plist */; };
 		504EC30D1FED79650016851F /* Main.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 504EC30B1FED79650016851F /* Main.storyboard */; };
 		504EC30F1FED79650016851F /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 504EC30E1FED79650016851F /* Assets.xcassets */; };
@@ -32,6 +33,7 @@
 		D4E5F6A01FED79650016851F /* BackgroundLogoutScheduler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackgroundLogoutScheduler.swift; sourceTree = "<group>"; };
 		A1B2C3D11FED79650016851F /* HeadsetPTTPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HeadsetPTTPlugin.swift; sourceTree = "<group>"; };
 		B2C3D4E41FED79650016851F /* BackgroundAudioPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackgroundAudioPlugin.swift; sourceTree = "<group>"; };
+		F1A2B3C31FED79650016851F /* NativeVoiceProcessingPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeVoiceProcessingPlugin.swift; sourceTree = "<group>"; };
 		504EC30C1FED79650016851F /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; name = Base; path = Base.lproj/Main.storyboard; sourceTree = "<group>"; };
 		504EC30E1FED79650016851F /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		504EC3111FED79650016851F /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; name = Base; path = Base.lproj/LaunchScreen.storyboard; sourceTree = "<group>"; };
@@ -80,6 +82,7 @@
 				D4E5F6A01FED79650016851F /* BackgroundLogoutScheduler.swift */,
 				A1B2C3D11FED79650016851F /* HeadsetPTTPlugin.swift */,
 				B2C3D4E41FED79650016851F /* BackgroundAudioPlugin.swift */,
+				F1A2B3C31FED79650016851F /* NativeVoiceProcessingPlugin.swift */,
 				504EC30B1FED79650016851F /* Main.storyboard */,
 				504EC30E1FED79650016851F /* Assets.xcassets */,
 				504EC3101FED79650016851F /* LaunchScreen.storyboard */,
@@ -180,6 +183,7 @@
 				D4E5F6A11FED79650016851F /* BackgroundLogoutScheduler.swift in Sources */,
 				A1B2C3D21FED79650016851F /* HeadsetPTTPlugin.swift in Sources */,
 				B2C3D4E51FED79650016851F /* BackgroundAudioPlugin.swift in Sources */,
+				F1A2B3C41FED79650016851F /* NativeVoiceProcessingPlugin.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -321,14 +325,14 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = App/App.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 32;
+				CURRENT_PROJECT_VERSION = 33;
 				INFOPLIST_FILE = App/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.0.30;
+				MARKETING_VERSION = 1.0.31;
 				OTHER_SWIFT_FLAGS = "$(inherited) \"-D\" \"COCOAPODS\" \"-DDEBUG\"";
 				PRODUCT_BUNDLE_IDENTIFIER = church.presencetorch.app;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -344,14 +348,14 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = App/App.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 32;
+				CURRENT_PROJECT_VERSION = 33;
 				INFOPLIST_FILE = App/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.0.30;
+				MARKETING_VERSION = 1.0.31;
 				PRODUCT_BUNDLE_IDENTIFIER = church.presencetorch.app;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "";

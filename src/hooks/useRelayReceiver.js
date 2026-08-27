@@ -107,7 +107,7 @@ export default function useRelayReceiver({ channelId, userId }) {
       playNext(bId);
     };
 
-    playRelayAudioTail(url, startSeconds)
+    playRelayAudioTail(url, startSeconds, { speakerUserId: q.senderUserId })
       .then(({ totalDuration }) => {
         if (!queuesRef.current[bId]) return;
         if (totalDuration != null) {
@@ -144,10 +144,14 @@ export default function useRelayReceiver({ channelId, userId }) {
           finalSeq: null,
           playing: false,
           playedDuration: 0,
+          senderUserId: chunk.sender_id || null,
         };
       }
 
       const q = queuesRef.current[bId];
+      if (!q.senderUserId && chunk.sender_id) {
+        q.senderUserId = chunk.sender_id;
+      }
       q.chunks[chunk.sequence] = chunk.audio_url;
 
       if (chunk.is_final) {

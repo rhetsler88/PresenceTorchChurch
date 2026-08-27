@@ -14,6 +14,7 @@ import { logVoiceMessageFailure } from "@/lib/voiceMessageLogging";
 import { markBroadcastHeard, hasHeardBroadcast } from "@/lib/heardBroadcasts";
 import { auth } from "@/lib/firebase";
 import { cleanupStalePTTSignals, claimPttChannels, releasePttSignals } from "@/lib/pttSignals";
+import { recordLivePttSignal } from "@/lib/liveSpeakerRegistry";
 import { playAudioUrl, stopAudio } from "@/lib/audioPlayer";
 import { needsTranscription, requestTranscription } from "@/lib/transcription";
 import usePttBroadcast from "../hooks/usePttBroadcast";
@@ -438,6 +439,7 @@ export default function Monitor() {
           if (event.data?.broadcast_id) {
             heardBroadcastsRef.current.add(event.data.broadcast_id);
           }
+          recordLivePttSignal(event.data);
           setBusyChannelIds((prev) => new Set(prev).add(channelId));
           setIsChannelBusy(true);
           const prevTimeout = channelBusyTimeoutRef.current.get(channelId);
@@ -604,6 +606,7 @@ export default function Monitor() {
     setPlayingChannel(msg.channel_id);
     void transcribeOnReplay(msg);
     playAudioUrl(msg.audio_url, {
+      speakerUserId: msg.created_by_id,
       onEnded: () => {
         setPlayingId(null);
         setPlayingChannel(null);
@@ -863,7 +866,7 @@ export default function Monitor() {
 
         pttRecordingActiveRef.current = true;
         markBroadcastHeard(broadcastId, heardBroadcastsRef, pttHeardRef);
-        playClearTone();
+        playClearTone(broadcastId);
 
         let signalIds = [];
         try {

@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { PROTECTION_LEVELS } from "@/components/ptt/ProtectionLevelBadge";
 import { isProtectionLevelChangeMessage } from "@/lib/protectionLevelHistory";
 import { getInitialsFromName } from "@/lib/userUtils";
+import SpeakerVolumeControl from "@/components/ptt/SpeakerVolumeControl";
 
 function ProtectionLevelLineEntry({ message }) {
   const level = message.protection_level || "green";
@@ -199,6 +200,13 @@ function MessageItem({
           >
             <div className="flex items-center gap-3">
               {playControl}
+              {!isMine && message.created_by_id && (
+                <SpeakerVolumeControl
+                  userId={message.created_by_id}
+                  displayName={message.sender_name}
+                  compact
+                />
+              )}
               <div className="flex flex-col">
                 <div className="flex items-center gap-2">
                   <div className="flex gap-0.5 items-center" style={{ height: "20px" }}>

@@ -28,6 +28,7 @@ import { maybePlayTextMessageTone, isIncomingVoiceMessage } from "@/lib/textMess
 import { hasHeardBroadcast } from "@/lib/heardBroadcasts";
 import { recordSessionInteraction } from "@/lib/logoutOnClose";
 import { cleanupStalePTTSignals } from "@/lib/pttSignals";
+import { recordLivePttSignal } from "@/lib/liveSpeakerRegistry";
 
 const PassiveMonitorContext = createContext(null);
 
@@ -122,7 +123,10 @@ export function PassiveMonitorProvider({ user, children }) {
           if (event.data?.broadcast_id) {
             heardBroadcastsRef.current.add(event.data.broadcast_id);
           }
-          playClearTone();
+          recordLivePttSignal(event.data);
+          if (!agoraEnabled) {
+            playClearTone(event.data?.broadcast_id);
+          }
         }
       },
       listenChannelIds.map((channelId) => ({ channel_id: channelId }))

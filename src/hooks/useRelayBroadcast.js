@@ -5,7 +5,7 @@ import { uploadPublicAudio, uploadPrivateAudio } from "@/api/storage";
 import { ensureMicrophonePermission } from "@/lib/microphonePermissions";
 import { forceStopBackgroundAudio, resumeBackgroundAudioIfNeeded } from "@/lib/backgroundAudio";
 import { beginSensitiveOperation, endSensitiveOperation } from "@/lib/sensitiveOperation";
-import { destroyMicDenoise, openMicWithDenoise } from "@/lib/micDenoise";
+import { destroyMicDenoise, openMicSession } from "@/lib/micDenoise";
 
 const CHUNK_MS = 1000;
 
@@ -100,6 +100,7 @@ export default function useRelayBroadcast({ channelId, userId, userName }) {
   paramsRef.current = { channelId, userId, userName };
 
   const streamRef = useRef(null);
+  const recordStreamRef = useRef(null);
   const rawStreamRef = useRef(null);
   const denoiseHandleRef = useRef(null);
   const ownsStreamRef = useRef(true);
@@ -194,6 +195,7 @@ export default function useRelayBroadcast({ channelId, userId, userName }) {
 
     if (sharedStream) {
       streamRef.current = sharedStream;
+      recordStreamRef.current = sharedStream;
       rawStreamRef.current = null;
       denoiseHandleRef.current = null;
       startTimeRef.current = Date.now();
@@ -206,8 +208,14 @@ export default function useRelayBroadcast({ channelId, userId, userName }) {
             return false;
           }
         }
-        const { stream, handle, rawStream } = await openMicWithDenoise();
-        streamRef.current = stream;
+        const {
+          recordStream,
+          publishStream,
+          handle,
+          rawStream,
+        } = await openMicSession();
+        recordStreamRef.current = recordStream;
+        streamRef.current = publishStream;
         rawStreamRef.current = rawStream;
         denoiseHandleRef.current = handle;
         startTimeRef.current = Date.now();
@@ -253,8 +261,10 @@ export default function useRelayBroadcast({ channelId, userId, userName }) {
     };
     appendRelayChunkRef.current = appendRelayChunk;
 
+    const recordingStream = recordStreamRef.current || streamRef.current;
+
     if (useSingleRecorder) {
-      const recorder = createMediaRecorder(streamRef.current, mimeType);
+      const recorder = createMediaRecorder(recordingStream, mimeType);
       recorder.onerror = (event) => {
         console.error("MediaRecorder error:", event);
       };
@@ -265,7 +275,7 @@ export default function useRelayBroadcast({ channelId, userId, userName }) {
       relayRecorderRef.current = recorder;
       fullRecorderRef.current = null;
     } else if (!archiveOnly) {
-      const relayRecorder = createMediaRecorder(streamRef.current, mimeType);
+      const relayRecorder = createMediaRecorder(recordingStream, mimeType);
       relayRecorder.onerror = (event) => {
         console.error("Relay MediaRecorder error:", event);
       };
@@ -274,14 +284,14 @@ export default function useRelayBroadcast({ channelId, userId, userName }) {
       };
       relayRecorderRef.current = relayRecorder;
 
-      const fullRecorder = createMediaRecorder(streamRef.current, mimeType);
+      const fullRecorder = createMediaRecorder(recordingStream, mimeType);
       fullRecorder.onerror = (event) => {
         console.error("Archive MediaRecorder error:", event);
       };
       fullRecorder.ondataavailable = appendArchiveChunk;
       fullRecorderRef.current = fullRecorder;
     } else {
-      const fullRecorder = createMediaRecorder(streamRef.current, mimeType);
+      const fullRecorder = createMediaRecorder(recordingStream, mimeType);
       fullRecorder.onerror = (event) => {
         console.error("Archive MediaRecorder error:", event);
       };
@@ -312,10 +322,12 @@ export default function useRelayBroadcast({ channelId, userId, userName }) {
         await destroyMicDenoise({
           handle: denoiseHandleRef.current,
           rawStream: rawStreamRef.current,
-          stream: streamRef.current,
+          recordStream: recordStreamRef.current,
+          publishStream: streamRef.current,
         });
       }
       streamRef.current = null;
+      recordStreamRef.current = null;
       rawStreamRef.current = null;
       denoiseHandleRef.current = null;
       releaseSensitiveOperation();
@@ -391,10 +403,12 @@ export default function useRelayBroadcast({ channelId, userId, userName }) {
         await destroyMicDenoise({
           handle: denoiseHandleRef.current,
           rawStream: rawStreamRef.current,
-          stream: streamRef.current,
+          recordStream: recordStreamRef.current,
+          publishStream: streamRef.current,
         });
       }
       streamRef.current = null;
+      recordStreamRef.current = null;
       rawStreamRef.current = null;
       denoiseHandleRef.current = null;
       ownsStreamRef.current = true;
@@ -467,7 +481,7 @@ export default function useRelayBroadcast({ channelId, userId, userName }) {
     archiveOnlyRef.current = false;
     relayUploadsActiveRef.current = true;
 
-    if (Capacitor.isNativePlatform() || relayRecorderRef.current || !streamRef.current) {
+    if (Capacitor.isNativePlatform() || relayRecorderRef.current || !recordStreamRef.current) {
       return;
     }
 
@@ -475,7 +489,7 @@ export default function useRelayBroadcast({ channelId, userId, userName }) {
     if (!appendRelayChunk) return;
 
     const mimeType = mimeRef.current || getSupportedMime();
-    const relayRecorder = createMediaRecorder(streamRef.current, mimeType);
+    const relayRecorder = createMediaRecorder(recordStreamRef.current, mimeType);
     relayRecorder.onerror = (event) => {
       console.error("Relay MediaRecorder error:", event);
     };

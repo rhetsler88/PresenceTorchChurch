@@ -8,6 +8,7 @@ import {
 import { acquireAgoraClient, releaseAgoraClient, sessionKey } from "@/lib/agoraSession";
 import { configureAgoraSdk } from "@/lib/agoraInit";
 import { playClearTone } from "@/lib/pttTones";
+import { getCachedBroadcastId } from "@/lib/liveSpeakerRegistry";
 
 configureAgoraSdk();
 
@@ -62,17 +63,23 @@ export default function useAgoraMultiListen({
       else setIsReceiving(false);
     };
 
-    const attachRemoteHandlers = (client, channelId, uid) => {
+    const attachRemoteHandlers = (client, channelId, agoraUid, firebaseUserId) => {
       const onPublished = async (remoteUser, mediaType) => {
         if (cancelled || !activeClients.has(channelId)) return;
         if (mediaType !== "audio") return;
-        if (isSameAgoraUid(remoteUser.uid, uid)) return;
+        if (isSameAgoraUid(remoteUser.uid, agoraUid)) return;
         try {
-          const subscribed = await subscribeRemoteAudio(client, remoteUser, uid, mediaType);
+          const subscribed = await subscribeRemoteAudio(
+            client,
+            remoteUser,
+            agoraUid,
+            mediaType,
+            { channelId, firebaseUserId },
+          );
           if (subscribed && !cancelled && activeClients.has(channelId)) {
             remoteCountRef.current += 1;
             setIsReceiving(true);
-            playClearTone();
+            playClearTone(getCachedBroadcastId(channelId));
             paramsRef.current.onRemoteTalkStart?.(channelId, remoteUser.uid);
           }
         } catch (err) {
@@ -112,17 +119,22 @@ export default function useAgoraMultiListen({
           return;
         }
 
-        const handlers = attachRemoteHandlers(client, channelId, uid);
+        const handlers = attachRemoteHandlers(client, channelId, uid, userId);
         activeClients.set(channelId, { client, key, handlers });
         clientsRef.current = new Map([...activeClients].map(([id, entry]) => [id, entry.client]));
 
-        await subscribeExistingRemoteUsers(client, uid, () => {
-          if (cancelled || !activeClients.has(channelId)) return;
-          remoteCountRef.current += 1;
-          setIsReceiving(true);
-          playClearTone();
-          paramsRef.current.onRemoteTalkStart?.(channelId, null);
-        });
+        await subscribeExistingRemoteUsers(
+          client,
+          uid,
+          () => {
+            if (cancelled || !activeClients.has(channelId)) return;
+            remoteCountRef.current += 1;
+            setIsReceiving(true);
+            playClearTone(getCachedBroadcastId(channelId));
+            paramsRef.current.onRemoteTalkStart?.(channelId, null);
+          },
+          { channelId, firebaseUserId: userId },
+        );
 
         if (cancelled || gen !== effectGen) {
           detachRemoteHandlers(client, handlers);

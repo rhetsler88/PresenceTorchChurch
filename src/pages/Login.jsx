@@ -5,8 +5,8 @@ import PwaInstallPrompt from "@/components/pwa/PwaInstallPrompt";
 
 export default function Login() {
   return (
-    <div className="page-adaptive bg-background dark safe-top safe-bottom">
-      <div className="page-adaptive-inner w-full max-w-sm mx-auto px-4 py-6">
+    <div className="page-adaptive bg-background dark safe-top safe-bottom min-h-dvh">
+      <div className="page-adaptive-inner-scroll w-full max-w-sm mx-auto px-4 py-4 sm:py-6">
         <div className="bg-card border border-border rounded-2xl p-4">
           <img
             src="/logo-signin-banner.png"

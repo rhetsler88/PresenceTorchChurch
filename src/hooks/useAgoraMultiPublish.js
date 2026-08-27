@@ -4,7 +4,7 @@ import { fetchAgoraCredentials } from "@/lib/agoraRemote";
 import { acquireAgoraClient, releaseAgoraClient, sessionKey } from "@/lib/agoraSession";
 import { configureAgoraSdk } from "@/lib/agoraInit";
 import { AGORA_SPEECH_ENCODER } from "@/lib/agoraAudio";
-import { destroyMicDenoise, openMicWithDenoise } from "@/lib/micDenoise";
+import { destroyMicDenoise, openMicSession } from "@/lib/micDenoise";
 
 configureAgoraSdk();
 
@@ -106,12 +106,12 @@ export default function useAgoraMultiPublish({ userId }) {
       ownsStreamRef.current = !sharedStream;
       let stream = sharedStream;
       if (!sharedStream) {
-        const opened = await openMicWithDenoise();
-        stream = opened.stream;
-        streamRef.current = opened.stream;
+        const opened = await openMicSession();
+        stream = opened.publishStream;
+        streamRef.current = opened.publishStream;
         rawStreamRef.current = opened.rawStream;
         denoiseHandleRef.current = opened.handle;
-        onStreamReady?.(opened.stream);
+        onStreamReady?.(opened.publishStream);
       } else {
         streamRef.current = sharedStream;
         rawStreamRef.current = null;

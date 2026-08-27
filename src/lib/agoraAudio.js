@@ -1,2 +1,2 @@
-/** Low-latency speech preset for Agora WebRTC publish (16 kHz mono, FEC on). */
+/** Low-latency speech encoder for all platforms (PTT). */
 export const AGORA_SPEECH_ENCODER = "speech_low_latency";

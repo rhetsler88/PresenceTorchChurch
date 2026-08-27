@@ -15,6 +15,7 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(BackgroundAudioPlugin.class);
         registerPlugin(SessionGuardPlugin.class);
         registerPlugin(MicrophonePermissionsPlugin.class);
+        registerPlugin(NativeVoiceProcessingPlugin.class);
         super.onCreate(savedInstanceState);
         activeInstance = this;
         if (getBridge() != null && getBridge().getWebView() != null) {

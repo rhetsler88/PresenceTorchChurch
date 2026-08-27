@@ -9,8 +9,9 @@ import {
 import { acquireAgoraClient, releaseAgoraClient, sessionKey } from "@/lib/agoraSession";
 import { configureAgoraSdk } from "@/lib/agoraInit";
 import { AGORA_SPEECH_ENCODER } from "@/lib/agoraAudio";
-import { destroyMicDenoise, openMicWithDenoise } from "@/lib/micDenoise";
+import { destroyMicDenoise, openMicSession } from "@/lib/micDenoise";
 import { playClearTone } from "@/lib/pttTones";
+import { getCachedBroadcastId } from "@/lib/liveSpeakerRegistry";
 
 configureAgoraSdk();
 
@@ -32,14 +33,16 @@ function isExpectedJoinCancel(err) {
   );
 }
 
-function markRemoteSpeaker(remoteSpeakerCountRef, setIsReceiving) {
+function markRemoteSpeaker(remoteSpeakerCountRef, setIsReceiving, channelId) {
   remoteSpeakerCountRef.current += 1;
   setIsReceiving(true);
-  playClearTone();
+  playClearTone(getCachedBroadcastId(channelId));
 }
 
 function attachRemoteHandlers(
   client,
+  channelId,
+  localUserId,
   joinGen,
   joinGenRef,
   uid,
@@ -53,9 +56,15 @@ function attachRemoteHandlers(
     if (mediaType !== "audio") return;
     if (isSameAgoraUid(remoteUser.uid, uid)) return;
     try {
-      const subscribed = await subscribeRemoteAudio(client, remoteUser, uid, mediaType);
+      const subscribed = await subscribeRemoteAudio(
+        client,
+        remoteUser,
+        uid,
+        mediaType,
+        { channelId, firebaseUserId: localUserId },
+      );
       if (subscribed && joinGen === joinGenRef.current) {
-        markRemoteSpeaker(remoteSpeakerCountRef, setIsReceiving);
+        markRemoteSpeaker(remoteSpeakerCountRef, setIsReceiving, channelId);
         onRemoteActivity?.();
         onRemoteAudioStart?.();
       }
@@ -239,6 +248,8 @@ export default function useAgoraPTT({
         if (receiveEnabledRef.current) {
           remoteHandlersRef.current = attachRemoteHandlers(
             client,
+            cid,
+            uid,
             joinGen,
             joinGenRef,
             agoraUid,
@@ -248,11 +259,16 @@ export default function useAgoraPTT({
             notifyRemoteLiveAudio,
           );
 
-          await subscribeExistingRemoteUsers(client, agoraUid, () => {
-            markRemoteSpeaker(remoteSpeakerCountRef, setIsReceiving);
-            bumpRemoteActivity();
-            notifyRemoteLiveAudio();
-          });
+          await subscribeExistingRemoteUsers(
+            client,
+            agoraUid,
+            () => {
+              markRemoteSpeaker(remoteSpeakerCountRef, setIsReceiving, cid);
+              bumpRemoteActivity();
+              notifyRemoteLiveAudio();
+            },
+            { channelId: cid, firebaseUserId: uid },
+          );
 
           if (joinGen !== joinGenRef.current) {
             detachRemoteHandlers(client, remoteHandlersRef.current);
@@ -344,12 +360,12 @@ export default function useAgoraPTT({
       ownsStreamRef.current = !sharedStream;
       let stream = sharedStream;
       if (!sharedStream) {
-        const opened = await openMicWithDenoise();
-        stream = opened.stream;
-        streamRef.current = opened.stream;
+        const opened = await openMicSession();
+        stream = opened.publishStream;
+        streamRef.current = opened.publishStream;
         rawStreamRef.current = opened.rawStream;
         denoiseHandleRef.current = opened.handle;
-        onStreamReady?.(opened.stream);
+        onStreamReady?.(opened.publishStream);
       } else {
         streamRef.current = sharedStream;
         rawStreamRef.current = null;

@@ -1,6 +1,8 @@
 let audioContext = null;
 let isUnlocked = false;
 let lastClearToneAt = 0;
+/** @type {Map<string, number>} */
+const lastClearToneByBroadcast = new Map();
 let silentKeepAlive = null;
 
 /** Call on user gesture (PTT press, tap) so tones are allowed in the browser. */
@@ -77,9 +79,19 @@ async function playTone(frequency, duration, delay = 0, volume = 0.3, type = "sq
 }
 
 // Two short beeps — you have the clear to talk / someone is keying up
-export function playClearTone() {
+export function playClearTone(broadcastId) {
   const now = Date.now();
-  if (now - lastClearToneAt < 400) return;
+  if (broadcastId) {
+    const lastForBroadcast = lastClearToneByBroadcast.get(broadcastId);
+    if (lastForBroadcast != null && now - lastForBroadcast < 5000) return;
+    lastClearToneByBroadcast.set(broadcastId, now);
+    if (lastClearToneByBroadcast.size > 32) {
+      for (const [id, ts] of lastClearToneByBroadcast) {
+        if (now - ts > 60000) lastClearToneByBroadcast.delete(id);
+      }
+    }
+  }
+  if (now - lastClearToneAt < 1200) return;
   lastClearToneAt = now;
   void playTone(800, 0.12, 0);
   void playTone(800, 0.12, 0.18);

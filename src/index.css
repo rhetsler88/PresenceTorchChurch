@@ -5,6 +5,16 @@
 @tailwind utilities;
 
 @layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+  }
+  body {
+    overflow-x: hidden;
+  }
+  #root {
+    min-height: 100dvh;
+  }
   :root {
     --font-sans: 'Inter', sans-serif;
     --font-mono: 'JetBrains Mono', monospace;
@@ -156,6 +166,17 @@
     display: flex;
     flex-direction: column;
     justify-content: center;
+  }
+  /* Auth / legal pages: top-aligned and scroll when display zoom or large text overflows the viewport */
+  .page-adaptive-inner-scroll {
+    box-sizing: border-box;
+    width: 100%;
+    min-height: min(100%, 100dvh);
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-start;
+    padding-top: max(1.25rem, env(safe-area-inset-top, 0px));
+    padding-bottom: max(1.25rem, env(safe-area-inset-bottom, 0px));
   }
   /* Same scroll behavior when nested inside a flex shell (e.g. AppLayout daily-code gate) */
   .page-adaptive-fill {

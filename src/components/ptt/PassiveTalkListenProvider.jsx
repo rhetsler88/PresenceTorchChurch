@@ -22,6 +22,7 @@ import { playClearTone } from "@/lib/pttTones";
 import { maybePlayTextMessageTone, isIncomingVoiceMessage } from "@/lib/textMessageNotifications";
 import { hasHeardBroadcast } from "@/lib/heardBroadcasts";
 import { cleanupStalePTTSignals } from "@/lib/pttSignals";
+import { recordLivePttSignal } from "@/lib/liveSpeakerRegistry";
 
 const PassiveTalkListenContext = createContext(null);
 
@@ -110,7 +111,10 @@ export function PassiveTalkListenProvider({ user, children }) {
           if (event.data?.broadcast_id) {
             heardBroadcastsRef.current.add(event.data.broadcast_id);
           }
-          playClearTone();
+          recordLivePttSignal(event.data);
+          if (!agoraEnabled) {
+            playClearTone(event.data?.broadcast_id);
+          }
         }
       },
       { channel_id: listenChannelId }

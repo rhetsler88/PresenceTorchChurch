@@ -1,4 +1,9 @@
 import { resolveAudioUrl } from "@/lib/secureAudio";
+import {
+  getUserListenVolumeRatio,
+  PTT_SETTINGS_CHANGED,
+  USER_LISTEN_VOLUMES_KEY,
+} from "@/lib/pttSettings";
 
 let audioContext = null;
 
@@ -14,7 +19,10 @@ function getContext() {
 
 let currentSource = null;
 let currentOnEnded = null;
+/** @type {HTMLAudioElement | null} */
 let currentRelayAudio = null;
+/** @type {string | null} */
+let currentRelaySpeakerId = null;
 
 function stopRelayAudio() {
   if (currentRelayAudio) {
@@ -22,7 +30,12 @@ function stopRelayAudio() {
     currentRelayAudio.onerror = null;
     currentRelayAudio.pause();
     currentRelayAudio = null;
+    currentRelaySpeakerId = null;
   }
+}
+
+function applySpeakerVolume(audio, speakerUserId) {
+  audio.volume = getUserListenVolumeRatio(speakerUserId);
 }
 
 // Unlock AudioContext on first user interaction (required by browser autoplay policies)
@@ -41,12 +54,19 @@ if (typeof window !== "undefined") {
     events.forEach((e) => window.removeEventListener(e, handler));
   };
   events.forEach((e) => window.addEventListener(e, handler, { once: true }));
+
+  window.addEventListener(PTT_SETTINGS_CHANGED, (event) => {
+    if (event.detail?.key !== USER_LISTEN_VOLUMES_KEY || !currentRelayAudio) return;
+    const userId = event.detail?.userId;
+    if (userId && userId !== currentRelaySpeakerId) return;
+    applySpeakerVolume(currentRelayAudio, currentRelaySpeakerId);
+  });
 }
 
 /**
  * Full message playback via HTML Audio — avoids fetch/CORS on Firebase Storage URLs.
  */
-async function playFullAudioViaElement(url, { onEnded, onError } = {}) {
+async function playFullAudioViaElement(url, { onEnded, onError, speakerUserId } = {}) {
   const resolved = await resolveAudioUrl(url);
   if (!resolved) throw new Error("Could not resolve audio URL");
 
@@ -54,25 +74,36 @@ async function playFullAudioViaElement(url, { onEnded, onError } = {}) {
 
   return new Promise((resolve, reject) => {
     const audio = new Audio(resolved);
+    applySpeakerVolume(audio, speakerUserId);
+    currentRelaySpeakerId = speakerUserId || null;
     audio.setAttribute("playsinline", "true");
     audio.setAttribute("webkit-playsinline", "true");
     currentRelayAudio = audio;
 
     audio.onended = () => {
-      if (currentRelayAudio === audio) currentRelayAudio = null;
+      if (currentRelayAudio === audio) {
+        currentRelayAudio = null;
+        currentRelaySpeakerId = null;
+      }
       if (onEnded) onEnded();
       resolve({ totalDuration: audio.duration || null });
     };
 
     audio.onerror = () => {
-      if (currentRelayAudio === audio) currentRelayAudio = null;
+      if (currentRelayAudio === audio) {
+        currentRelayAudio = null;
+        currentRelaySpeakerId = null;
+      }
       const err = new Error("Audio playback failed");
       if (onError) onError(err);
       reject(err);
     };
 
     audio.play().catch((err) => {
-      if (currentRelayAudio === audio) currentRelayAudio = null;
+      if (currentRelayAudio === audio) {
+        currentRelayAudio = null;
+        currentRelaySpeakerId = null;
+      }
       if (onError) onError(err);
       reject(err);
     });
@@ -80,19 +111,19 @@ async function playFullAudioViaElement(url, { onEnded, onError } = {}) {
 }
 
 /** Plays a complete voice message from the start. */
-export async function playAudioUrl(url, { onEnded, onError } = {}) {
-  return playFullAudioViaElement(url, { onEnded, onError });
+export async function playAudioUrl(url, { onEnded, onError, speakerUserId } = {}) {
+  return playFullAudioViaElement(url, { onEnded, onError, speakerUserId });
 }
 
 /**
  * Plays audio from `startSeconds` to the end (live relay chunks).
  * Full playback (startSeconds = 0) uses HTML Audio to avoid Storage CORS.
  */
-export async function playAudioTailFromUrl(url, startSeconds = 0, { onEnded, onError } = {}) {
+export async function playAudioTailFromUrl(url, startSeconds = 0, { onEnded, onError, speakerUserId } = {}) {
   if (startSeconds <= 0) {
-    return playFullAudioViaElement(url, { onEnded, onError });
+    return playFullAudioViaElement(url, { onEnded, onError, speakerUserId });
   }
-  return playRelayAudioTail(url, startSeconds, { onEnded, onError });
+  return playRelayAudioTail(url, startSeconds, { onEnded, onError, speakerUserId });
 }
 
 export function stopAudio() {
@@ -111,7 +142,7 @@ export function stopAudio() {
  * Plays relay audio via HTML Audio (no fetch/CORS). Each chunk is a growing
  * recording; only the tail after `startSeconds` is heard.
  */
-export async function playRelayAudioTail(url, startSeconds = 0, { onEnded, onError } = {}) {
+export async function playRelayAudioTail(url, startSeconds = 0, { onEnded, onError, speakerUserId } = {}) {
   const resolved = await resolveAudioUrl(url);
   if (!resolved) throw new Error("Could not resolve audio URL");
 
@@ -119,12 +150,17 @@ export async function playRelayAudioTail(url, startSeconds = 0, { onEnded, onErr
 
   return new Promise((resolve, reject) => {
     const audio = new Audio(resolved);
+    applySpeakerVolume(audio, speakerUserId);
+    currentRelaySpeakerId = speakerUserId || null;
     audio.setAttribute("playsinline", "true");
     audio.setAttribute("webkit-playsinline", "true");
     currentRelayAudio = audio;
 
     const finish = (totalDuration) => {
-      if (currentRelayAudio === audio) currentRelayAudio = null;
+      if (currentRelayAudio === audio) {
+        currentRelayAudio = null;
+        currentRelaySpeakerId = null;
+      }
       resolve({ totalDuration });
     };
 
@@ -137,7 +173,10 @@ export async function playRelayAudioTail(url, startSeconds = 0, { onEnded, onErr
       }
       audio.currentTime = startSeconds;
       audio.play().catch((err) => {
-        if (currentRelayAudio === audio) currentRelayAudio = null;
+        if (currentRelayAudio === audio) {
+          currentRelayAudio = null;
+          currentRelaySpeakerId = null;
+        }
         if (onError) onError(err);
         reject(err);
       });
@@ -150,7 +189,10 @@ export async function playRelayAudioTail(url, startSeconds = 0, { onEnded, onErr
     };
 
     audio.onerror = () => {
-      if (currentRelayAudio === audio) currentRelayAudio = null;
+      if (currentRelayAudio === audio) {
+        currentRelayAudio = null;
+        currentRelaySpeakerId = null;
+      }
       const err = new Error("Relay audio playback failed");
       if (onError) onError(err);
       reject(err);

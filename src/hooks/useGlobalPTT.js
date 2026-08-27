@@ -306,7 +306,7 @@ export default function useGlobalPTT() {
         }
 
         pttRecordingActiveRef.current = true;
-        playClearTone();
+        playClearTone(broadcastId);
 
         if (monitorMode) {
           try {

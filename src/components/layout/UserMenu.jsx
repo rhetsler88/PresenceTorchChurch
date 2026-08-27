@@ -7,17 +7,19 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Bluetooth, BluetoothConnected, UserCog, LogOut, Shield } from "lucide-react";
+import { Bluetooth, BluetoothConnected, UserCog, LogOut, Shield, Volume2 } from "lucide-react";
 import { useAuth } from "@/lib/AuthContext";
 import { getDisplayName, getInitials } from "@/lib/userUtils";
 import { ADMIN_APP_URL } from "@/lib/appLinks";
 import { useBluetoothPTTContext } from "@/components/ptt/BluetoothPTTContext";
 import EditProfileDialog from "@/components/profile/EditProfileDialog";
+import AudioSettingsDialog from "@/components/profile/AudioSettingsDialog";
 
 export default function UserMenu() {
   const { user, logout } = useAuth();
   const bluetooth = useBluetoothPTTContext();
   const [showEditProfile, setShowEditProfile] = useState(false);
+  const [showAudioSettings, setShowAudioSettings] = useState(false);
 
   if (!user) return null;
 
@@ -55,6 +57,10 @@ export default function UserMenu() {
           <DropdownMenuItem onClick={() => setShowEditProfile(true)}>
             <UserCog className="w-4 h-4" />
             Edit profile
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={() => setShowAudioSettings(true)}>
+            <Volume2 className="w-4 h-4" />
+            Audio settings
           </DropdownMenuItem>
           {bluetooth && (
             <>
@@ -124,6 +130,7 @@ export default function UserMenu() {
       </DropdownMenu>
 
       <EditProfileDialog open={showEditProfile} onOpenChange={setShowEditProfile} />
+      <AudioSettingsDialog open={showAudioSettings} onOpenChange={setShowAudioSettings} />
     </>
   );
 }

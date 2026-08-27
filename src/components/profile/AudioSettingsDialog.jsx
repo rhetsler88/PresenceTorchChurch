@@ -1,0 +1,90 @@
+import React, { useState } from "react";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
+import { Slider } from "@/components/ui/slider";
+import { Button } from "@/components/ui/button";
+import { Volume2 } from "lucide-react";
+import usePttSettings from "@/hooks/usePttSettings";
+import {
+  AUDIO_LEVEL_DEFAULT,
+  AUDIO_LEVEL_MAX,
+  AUDIO_LEVEL_MIN,
+  estimateUserListenStorageBytes,
+} from "@/lib/pttSettings";
+
+function levelLabel(value) {
+  if (value === AUDIO_LEVEL_DEFAULT) return "Default";
+  if (value > AUDIO_LEVEL_DEFAULT) return `+${value - AUDIO_LEVEL_DEFAULT}%`;
+  return `${value - AUDIO_LEVEL_DEFAULT}%`;
+}
+
+function formatStorage(bytes) {
+  if (bytes < 1024) return `${bytes} bytes`;
+  return `${(bytes / 1024).toFixed(1)} KB`;
+}
+
+export default function AudioSettingsDialog({ open, onOpenChange }) {
+  const { overrides, setUserListenVolume, resetUserListenVolume } = usePttSettings();
+  const storageBytes = estimateUserListenStorageBytes();
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-sm max-h-[85vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Volume2 className="w-5 h-5 text-primary" />
+            How you hear others
+          </DialogTitle>
+          <DialogDescription>
+            Adjust volume per person — only on this device. Tap the speaker icon on a voice message to add someone here.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-4 pt-2">
+          {overrides.length === 0 ? (
+            <p className="text-sm text-muted-foreground rounded-lg border border-dashed border-border p-4">
+              No custom volumes yet. Everyone plays at normal level until you adjust someone from a voice message.
+            </p>
+          ) : (
+            overrides.map(({ userId, volume, displayName }) => (
+              <div key={userId} className="space-y-2 rounded-lg border border-border p-3">
+                <div className="flex items-center justify-between gap-3">
+                  <Label className="truncate">{displayName || "Unknown speaker"}</Label>
+                  <span className="text-xs font-medium text-muted-foreground tabular-nums shrink-0">
+                    {levelLabel(volume)}
+                  </span>
+                </div>
+                <Slider
+                  min={AUDIO_LEVEL_MIN}
+                  max={AUDIO_LEVEL_MAX}
+                  step={5}
+                  value={[volume]}
+                  onValueChange={([value]) => setUserListenVolume(userId, value, { displayName })}
+                />
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 px-2 text-xs"
+                  onClick={() => resetUserListenVolume(userId)}
+                >
+                  Reset to default
+                </Button>
+              </div>
+            ))
+          )}
+
+          <p className="text-xs text-muted-foreground">
+            Stored locally ({formatStorage(storageBytes)}). Typical church use stays under 5 KB even with dozens of adjusted speakers.
+          </p>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}

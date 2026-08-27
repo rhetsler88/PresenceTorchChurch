@@ -6,7 +6,7 @@ const LOAD_TIMEOUT_MS = 15000;
 const WIDGET_WIDTH = 304;
 const WIDGET_HEIGHT = 78;
 
-const ReCaptcha = forwardRef(function ReCaptcha({ onChange, onExpired }, ref) {
+const ReCaptcha = forwardRef(function ReCaptcha({ onChange, onExpired, active = true }, ref) {
   const containerRef = useRef(null);
   const [scriptReady, setScriptReady] = useState(false);
   const [scriptError, setScriptError] = useState(false);
@@ -18,16 +18,24 @@ const ReCaptcha = forwardRef(function ReCaptcha({ onChange, onExpired }, ref) {
   }, []);
 
   useEffect(() => {
-    if (!siteKey || scriptReady || scriptError) return undefined;
+    if (typeof window !== "undefined" && window.grecaptcha) {
+      setScriptReady(true);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!active || !siteKey || scriptReady || scriptError) return undefined;
 
     const timeoutId = window.setTimeout(() => {
       setScriptError(true);
     }, LOAD_TIMEOUT_MS);
 
     return () => window.clearTimeout(timeoutId);
-  }, [scriptReady, scriptError]);
+  }, [active, scriptReady, scriptError]);
 
   useEffect(() => {
+    if (!active) return undefined;
+
     const container = containerRef.current;
     if (!container) return undefined;
 
@@ -39,10 +47,14 @@ const ReCaptcha = forwardRef(function ReCaptcha({ onChange, onExpired }, ref) {
     };
 
     updateScale();
+    const rafId = window.requestAnimationFrame(updateScale);
     const observer = new ResizeObserver(updateScale);
     observer.observe(container);
-    return () => observer.disconnect();
-  }, []);
+    return () => {
+      window.cancelAnimationFrame(rafId);
+      observer.disconnect();
+    };
+  }, [active]);
 
   if (!siteKey) {
     return (
@@ -50,6 +62,10 @@ const ReCaptcha = forwardRef(function ReCaptcha({ onChange, onExpired }, ref) {
         reCAPTCHA is not configured. Add VITE_RECAPTCHA_SITE_KEY to your environment.
       </p>
     );
+  }
+
+  if (!active) {
+    return null;
   }
 
   const scaledHeight = Math.ceil(WIDGET_HEIGHT * scale);

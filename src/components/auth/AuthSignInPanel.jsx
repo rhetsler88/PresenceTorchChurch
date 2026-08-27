@@ -174,6 +174,8 @@ export default function AuthSignInPanel() {
           setError(null);
           if (value === "sign-in") {
             resetCaptcha();
+          } else {
+            setCaptchaToken(null);
           }
         }}
         className="w-full"
@@ -234,9 +236,11 @@ export default function AuthSignInPanel() {
             className="h-10"
           />
         </div>
-        {requiresCaptcha && (
+        {mode === "sign-up" && (
           <ReCaptcha
+            key="sign-up-captcha"
             ref={captchaRef}
+            active
             onChange={setCaptchaToken}
             onExpired={resetCaptcha}
           />
@@ -277,35 +281,27 @@ export default function AuthSignInPanel() {
         </div>
       </div>
 
-      <OAuthSignInButtons
-        onGoogleSignIn={() => handleOAuthSignIn("google")}
-        onAppleSignIn={() => handleOAuthSignIn("apple")}
-        disabled={busy}
-        activeProvider={oauthProvider}
-      />
+      <div className="space-y-2">
+        <OAuthSignInButtons
+          onGoogleSignIn={() => handleOAuthSignIn("google")}
+          onAppleSignIn={() => handleOAuthSignIn("apple")}
+          disabled={busy}
+          activeProvider={oauthProvider}
+        />
 
-      {showBiometricSignIn && (
-        <>
-          <div className="relative py-0.5">
-            <div className="absolute inset-0 flex items-center">
-              <Separator className="w-full" />
-            </div>
-            <div className="relative flex justify-center text-[10px] uppercase">
-              <span className="bg-card px-2 text-muted-foreground">Or</span>
-            </div>
-          </div>
+        {mode === "sign-in" && showBiometricSignIn && (
           <Button
             type="button"
             variant="secondary"
-            className="w-full h-10"
+            className="w-full h-11"
             onClick={() => void promptBiometricSignIn()}
             disabled={busy}
           >
             <Fingerprint className="w-4 h-4 mr-2" />
             {biometricSigningIn ? "Signing in..." : `Sign in with ${biometricLabel}`}
           </Button>
-        </>
-      )}
+        )}
+      </div>
     </div>
     <LinkAccountDialog
       open={Boolean(linkRequest)}

@@ -1,34 +1,29 @@
 import React from "react";
-import { cn } from "@/lib/utils";
 
-const GOOGLE_SIGN_IN_LOGO = "/icons/google-sign-in-logo.png";
+const GOOGLE_SIGN_IN_MARK = "/icons/google-sign-in-mark.png";
 const APPLE_SIGN_IN_LOGO = "/icons/apple-sign-in-logo.png";
 
-function OAuthButton({ label, onClick, disabled, busy, logoSrc }) {
+const BUTTON_BASE =
+  "flex h-11 w-full min-w-0 items-center justify-center gap-1 rounded-md border border-[#dadce0] bg-white px-1.5 shadow-sm transition-colors hover:bg-[#f8f9fa] disabled:cursor-not-allowed disabled:opacity-60";
+
+function OAuthButton({ label, text, onClick, disabled, busy, logo }) {
   return (
     <button
       type="button"
       onClick={onClick}
       disabled={disabled}
       aria-label={label}
-      className={cn(
-        "flex h-11 w-full items-center justify-center overflow-hidden rounded-md",
-        busy
-          ? "border border-[#dadce0] bg-white px-3 text-sm font-medium text-[#1f1f1f] shadow-sm"
-          : "border-0 bg-transparent p-0 shadow-none",
-        "transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
-      )}
+      className={BUTTON_BASE}
     >
       {busy ? (
-        <span className="text-xs text-[#1f1f1f]">Signing in...</span>
+        <span className="text-[11px] font-medium text-[#1f1f1f]">Signing in...</span>
       ) : (
-        <img
-          src={logoSrc}
-          alt=""
-          aria-hidden="true"
-          className="h-full w-full object-contain"
-          draggable={false}
-        />
+        <>
+          {logo}
+          <span className="min-w-0 text-xs font-medium leading-none text-[#1f1f1f] sm:text-sm">
+            {text}
+          </span>
+        </>
       )}
     </button>
   );
@@ -41,20 +36,38 @@ export default function OAuthSignInButtons({
   activeProvider = null,
 }) {
   return (
-    <div className="grid grid-cols-2 gap-2">
+    <div className="flex flex-col gap-2">
       <OAuthButton
         label="Sign in with Google"
+        text="Sign in with Google"
         onClick={onGoogleSignIn}
         disabled={disabled}
         busy={activeProvider === "google"}
-        logoSrc={GOOGLE_SIGN_IN_LOGO}
+        logo={
+          <img
+            src={GOOGLE_SIGN_IN_MARK}
+            alt=""
+            aria-hidden="true"
+            className="h-[18px] w-[18px] shrink-0 object-contain"
+            draggable={false}
+          />
+        }
       />
       <OAuthButton
         label="Sign in with Apple"
+        text="Sign in with Apple"
         onClick={onAppleSignIn}
         disabled={disabled}
         busy={activeProvider === "apple"}
-        logoSrc={APPLE_SIGN_IN_LOGO}
+        logo={
+          <img
+            src={APPLE_SIGN_IN_LOGO}
+            alt=""
+            aria-hidden="true"
+            className="h-[18px] w-[18px] shrink-0 object-contain"
+            draggable={false}
+          />
+        }
       />
     </div>
   );

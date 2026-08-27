@@ -1,10 +1,10 @@
 import React from "react";
 
 const GOOGLE_SIGN_IN_MARK = "/icons/google-sign-in-mark.png";
-const APPLE_SIGN_IN_LOGO = "/icons/apple-sign-in-logo.png";
+const APPLE_SIGN_IN_MARK = "/icons/apple-sign-in-mark.png";
 
 const BUTTON_BASE =
-  "flex h-11 w-full min-w-0 items-center justify-center gap-1 rounded-md border border-[#dadce0] bg-white px-1.5 shadow-sm transition-colors hover:bg-[#f8f9fa] disabled:cursor-not-allowed disabled:opacity-60";
+  "flex h-11 w-full min-w-0 items-center justify-center gap-2 rounded-md border border-[#dadce0] bg-white px-3 transition-colors hover:bg-[#f8f9fa] disabled:cursor-not-allowed disabled:opacity-60";
 
 function OAuthButton({ label, text, onClick, disabled, busy, logo }) {
   return (
@@ -48,7 +48,7 @@ export default function OAuthSignInButtons({
             src={GOOGLE_SIGN_IN_MARK}
             alt=""
             aria-hidden="true"
-            className="h-[18px] w-[18px] shrink-0 object-contain"
+            className="h-8 w-8 shrink-0 object-contain"
             draggable={false}
           />
         }
@@ -61,10 +61,10 @@ export default function OAuthSignInButtons({
         busy={activeProvider === "apple"}
         logo={
           <img
-            src={APPLE_SIGN_IN_LOGO}
+            src={APPLE_SIGN_IN_MARK}
             alt=""
             aria-hidden="true"
-            className="h-[18px] w-[18px] shrink-0 object-contain"
+            className="h-8 w-8 shrink-0 object-contain"
             draggable={false}
           />
         }

@@ -42,14 +42,14 @@ export default function AudioSettingsDialog({ open, onOpenChange }) {
             How you hear others
           </DialogTitle>
           <DialogDescription>
-            Adjust volume per person — only on this device. Tap the speaker icon on a voice message to add someone here.
+            Adjust volume per person — only on this device. Tap the speaker icon on a voice message or tap someone&apos;s name in the online list.
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4 pt-2">
           {overrides.length === 0 ? (
             <p className="text-sm text-muted-foreground rounded-lg border border-dashed border-border p-4">
-              No custom volumes yet. Everyone plays at normal level until you adjust someone from a voice message.
+              No custom volumes yet. Tap the speaker icon on a voice message or someone&apos;s name in the online list to adjust how you hear them.
             </p>
           ) : (
             overrides.map(({ userId, volume, displayName }) => (

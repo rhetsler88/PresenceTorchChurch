@@ -8,7 +8,9 @@ import { Radio, Volume2, VolumeX, Eye, Play, Pause, WifiOff, GripVertical } from
 import { Button } from "@/components/ui/button";
 import { etzTime } from "@/lib/etz";
 import { deviceDayKey, deviceDayLabel } from "@/lib/deviceDate";
-import { getDisplayName, getInitials, getInitialsFromName, getMonitorChannels, getReadableVoiceChannels, canSendOnChannelForChannel } from "@/lib/userUtils";
+import { getDisplayName, getInitials, getInitialsFromName, getMonitorChannels, getReadableVoiceChannels, canSendOnChannelForChannel, bypassesDailyCode } from "@/lib/userUtils";
+import { isDailyCodeVerified } from "@/lib/dailyCode";
+import usePublishPresence from "@/hooks/usePublishPresence";
 import { playClearTone, playBusyTone, ensureAudioReady, unlockAudioForPTT } from "@/lib/pttTones";
 import { logVoiceMessageFailure } from "@/lib/voiceMessageLogging";
 import { markBroadcastHeard, hasHeardBroadcast } from "@/lib/heardBroadcasts";
@@ -294,6 +296,18 @@ export default function Monitor() {
     [readableMonitorChannels]
   );
   const monitorChannelIdKey = monitorChannelIds.join(",");
+
+  const listenChannelIds = passiveMonitor?.listenChannelIds || [];
+  const canPublishPresence = Boolean(
+    user?.id
+    && listenChannelIds.length > 0
+    && (bypassesDailyCode(user) || isDailyCodeVerified(user))
+  );
+  usePublishPresence({
+    channelIds: listenChannelIds,
+    displayName: user ? getDisplayName(user) : "",
+    enabled: canPublishPresence,
+  });
 
   const { data: allMessages = [] } = useQuery({
     queryKey: ["all-channel-messages", user?.id, monitorChannelIdKey],

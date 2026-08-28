@@ -2,7 +2,7 @@ import React, { useState } from "react";
 import { Radio, Users } from "lucide-react";
 import ChannelMembersSheet from "@/components/channels/ChannelMembersSheet";
 
-export default function ChannelHeader({ channel, memberCount, isConnected }) {
+export default function ChannelHeader({ channel, memberCount, onlineMembers = [], isConnected }) {
   const [showMembers, setShowMembers] = useState(false);
 
   return (
@@ -30,13 +30,18 @@ export default function ChannelHeader({ channel, memberCount, isConnected }) {
                 className="flex items-center gap-1 text-muted-foreground hover:text-foreground active:scale-95 transition-all"
               >
                 <Users className="w-3 h-3" />
-                <span className="text-xs">{memberCount}</span>
+                <span className="text-xs">{memberCount} online</span>
               </button>
             </div>
           </div>
         </div>
       </div>
-      <ChannelMembersSheet channel={channel} open={showMembers} onOpenChange={setShowMembers} />
+      <ChannelMembersSheet
+        channel={channel}
+        onlineMembers={onlineMembers}
+        open={showMembers}
+        onOpenChange={setShowMembers}
+      />
     </>
   );
 }

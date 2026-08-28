@@ -1,6 +1,6 @@
 import React, { useEffect, useRef } from "react";
 import { Outlet, Link, useLocation, useNavigate } from "react-router-dom";
-import { Radio, MessageSquare, FileText, Eye, Shield, Crown } from "lucide-react";
+import { Radio, MessageSquare, Eye, Shield, Crown } from "lucide-react";
 import { useAuth } from "@/lib/AuthContext";
 import DailyCodeGate from "@/components/dailycode/DailyCodeGate";
 import UserMenu from "@/components/layout/UserMenu";
@@ -32,7 +32,6 @@ export default function AppLayout() {
 
   const navItems = [
     { path: "/", icon: Radio, label: "Talk" },
-    { path: "/transcripts", icon: FileText, label: "Logs" },
     ...(showMonitor ? [{ path: "/monitor", icon: Eye, label: "Monitor" }] : []),
     ...(isAdmin || isDirectorUser
       ? [{ path: "/admin", icon: Shield, label: "Admin" }]
@@ -98,7 +97,9 @@ export default function AppLayout() {
       <nav className="fixed bottom-0 left-0 right-0 bg-card border-t border-border z-50 safe-bottom">
         <div className="flex items-center justify-around max-w-2xl mx-auto px-1 py-1.5">
           {navItems.map(({ path, icon: Icon, label }) => {
-            const isActive = location.pathname === path;
+            const isActive = path === "/admin"
+              ? location.pathname === "/admin" || location.pathname.startsWith("/admin/")
+              : location.pathname === path;
             return (
               <Link
                 key={path}

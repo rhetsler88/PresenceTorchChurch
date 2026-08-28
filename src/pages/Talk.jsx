@@ -31,7 +31,9 @@ import {
   bypassesDailyCode,
   canAccessMonitorPage,
 } from "@/lib/userUtils";
-import { getCodeDateKey, isDailyCodeVerified } from "@/lib/dailyCode";
+import { isDailyCodeVerified } from "@/lib/dailyCode";
+import usePublishPresence from "@/hooks/usePublishPresence";
+import useChannelPresence from "@/hooks/useChannelPresence";
 import { useAuth } from "@/lib/AuthContext";
 import {
   ensureUserChannelMembership,
@@ -83,11 +85,6 @@ export default function Talk() {
     queryFn: () => api.entities.Channel.list("-created_date", 50),
   });
 
-  const { data: allUsers = [] } = useQuery({
-    queryKey: ["users"],
-    queryFn: () => api.entities.User.list(),
-  });
-
   // Approved members, plus org/platform admins who manage those channels
   const myChannels = useMemo(
     () => channels.filter((channel) => canAccessChannel(user, channel)),
@@ -111,6 +108,19 @@ export default function Talk() {
     && canSendOnChannelForChannel(user, activeChannel)
     && (bypassesDailyCode(user) || isDailyCodeVerified(user))
   );
+  const canPublishPresence = Boolean(
+    effectiveChannelId
+    && user
+    && (bypassesDailyCode(user) || isDailyCodeVerified(user))
+  );
+  const { onlineMembers, onlineCount } = useChannelPresence(effectiveChannelId, {
+    enabled: !!effectiveChannelId,
+  });
+  usePublishPresence({
+    channelIds: effectiveChannelId ? [effectiveChannelId] : [],
+    displayName: user ? getDisplayName(user) : "",
+    enabled: canPublishPresence,
+  });
   const canQueryFirestore = Boolean(
     effectiveChannelId &&
     user &&
@@ -893,17 +903,8 @@ export default function Talk() {
     <div className="flex flex-col h-full">
       <ChannelHeader
         channel={activeChannel}
-        memberCount={
-          allUsers.filter((u) => {
-            const isMember =
-              activeChannel?.members?.includes(u.id) ||
-              activeChannel?.members?.includes(u.email);
-            if (!isMember) return false;
-            const bypassesCode =
-              u.role === "admin" || u.role === "super_admin" || u.role === "lead" || u.role === "director";
-            return bypassesCode || u.daily_code_verified_date === getCodeDateKey();
-          }).length
-        }
+        memberCount={onlineCount}
+        onlineMembers={onlineMembers}
         isConnected={!!activeChannel}
       />
 

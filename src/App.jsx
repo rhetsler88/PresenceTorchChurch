@@ -4,7 +4,7 @@ import { QueryClientProvider } from '@tanstack/react-query'
 import { queryClientInstance } from '@/lib/query-client'
 import { Capacitor } from '@capacitor/core';
 import { isPwaInstalled } from '@/lib/pushDevice';
-import { BrowserRouter, HashRouter, Route, Routes } from 'react-router-dom';
+import { BrowserRouter, HashRouter, Navigate, Route, Routes } from 'react-router-dom';
 
 const Router = Capacitor.isNativePlatform() ? HashRouter : BrowserRouter;
 import PageNotFound from './lib/PageNotFound';
@@ -18,6 +18,7 @@ import Channels from './pages/Channels';
 import Transcripts from './pages/Transcripts';
 import Monitor from './pages/Monitor';
 import Admin from './pages/Admin';
+import AdminShell from './components/admin/AdminShell';
 import Onboarding from './pages/Onboarding';
 import Login from './pages/Login';
 import PrivacyPolicy from './pages/PrivacyPolicy';
@@ -77,9 +78,12 @@ const AuthenticatedApp = () => {
           <Route path="/" element={<Talk />} />
           <Route path="/contacts" element={<Contacts />} />
           <Route path="/channels" element={<Channels />} />
-          <Route path="/transcripts" element={<Transcripts />} />
+          <Route path="/transcripts" element={<Navigate to="/admin/logs" replace />} />
           <Route path="/monitor" element={<Monitor />} />
-          <Route path="/admin" element={<Admin />} />
+          <Route path="/admin" element={<AdminShell />}>
+            <Route index element={<Admin />} />
+            <Route path="logs" element={<Transcripts />} />
+          </Route>
         </Route>
         <Route path="*" element={<PageNotFound />} />
       </Routes>

@@ -240,7 +240,7 @@ export default function Admin() {
   if (isLeadUser && !isAdmin && !isDirectorUser) {
     return (
       <div className="w-full max-w-full overflow-x-hidden">
-        <div className="px-4 pt-4 pb-4 sm:px-5 sm:pt-6 max-sm:pr-12 sm:pr-48">
+        <div className="px-4 pb-4 sm:px-5 max-sm:pr-12 sm:pr-48">
           <div className="flex items-center gap-2 mb-1">
             <Crown className="w-5 h-5 text-purple-400" />
             <h1 className="text-xl font-bold text-foreground">Channel Approvals</h1>
@@ -267,7 +267,7 @@ export default function Admin() {
 
     return (
       <div className="w-full max-w-full overflow-x-hidden">
-        <div className="px-4 pt-4 pb-4 sm:px-5 sm:pt-6 max-sm:pr-12 sm:pr-48">
+        <div className="px-4 pb-4 sm:px-5 max-sm:pr-12 sm:pr-48">
           <div className="flex items-center gap-2 mb-1">
             <Shield className="w-5 h-5 text-purple-400" />
             <h1 className="text-xl font-bold text-foreground">Channel Management</h1>
@@ -318,7 +318,7 @@ export default function Admin() {
   // Admin view: full user management
   return (
     <div className="w-full max-w-full overflow-x-hidden">
-      <div className="px-4 pt-4 pb-4 sm:px-5 sm:pt-6 max-sm:pr-12 sm:pr-48">
+      <div className="px-4 pb-4 sm:px-5 max-sm:pr-12 sm:pr-48">
         <div className="flex items-center gap-2 mb-1">
           <Shield className="w-5 h-5 text-primary" />
           <h1 className="text-xl font-bold text-foreground">User Management</h1>

@@ -432,5 +432,37 @@ service cloud.firestore {
       allow read: if isPlatformAdmin() || isPlatformAdminFromToken();
       allow update, delete: if false;
     }
+
+    // Per-user channel presence (Talk / Monitor "users online").
+    match /presence/{presenceId} {
+      allow read: if isSignedIn()
+        && resource.data.channel_id is string
+        && resource.data.channel_id.size() > 0
+        && (
+          isChannelTalkMember(resource.data.channel_id)
+          || isElevatedFromToken()
+        );
+
+      allow create: if isSignedIn()
+        && request.resource.data.user_id == request.auth.uid
+        && request.resource.data.channel_id is string
+        && request.resource.data.channel_id.size() > 0
+        && isChannelTalkMember(request.resource.data.channel_id)
+        && canUsePttWhenDailyCodeRequired()
+        && request.resource.data.keys().hasOnly(['user_id', 'channel_id', 'last_active_at', 'display_name']);
+
+      allow update: if isSignedIn()
+        && request.resource.data.user_id == request.auth.uid
+        && resource.data.user_id == request.auth.uid
+        && request.resource.data.channel_id is string
+        && request.resource.data.channel_id.size() > 0
+        && isChannelTalkMember(request.resource.data.channel_id)
+        && canUsePttWhenDailyCodeRequired()
+        && request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['channel_id', 'last_active_at', 'display_name']);
+
+      allow delete: if isSignedIn()
+        && resource.data.user_id == request.auth.uid;
+    }
   }
 }

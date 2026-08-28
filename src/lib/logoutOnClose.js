@@ -7,6 +7,7 @@
  * - Web hard close: sign out when the browser tab/window is closed (next visit).
  */
 import { clearDailyCodeSession } from "@/lib/dailyCode";
+import { clearPresence } from "@/lib/presence";
 import { Capacitor } from "@capacitor/core";
 import { signOut } from "firebase/auth";
 import { auth } from "@/lib/firebase";
@@ -233,6 +234,7 @@ export function performImmediateLogout() {
   clearDailyCodeSession();
   clearNativeGoogleSignInPending();
   localStorage.setItem(HARD_CLOSE_LOGOUT_FLAG, "1");
+  void clearPresence().catch(() => {});
   void syncNativeActiveSession(false).catch(() => {});
   void signOut(auth).catch(() => {});
   window.dispatchEvent(new CustomEvent(IMMEDIATE_LOGOUT_EVENT));

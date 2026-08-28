@@ -347,8 +347,8 @@ export default function Transcripts() {
       : "Export to Google Doc";
 
   return (
-    <div className="min-h-screen w-full safe-top">
-      <div className="px-4 pt-4 pb-4 border-b border-border sm:px-5 sm:pt-6">
+    <div className="min-h-full w-full">
+      <div className="px-4 pb-4 border-b border-border sm:px-5 max-sm:pr-12 sm:pr-48">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between max-sm:pr-12 sm:pr-48">
           <div className="min-w-0">
             <h1 className="text-lg font-bold text-foreground sm:text-xl">Transcript Log</h1>

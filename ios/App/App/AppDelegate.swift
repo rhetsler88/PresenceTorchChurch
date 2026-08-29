@@ -7,6 +7,7 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     var window: UIWindow?
 
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
+        window?.backgroundColor = UIColor(red: 10 / 255, green: 15 / 255, blue: 26 / 255, alpha: 1)
         if SessionPrefs.consumeUncleanBackgroundExit() {
             SessionPrefs.markForceLogoutOnNextStart()
         }

@@ -31,9 +31,6 @@ public class NativeVoiceProcessingPlugin: CAPPlugin, CAPBridgedPlugin {
                     mode: .voiceChat,
                     options: [.allowBluetooth, .defaultToSpeaker, .mixWithOthers]
                 )
-                if #available(iOS 13.0, *) {
-                    try session.setPrefersVoiceProcessingEnabled(true)
-                }
                 try session.setActive(true)
                 self.sessionActive = true
                 call.resolve([

@@ -56,6 +56,29 @@ final class BackgroundLogoutScheduler {
 
 enum SessionGuardBridge {
     static weak var bridgeViewController: CAPBridgeViewController?
+    private static var pendingImmediateLogout = false
+
+    static func bindBridgeIfNeeded() {
+        _ = resolveBridgeViewController()
+    }
+
+    static func resolveBridgeViewController() -> CAPBridgeViewController? {
+        if let existing = bridgeViewController {
+            return existing
+        }
+
+        for scene in UIApplication.shared.connectedScenes {
+            guard let windowScene = scene as? UIWindowScene else { continue }
+            for window in windowScene.windows where window.isKeyWindow || bridgeViewController == nil {
+                if let bridge = window.rootViewController as? CAPBridgeViewController {
+                    bridgeViewController = bridge
+                    return bridge
+                }
+            }
+        }
+
+        return nil
+    }
 
     static func notifyBackgroundLogoutTimeout() {
         guard SessionPrefs.shouldAllowSessionLogout() else { return }
@@ -71,11 +94,20 @@ enum SessionGuardBridge {
 
     static func evaluateImmediateLogout() {
         guard SessionPrefs.shouldAllowSessionLogout() else { return }
-        guard let webView = bridgeViewController?.webView else { return }
+        guard let webView = resolveBridgeViewController()?.webView else {
+            pendingImmediateLogout = true
+            return
+        }
 
+        pendingImmediateLogout = false
         webView.evaluateJavaScript(
             "window.__ptcImmediateLogout && window.__ptcImmediateLogout()",
             completionHandler: nil
         )
+    }
+
+    static func flushPendingLogoutIfNeeded() {
+        guard pendingImmediateLogout else { return }
+        evaluateImmediateLogout()
     }
 }

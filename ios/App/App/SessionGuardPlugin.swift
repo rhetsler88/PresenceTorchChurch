@@ -9,6 +9,7 @@ enum SessionPrefs {
     private static let sensitiveOperationKey = "sensitive_operation_pending"
     private static let idleLogoutDeadlineKey = "idle_logout_deadline_ms"
     private static let forceLogoutKey = "force_logout_on_next_start"
+    private static let sessionBackgroundedKey = "session_backgrounded_with_active_session"
 
     private static var defaults: UserDefaults {
         .standard
@@ -57,6 +58,25 @@ enum SessionPrefs {
         defaults.synchronize()
     }
 
+    /// Set when the app backgrounds with a live session; cleared on a normal foreground return.
+    static func markSessionBackgrounded() {
+        defaults.set(true, forKey: sessionBackgroundedKey)
+    }
+
+    static func clearSessionBackgrounded() {
+        defaults.removeObject(forKey: sessionBackgroundedKey)
+    }
+
+    /// App was backgrounded and relaunched without a clean foreground return (swipe-away / kill).
+    static func consumeUncleanBackgroundExit() -> Bool {
+        guard defaults.bool(forKey: sessionBackgroundedKey) else {
+            return false
+        }
+        defaults.removeObject(forKey: sessionBackgroundedKey)
+        defaults.synchronize()
+        return true
+    }
+
     static func shouldAllowSessionLogout() -> Bool {
         if defaults.bool(forKey: sensitiveOperationKey) {
             return false
@@ -93,6 +113,7 @@ public class SessionGuardPlugin: CAPPlugin, CAPBridgedPlugin {
         SessionPrefs.setActiveSession(active)
         if !active {
             SessionPrefs.clearForceLogoutOnNextStart()
+            SessionPrefs.clearSessionBackgrounded()
             BackgroundLogoutScheduler.shared.cancel()
         }
         call.resolve()

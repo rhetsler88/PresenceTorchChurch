@@ -27,7 +27,7 @@ function OAuthButton({ label, text, onClick, disabled, busy, logo }) {
           <span className={LOGO_SLOT} aria-hidden="true">
             {logo}
           </span>
-          <span className="min-w-0 text-xs font-medium leading-none text-[#1f1f1f] sm:text-sm">
+          <span className="min-w-0 px-10 text-xs font-medium leading-snug text-center text-[#1f1f1f] sm:text-sm">
             {text}
           </span>
         </>

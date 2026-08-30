@@ -10,8 +10,6 @@ import { acquireAgoraClient, releaseAgoraClient, sessionKey } from "@/lib/agoraS
 import { configureAgoraSdk } from "@/lib/agoraInit";
 import { AGORA_SPEECH_ENCODER } from "@/lib/agoraAudio";
 import { destroyMicDenoise, openMicSession } from "@/lib/micDenoise";
-import { playClearTone } from "@/lib/pttTones";
-import { getCachedBroadcastId } from "@/lib/liveSpeakerRegistry";
 
 configureAgoraSdk();
 
@@ -33,10 +31,9 @@ function isExpectedJoinCancel(err) {
   );
 }
 
-function markRemoteSpeaker(remoteSpeakerCountRef, setIsReceiving, channelId) {
+function markRemoteSpeaker(remoteSpeakerCountRef, setIsReceiving) {
   remoteSpeakerCountRef.current += 1;
   setIsReceiving(true);
-  playClearTone(getCachedBroadcastId(channelId));
 }
 
 function attachRemoteHandlers(
@@ -64,7 +61,7 @@ function attachRemoteHandlers(
         { channelId, firebaseUserId: localUserId },
       );
       if (subscribed && joinGen === joinGenRef.current) {
-        markRemoteSpeaker(remoteSpeakerCountRef, setIsReceiving, channelId);
+        markRemoteSpeaker(remoteSpeakerCountRef, setIsReceiving);
         onRemoteActivity?.();
         onRemoteAudioStart?.();
       }
@@ -263,7 +260,7 @@ export default function useAgoraPTT({
             client,
             agoraUid,
             () => {
-              markRemoteSpeaker(remoteSpeakerCountRef, setIsReceiving, cid);
+              markRemoteSpeaker(remoteSpeakerCountRef, setIsReceiving);
               bumpRemoteActivity();
               notifyRemoteLiveAudio();
             },

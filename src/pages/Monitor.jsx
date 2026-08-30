@@ -298,6 +298,8 @@ export default function Monitor() {
   const monitorChannelIdKey = monitorChannelIds.join(",");
 
   const listenChannelIds = passiveMonitor?.listenChannelIds || [];
+  const listenChannelIdsRef = useRef(listenChannelIds);
+  listenChannelIdsRef.current = listenChannelIds;
   const canPublishPresence = Boolean(
     user?.id
     && listenChannelIds.length > 0
@@ -454,6 +456,9 @@ export default function Monitor() {
             heardBroadcastsRef.current.add(event.data.broadcast_id);
           }
           recordLivePttSignal(event.data);
+          if (listenChannelIdsRef.current.includes(channelId)) {
+            playClearTone(event.data?.broadcast_id);
+          }
           setBusyChannelIds((prev) => new Set(prev).add(channelId));
           setIsChannelBusy(true);
           const prevTimeout = channelBusyTimeoutRef.current.get(channelId);
@@ -857,6 +862,7 @@ export default function Monitor() {
           broadcastId,
           primaryChannelId,
         });
+        playClearTone(broadcastId);
 
         const started = await startRecording({ broadcastId, publishChannelIds: targetIds });
 
@@ -880,7 +886,6 @@ export default function Monitor() {
 
         pttRecordingActiveRef.current = true;
         markBroadcastHeard(broadcastId, heardBroadcastsRef, pttHeardRef);
-        playClearTone(broadcastId);
 
         let signalIds = [];
         try {

@@ -2,7 +2,8 @@ import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "@/api/client";
 import { useAuth } from "@/lib/AuthContext";
-import { isPlatformAdmin } from "@/lib/userUtils";
+import { isPlatformAdmin, userHasDisplayName, getDisplayName } from "@/lib/userUtils";
+import EditProfileDialog from "@/components/profile/EditProfileDialog";
 import { Button } from "@/components/ui/button";
 import { Radio, Check, ArrowRight, ArrowLeft, LogOut, MailCheck, Bell } from "lucide-react";
 import AppLogo from "@/components/branding/AppLogo";
@@ -22,6 +23,11 @@ export default function Onboarding() {
   const [organization, setOrganization] = useState("");
   const [done, setDone] = useState(false);
   const [doneStaffAlerts, setDoneStaffAlerts] = useState(false);
+  const [nameComplete, setNameComplete] = useState(() => userHasDisplayName(user));
+
+  useEffect(() => {
+    setNameComplete(userHasDisplayName(user));
+  }, [user?.first_name, user?.full_name, user?.id]);
 
   useEffect(() => {
     (async () => {
@@ -48,11 +54,8 @@ export default function Onboarding() {
     ? channels.filter((ch) => normalizeOrg(ch.organization) === normalizeOrg(organization))
     : [];
 
-  const displayName =
-    [user?.first_name, user?.last_name].filter(Boolean).join(" ") ||
-    user?.full_name ||
-    user?.email ||
-    "there";
+  const displayName = getDisplayName(user);
+  const displayNameLabel = displayName !== "Unknown" ? displayName : (user?.email || "there");
 
   const toggleChannel = (id) => {
     setSelectedChannels((prev) => {
@@ -82,8 +85,8 @@ export default function Onboarding() {
 
       if (requestMode === "staff_alerts") {
         await api.auth.updateMe({
-          first_name: user?.first_name || displayName.split(" ")[0] || "",
-          last_name: user?.last_name || displayName.split(" ").slice(1).join(" ") || "",
+          first_name: user?.first_name || "",
+          last_name: user?.last_name || "",
           organization,
           onboarded: true,
           pending_staff_alerts: true,
@@ -112,8 +115,8 @@ export default function Onboarding() {
       }
 
       await api.auth.updateMe({
-        first_name: user?.first_name || displayName.split(" ")[0] || "",
-        last_name: user?.last_name || displayName.split(" ").slice(1).join(" ") || "",
+        first_name: user?.first_name || "",
+        last_name: user?.last_name || "",
         organization,
         onboarded: true,
       });
@@ -159,10 +162,29 @@ export default function Onboarding() {
     }
   };
 
+  if (!nameComplete) {
+    return (
+      <div className="page-adaptive bg-background">
+        <div className="page-adaptive-inner-scroll w-full max-w-md mx-auto px-4 sm:px-6">
+          <EditProfileDialog
+            open
+            required
+            nameOnly
+            onOpenChange={() => {}}
+            onCompleted={async () => {
+              await checkUserAuth();
+              setNameComplete(true);
+            }}
+          />
+        </div>
+      </div>
+    );
+  }
+
   if (done) {
     return (
-      <div className="page-adaptive bg-background safe-top safe-bottom">
-        <div className="page-adaptive-inner w-full max-w-md mx-auto px-4 py-6">
+      <div className="page-adaptive bg-background">
+        <div className="page-adaptive-inner-scroll w-full max-w-md mx-auto px-4 sm:px-6">
           <div className="bg-card border border-border rounded-2xl p-8 text-center">
           <div className="inline-flex items-center justify-center w-16 h-16 mb-6 rounded-full bg-green-100 dark:bg-green-900/30">
             <MailCheck className="w-8 h-8 text-green-600 dark:text-green-400" />
@@ -204,8 +226,8 @@ export default function Onboarding() {
   }
 
   return (
-    <div className="page-adaptive bg-background safe-top safe-bottom">
-      <div className="page-adaptive-inner w-full max-w-md mx-auto px-4 py-6">
+    <div className="page-adaptive bg-background">
+      <div className="page-adaptive-inner-scroll w-full max-w-md mx-auto px-4 sm:px-6">
         <button
           onClick={() => logout(true)}
           className="mb-4 text-xs text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1.5"
@@ -225,7 +247,7 @@ export default function Onboarding() {
 
         <div className="bg-card border border-border rounded-2xl p-6">
           <p className="text-xs text-muted-foreground mb-4">
-            Signed in as <span className="font-medium text-foreground">{displayName}</span>
+            Signed in as <span className="font-medium text-foreground">{displayNameLabel}</span>
           </p>
 
           {step === 1 ? (

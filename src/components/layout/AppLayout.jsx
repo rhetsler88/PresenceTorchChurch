@@ -78,7 +78,7 @@ export default function AppLayout() {
   }, [location.pathname, location.search]);
 
   return (
-    <div className="h-dvh w-full bg-background flex flex-col safe-top">
+    <div className="h-full min-h-0 w-full bg-background flex flex-col safe-top">
       <BluetoothPTTProvider>
       <PassiveMonitorProvider user={user}>
       <PassiveTalkListenProvider user={user}>

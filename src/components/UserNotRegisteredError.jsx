@@ -59,8 +59,8 @@ export default function UserNotRegisteredError() {
   };
 
   return (
-    <div className="page-adaptive bg-background safe-top safe-bottom">
-      <div className="page-adaptive-inner w-full max-w-md mx-auto px-4 py-6">
+    <div className="page-adaptive bg-background">
+      <div className="page-adaptive-inner-scroll w-full max-w-md mx-auto px-4 sm:px-6">
         {step !== 3 && (
           <button
             onClick={() => logout(true)}

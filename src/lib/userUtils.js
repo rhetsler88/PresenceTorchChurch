@@ -11,10 +11,13 @@ export function getDisplayName(user) {
   if (!user) return "Unknown";
   const first = user.first_name?.trim();
   const last = user.last_name?.trim();
-  if (first && last) return `${first} ${last}`;
-  if (first) return first;
+  const full = user.full_name?.trim();
+  const safeFirst = first && !looksLikeEmail(first) ? first : "";
+  const safeFull = full && !looksLikeEmail(full) ? full : "";
+  if (safeFirst && last) return `${safeFirst} ${last}`;
+  if (safeFirst) return safeFirst;
   if (last) return last;
-  if (user.full_name?.trim()) return user.full_name.trim();
+  if (safeFull) return safeFull;
   return "Unknown";
 }
 
@@ -34,10 +37,14 @@ export function getProfileEmail(user) {
   return stored || "";
 }
 
-/** True when the user has a first or full name on their profile. */
+/** True when the user has a real first or full name on their profile (not an email placeholder). */
 export function userHasDisplayName(user) {
   if (!user) return false;
-  return Boolean(user.first_name?.trim() || user.full_name?.trim());
+  const first = user.first_name?.trim();
+  const full = user.full_name?.trim();
+  if (first && !looksLikeEmail(first)) return true;
+  if (full && !looksLikeEmail(full)) return true;
+  return false;
 }
 
 /**

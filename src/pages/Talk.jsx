@@ -113,20 +113,20 @@ export default function Talk() {
     && user
     && (bypassesDailyCode(user) || isDailyCodeVerified(user))
   );
-  const { onlineMembers, onlineCount } = useChannelPresence(effectiveChannelId, {
-    enabled: !!effectiveChannelId,
-  });
-  usePublishPresence({
-    channelIds: effectiveChannelId ? [effectiveChannelId] : [],
-    displayName: user ? getDisplayName(user) : "",
-    enabled: canPublishPresence,
-  });
   const canQueryFirestore = Boolean(
     effectiveChannelId &&
     user &&
     canReadMessages &&
     userHasFirestoreChannelAccess(user, effectiveChannelId, activeChannel)
   );
+  const { onlineMembers, onlineCount } = useChannelPresence(effectiveChannelId, {
+    enabled: canQueryFirestore,
+  });
+  usePublishPresence({
+    channelIds: effectiveChannelId ? [effectiveChannelId] : [],
+    displayName: user ? getDisplayName(user) : "",
+    enabled: canPublishPresence,
+  });
 
   const messagesQueryKey = useMemo(
     () => ["messages", effectiveChannelId, user?.id, canReadMessages, canQueryFirestore],
@@ -380,9 +380,7 @@ export default function Talk() {
           }
         }
         recordLivePttSignal(event.data);
-        if (!isAgoraEnabled()) {
-          playClearTone(event.data?.broadcast_id);
-        }
+        playClearTone(event.data?.broadcast_id);
         setIsChannelBusy(true);
         if (channelBusyTimeoutRef.current) clearTimeout(channelBusyTimeoutRef.current);
         channelBusyTimeoutRef.current = setTimeout(() => {
@@ -706,6 +704,21 @@ export default function Talk() {
           console.warn("PTT access sync failed:", syncErr);
         }
 
+        void cleanupStalePTTSignals({
+          channelId: effectiveChannelId,
+          excludeSenderId: user.id,
+        }).catch(() => {});
+
+        // Claim channel immediately so listeners hear the clear tone without waiting for mic setup.
+        const claimPromise = claimPttChannels({
+          channelIds: [effectiveChannelId],
+          senderId: user.id,
+          senderName: getDisplayName(user),
+          broadcastId,
+          primaryChannelId: effectiveChannelId,
+        });
+        playClearTone(broadcastId);
+
         const started = await startRecording({ broadcastId });
 
         if (pttStopPendingRef.current) {
@@ -713,33 +726,34 @@ export default function Talk() {
             pttRecordingActiveRef.current = true;
             return { pendingSend: true, signalId: null };
           }
+          try {
+            const { signalIds } = await claimPromise;
+            await releasePttSignals(signalIds);
+          } catch {
+            // claim may still be in flight
+          }
           return { aborted: true };
         }
 
         if (!started) {
+          try {
+            const { signalIds } = await claimPromise;
+            await releasePttSignals(signalIds);
+          } catch {
+            // claim may still be in flight
+          }
           return { micDenied: true };
         }
 
         pttRecordingActiveRef.current = true;
         activeLiveBroadcastRef.current = broadcastId;
-        playClearTone(broadcastId);
 
-        void cleanupStalePTTSignals({
-          channelId: effectiveChannelId,
-          excludeSenderId: user.id,
-        }).catch(() => {});
-
-        claimPttChannels({
-          channelIds: [effectiveChannelId],
-          senderId: user.id,
-          senderName: getDisplayName(user),
-          broadcastId,
-          primaryChannelId: effectiveChannelId,
-        }).then(({ signalIds }) => {
+        try {
+          const { signalIds } = await claimPromise;
           pttSignalRef.current = signalIds[0] ?? null;
-        }).catch((err) => {
+        } catch (err) {
           console.warn("PTT signal create failed:", err);
-        });
+        }
 
         if (pttStopPendingRef.current) {
           return { pendingSend: true, signalId: null };

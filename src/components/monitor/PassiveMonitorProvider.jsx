@@ -28,7 +28,7 @@ import { maybePlayTextMessageTone, isIncomingVoiceMessage } from "@/lib/textMess
 import { hasHeardBroadcast } from "@/lib/heardBroadcasts";
 import { recordSessionInteraction } from "@/lib/logoutOnClose";
 import { cleanupStalePTTSignals } from "@/lib/pttSignals";
-import { recordLivePttSignal } from "@/lib/liveSpeakerRegistry";
+import { recordLivePttSignal, getCachedBroadcastId } from "@/lib/liveSpeakerRegistry";
 
 const PassiveMonitorContext = createContext(null);
 
@@ -92,7 +92,9 @@ export function PassiveMonitorProvider({ user, children }) {
   const { isReceiving: agoraReceiving, heardBroadcastsRef: agoraHeardRef } = useAgoraMultiListen({
     userId: enabled ? user?.id : null,
     channelIds: passiveListenActive && agoraEnabled ? listenChannelIds : [],
-    onRemoteTalkStart: (_channelId, _uid) => {},
+    onRemoteTalkStart: (channelId) => {
+      playClearTone(getCachedBroadcastId(channelId));
+    },
   });
 
   const { isReceiving: relayReceiving, heardBroadcastsRef: relayHeardRef } = usePttReceiver({
@@ -124,9 +126,7 @@ export function PassiveMonitorProvider({ user, children }) {
             heardBroadcastsRef.current.add(event.data.broadcast_id);
           }
           recordLivePttSignal(event.data);
-          if (!agoraEnabled) {
-            playClearTone(event.data?.broadcast_id);
-          }
+          playClearTone(event.data?.broadcast_id);
         }
       },
       listenChannelIds.map((channelId) => ({ channel_id: channelId }))

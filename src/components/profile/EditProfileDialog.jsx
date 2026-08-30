@@ -16,7 +16,7 @@ import { UserCog, Fingerprint, Lock, UserX, Link2, CheckCircle2 } from "lucide-r
 import { api, getAuthErrorMessage, OAUTH_PROVIDER_IDS } from "@/api/client";
 import { useAuth } from "@/lib/AuthContext";
 import { toast } from "@/lib/toast";
-import { MIN_PASSWORD_LENGTH } from "@/lib/passwordPolicy";
+import { userHasDisplayName } from "@/lib/userUtils";
 import { getProviderLabel } from "@/lib/accountLinking";
 import {
   clearBiometricCredentials,
@@ -87,8 +87,12 @@ export default function EditProfileDialog({
 
   useEffect(() => {
     if (open && user) {
-      setFirstName(user.first_name || user.full_name?.split(" ")[0] || "");
-      setLastName(user.last_name || user.full_name?.split(" ").slice(1).join(" ") || "");
+      const storedFirst = user.first_name?.trim() || "";
+      const storedFull = user.full_name?.trim() || "";
+      const firstFromFull = storedFull.split(" ")[0] || "";
+      const lastFromFull = storedFull.split(" ").slice(1).join(" ") || "";
+      setFirstName(userHasDisplayName(user) ? (storedFirst || firstFromFull) : "");
+      setLastName(user.last_name?.trim() || lastFromFull);
     }
   }, [open, user]);
 

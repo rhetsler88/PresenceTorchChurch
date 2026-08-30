@@ -27,7 +27,7 @@ import AppLoadingScreen from '@/components/ui/AppLoadingScreen';
 
 function AppRoutes() {
   return (
-    <div className="w-full min-h-dvh flex flex-col">
+    <div className="w-full h-dvh flex flex-col overflow-hidden">
       <Routes>
         <Route path="/privacy" element={<PrivacyPolicy />} />
         <Route path="/terms" element={<TermsOfService />} />
@@ -52,8 +52,8 @@ const AuthenticatedApp = () => {
       return <Login />;
     }
     return (
-      <div className="page-adaptive bg-background dark safe-top safe-bottom">
-        <div className="page-adaptive-inner flex items-center justify-center px-4 py-6">
+      <div className="page-adaptive bg-background dark">
+        <div className="page-adaptive-inner-scroll flex items-center justify-center px-4 sm:px-6">
           <div className="text-center max-w-sm w-full">
             <p className="text-sm text-destructive font-medium mb-2">Something went wrong</p>
             <p className="text-xs text-muted-foreground">{authError.message}</p>
@@ -72,7 +72,7 @@ const AuthenticatedApp = () => {
   }
 
   return (
-    <div className="w-full min-h-dvh flex flex-col">
+    <div className="w-full h-full min-h-0 flex flex-col overflow-hidden">
       <Routes>
         <Route element={<AppLayout />}>
           <Route path="/" element={<Talk />} />

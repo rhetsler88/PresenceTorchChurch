@@ -7,7 +7,6 @@ import {
   query,
   serverTimestamp,
   setDoc,
-  Timestamp,
   where,
   writeBatch,
 } from "firebase/firestore";
@@ -18,6 +17,17 @@ export const PRESENCE_HEARTBEAT_MS = 15 * 60 * 1000;
 
 /** Treat presence as offline after this long without an update. */
 export const PRESENCE_STALE_MS = 16 * 60 * 1000;
+
+async function ensureAuthReady() {
+  const user = auth.currentUser;
+  if (!user) return false;
+  try {
+    await user.getIdToken();
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 function presenceDocId(userId, channelId) {
   return `${userId}_${channelId}`;
@@ -55,7 +65,7 @@ function mapPresenceDoc(docSnap) {
 export async function publishPresence({ channelIds = [], displayName = "" } = {}) {
   const uid = auth.currentUser?.uid;
   const uniqueChannelIds = [...new Set((channelIds || []).filter(Boolean))];
-  if (!uid) return;
+  if (!uid || !(await ensureAuthReady())) return;
 
   if (uniqueChannelIds.length === 0) {
     await clearPresence();
@@ -94,7 +104,7 @@ export async function publishPresence({ channelIds = [], displayName = "" } = {}
 /** Remove all presence documents for the signed-in user. */
 export async function clearPresence() {
   const uid = auth.currentUser?.uid;
-  if (!uid) return;
+  if (!uid || !(await ensureAuthReady())) return;
 
   const snap = await getDocs(
     query(collection(db, "presence"), where("user_id", "==", uid))
@@ -110,6 +120,7 @@ export async function clearPresence() {
 
 /**
  * Realtime listener for users currently present on a channel.
+ * Stale rows are filtered client-side so we only query by channel_id (no composite index required).
  * @returns {() => void} unsubscribe
  */
 export function subscribeChannelPresence(channelId, onChange) {
@@ -118,11 +129,9 @@ export function subscribeChannelPresence(channelId, onChange) {
     return () => {};
   }
 
-  const cutoff = Timestamp.fromMillis(Date.now() - PRESENCE_STALE_MS);
   const q = query(
     collection(db, "presence"),
-    where("channel_id", "==", channelId),
-    where("last_active_at", ">", cutoff)
+    where("channel_id", "==", channelId)
   );
 
   return onSnapshot(
@@ -133,7 +142,8 @@ export function subscribeChannelPresence(channelId, onChange) {
         .filter(Boolean);
       onChange(members);
     },
-    () => {
+    (err) => {
+      console.warn("[presence] subscribe failed:", err?.code || err);
       onChange([]);
     }
   );

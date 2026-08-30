@@ -80,19 +80,38 @@ async function playTone(frequency, duration, delay = 0, volume = 0.3, type = "sq
 
 // Two short beeps — you have the clear to talk / someone is keying up
 export function playClearTone(broadcastId) {
+  void playClearToneNow(broadcastId);
+}
+
+async function playClearToneNow(broadcastId) {
+  ensureAudioReady();
   const now = Date.now();
   if (broadcastId) {
     const lastForBroadcast = lastClearToneByBroadcast.get(broadcastId);
     if (lastForBroadcast != null && now - lastForBroadcast < 5000) return;
-    lastClearToneByBroadcast.set(broadcastId, now);
+  }
+  if (now - lastClearToneAt < 1200) return;
+
+  const ctx = getContext();
+  if (ctx.state === "suspended") {
+    try {
+      await ctx.resume();
+    } catch {
+      return;
+    }
+  }
+  if (ctx.state === "suspended") return;
+
+  const playedAt = Date.now();
+  if (broadcastId) {
+    lastClearToneByBroadcast.set(broadcastId, playedAt);
     if (lastClearToneByBroadcast.size > 32) {
       for (const [id, ts] of lastClearToneByBroadcast) {
-        if (now - ts > 60000) lastClearToneByBroadcast.delete(id);
+        if (playedAt - ts > 60000) lastClearToneByBroadcast.delete(id);
       }
     }
   }
-  if (now - lastClearToneAt < 1200) return;
-  lastClearToneAt = now;
+  lastClearToneAt = playedAt;
   void playTone(800, 0.12, 0);
   void playTone(800, 0.12, 0.18);
 }
@@ -105,12 +124,13 @@ export function playBusyTone() {
 let lastTextMessageToneAt = 0;
 let lastYellowProtectionToneAt = 0;
 
-// Single short ding — incoming text message on a channel
+// Two-beep ding — incoming text message on a channel (short boop, pause, longer booooop)
 export function playTextMessageTone() {
   const now = Date.now();
-  if (now - lastTextMessageToneAt < 300) return;
+  if (now - lastTextMessageToneAt < 900) return;
   lastTextMessageToneAt = now;
-  void playTone(880, 0.14, 0, 0.4, "sine");
+  void playTone(880, 0.12, 0, 0.75, "sine");
+  void playTone(880, 0.32, 0.45, 0.75, "sine");
 }
 
 // Three rising beeps — protection level changed to YELLOW

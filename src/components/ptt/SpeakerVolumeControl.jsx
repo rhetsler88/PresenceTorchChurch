@@ -64,7 +64,7 @@ export default function SpeakerVolumeControl({
         {variant === "name" ? (
           <button
             type="button"
-            className={`inline-flex items-center gap-1 min-w-0 max-w-full text-left transition-colors ${
+            className={`flex w-full min-w-0 items-center gap-1.5 text-left transition-colors ${
               customized
                 ? "text-primary"
                 : "text-foreground hover:text-primary"
@@ -72,8 +72,8 @@ export default function SpeakerVolumeControl({
             title={`Adjust how you hear ${label}`}
             onClick={(e) => e.stopPropagation()}
           >
-            <span className="text-sm font-semibold truncate">{label}</span>
-            <Volume2 className={`flex-shrink-0 ${customized ? "w-3.5 h-3.5" : "w-3 h-3 opacity-50"}`} />
+            <span className="min-w-0 flex-1 truncate text-sm font-semibold">{label}</span>
+            <Volume2 className={`shrink-0 ${customized ? "w-3.5 h-3.5" : "w-3 h-3 opacity-50"}`} />
           </button>
         ) : (
           <button

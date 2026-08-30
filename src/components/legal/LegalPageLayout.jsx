@@ -4,8 +4,8 @@ import { ArrowLeft } from "lucide-react";
 
 export default function LegalPageLayout({ title, lastUpdated, children }) {
   return (
-    <div className="page-adaptive bg-background dark safe-top safe-bottom">
-      <div className="mx-auto max-w-3xl px-4 py-8 sm:px-6 sm:py-10">
+    <div className="page-adaptive bg-background dark">
+      <div className="page-adaptive-inner-scroll mx-auto max-w-3xl px-4 sm:px-6">
         <Link
           to="/"
           className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground mb-6"

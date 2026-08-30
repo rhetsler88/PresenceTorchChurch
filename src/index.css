@@ -11,16 +11,19 @@
     height: 100%;
     min-height: 100%;
     min-height: -webkit-fill-available;
+    overflow: hidden;
   }
   body {
-    overflow-x: hidden;
+    overflow: hidden;
     min-height: 100%;
     min-height: -webkit-fill-available;
   }
   #root {
+    height: 100%;
     min-height: 100%;
     min-height: -webkit-fill-available;
     min-height: 100dvh;
+    overflow: hidden;
   }
   :root {
     --font-sans: 'Inter', sans-serif;
@@ -158,31 +161,34 @@
     min-height: 100vh;
     min-height: 100dvh;
   }
-  /* Full-viewport page: centered when content fits, scrolls when it overflows (small phones, keyboard, etc.) */
+  /* Full-viewport scroll shell — fixed bounds so overflow scrolls on Android/iOS WebViews and with large text. */
   .page-adaptive {
-    min-height: 100vh;
-    min-height: 100dvh;
+    position: fixed;
+    inset: 0;
+    box-sizing: border-box;
+    overflow-x: hidden;
     overflow-y: auto;
     overscroll-behavior-y: contain;
     -webkit-overflow-scrolling: touch;
+    touch-action: pan-y;
   }
   .page-adaptive-inner {
     box-sizing: border-box;
-    min-height: 100vh;
-    min-height: 100dvh;
+    min-height: 100%;
     display: flex;
     flex-direction: column;
     justify-content: center;
   }
-  /* Auth / legal pages: top-aligned and scroll when display zoom or large text overflows the viewport */
+  /* Auth / legal pages: top-aligned; scroll parent handles overflow (zoomed text, small screens, keyboard). */
   .page-adaptive-inner-scroll {
     box-sizing: border-box;
     width: 100%;
-    min-height: min(100%, 100dvh);
+    min-height: 100%;
     display: flex;
     flex-direction: column;
     justify-content: flex-start;
-    padding-top: max(1.25rem, env(safe-area-inset-top, 0px));
+    gap: 0.5rem;
+    padding-top: max(1rem, env(safe-area-inset-top, 0px));
     padding-bottom: max(1.25rem, env(safe-area-inset-bottom, 0px));
   }
   /* Same scroll behavior when nested inside a flex shell (e.g. AppLayout daily-code gate) */

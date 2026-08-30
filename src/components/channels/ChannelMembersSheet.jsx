@@ -33,21 +33,28 @@ export default function ChannelMembersSheet({ channel, onlineMembers = [], open,
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent side="right" className="w-full max-w-xs p-0">
-        <SheetHeader className="px-5 pt-5 pb-3 border-b border-border">
-          <SheetTitle className="text-base">
+      <SheetContent
+        side="bottom"
+        className="flex flex-col gap-0 p-0 w-full max-w-lg mx-auto max-h-[min(85dvh,28rem)] rounded-t-2xl border-t"
+      >
+        <SheetHeader className="shrink-0 space-y-1 px-5 pt-4 pb-3 pr-12 text-left border-b border-border">
+          <SheetTitle className="text-base leading-snug pr-2">
             {channel?.name || "Channel"} — Online Now
           </SheetTitle>
           <p className="text-xs text-muted-foreground">
             {members.length} user{members.length !== 1 ? "s" : ""} on this channel
           </p>
           {members.length > 0 && (
-            <p className="text-[11px] text-muted-foreground/80">
+            <p className="text-[11px] text-muted-foreground/80 leading-snug">
               Tap a name to adjust how you hear them on this device.
             </p>
           )}
         </SheetHeader>
-        <div className="overflow-auto py-1">
+
+        <div
+          className="flex-1 min-h-0 overflow-y-auto overscroll-contain py-1"
+          style={{ paddingBottom: "max(0.75rem, env(safe-area-inset-bottom, 0px))" }}
+        >
           {members.map((u) => {
             const name = u.displayName || getDisplayName(u);
             const isSelf = u.id === currentUser?.id;
@@ -55,14 +62,14 @@ export default function ChannelMembersSheet({ channel, onlineMembers = [], open,
             return (
               <div
                 key={u.id}
-                className="flex items-center gap-3 px-5 py-2.5"
+                className="grid grid-cols-[2.25rem_minmax(0,1fr)] items-center gap-x-3 px-5 py-2.5"
               >
-                <div className="w-9 h-9 rounded-full bg-primary/15 flex items-center justify-center flex-shrink-0">
-                  <span className="text-xs font-bold text-primary">
+                <div className="w-9 h-9 rounded-full bg-primary/15 flex items-center justify-center shrink-0 isolate">
+                  <span className="text-xs font-bold text-primary leading-none">
                     {getInitials(u)}
                   </span>
                 </div>
-                <div className="min-w-0 flex-1">
+                <div className="min-w-0 overflow-hidden">
                   {isSelf ? (
                     <p className="text-sm font-semibold text-foreground truncate">{name}</p>
                   ) : (
@@ -74,7 +81,7 @@ export default function ChannelMembersSheet({ channel, onlineMembers = [], open,
                     />
                   )}
                   {u.role && u.role !== "user" && (
-                    <span className="text-[10px] font-semibold uppercase tracking-wide text-primary">
+                    <span className="mt-0.5 block text-[10px] font-semibold uppercase tracking-wide text-primary truncate">
                       {u.role === "lead" ? "Lead" : u.role === "director" ? "Director" : u.role}
                     </span>
                   )}
@@ -83,7 +90,7 @@ export default function ChannelMembersSheet({ channel, onlineMembers = [], open,
             );
           })}
           {members.length === 0 && (
-            <p className="text-sm text-muted-foreground text-center py-8">
+            <p className="text-sm text-muted-foreground text-center py-8 px-5">
               No users online on this channel
             </p>
           )}

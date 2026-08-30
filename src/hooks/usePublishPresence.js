@@ -33,12 +33,20 @@ export default function usePublishPresence({ channelIds = [], displayName, enabl
     let cancelled = false;
     let heartbeatId = null;
 
-    const touch = () => {
+    const touch = async (attempt = 0) => {
       if (cancelled || !isAppForeground()) return;
-      void publishPresence({
-        channelIds: channelIdsRef.current,
-        displayName: displayNameRef.current,
-      }).catch(() => {});
+      try {
+        await publishPresence({
+          channelIds: channelIdsRef.current,
+          displayName: displayNameRef.current,
+        });
+      } catch (err) {
+        if (attempt < 3 && !cancelled) {
+          setTimeout(() => {
+            void touch(attempt + 1);
+          }, 1000 * (attempt + 1));
+        }
+      }
     };
 
     const clearHeartbeat = () => {
@@ -95,5 +103,5 @@ export default function usePublishPresence({ channelIds = [], displayName, enabl
       }
       void clearPresence().catch(() => {});
     };
-  }, [channelKey, enabled]);
+  }, [channelKey, enabled, displayName]);
 }

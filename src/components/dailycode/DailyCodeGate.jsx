@@ -225,8 +225,7 @@ export default function DailyCodeGate({ user, onUserUpdate, children, showBanner
     return null;
   }
 
-  const needsProfileName =
-    api.auth.hasPasswordProvider() && !userHasDisplayName(user);
+  const needsProfileName = !userHasDisplayName(user);
 
   if (needsProfileName && !nameComplete) {
     return (

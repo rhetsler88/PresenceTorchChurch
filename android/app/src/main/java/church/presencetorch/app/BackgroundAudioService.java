@@ -18,6 +18,7 @@ import android.os.PowerManager;
 import android.support.v4.media.session.MediaSessionCompat;
 import android.view.KeyEvent;
 import androidx.core.app.NotificationCompat;
+import androidx.media.app.NotificationCompat.MediaStyle;
 
 /**
  * Foreground service that keeps relay PTT playback alive while the app is backgrounded.
@@ -27,12 +28,15 @@ public class BackgroundAudioService extends Service {
     public static final String ACTION_START = "church.presencetorch.app.action.START_BACKGROUND_AUDIO";
     public static final String ACTION_UPDATE = "church.presencetorch.app.action.UPDATE_BACKGROUND_AUDIO";
     public static final String ACTION_STOP = "church.presencetorch.app.action.STOP_BACKGROUND_AUDIO";
+    public static final String ACTION_REPROMOTE = "church.presencetorch.app.action.REPROMOTE_BACKGROUND_AUDIO";
     public static final String EXTRA_TITLE = "title";
     public static final String EXTRA_BODY = "body";
     public static final String EXTRA_SILENT = "silent";
 
     private static final int NOTIFICATION_ID = 41001;
+    private static final int NOTIFICATION_DISMISS_REQUEST_CODE = 41002;
     private static final String CHANNEL_ID = "presence_torch_background_listen_v3";
+    private static final String SILENT_CHANNEL_ID = "presence_torch_background_listen_silent_v1";
     private static final int SAMPLE_RATE = 44100;
 
     private static volatile boolean sessionActive = false;
@@ -59,6 +63,14 @@ public class BackgroundAudioService extends Service {
         }
 
         String action = intent.getAction();
+        if (ACTION_REPROMOTE.equals(action)) {
+            if (!sessionActive) {
+                return START_NOT_STICKY;
+            }
+            repromoteForegroundNotification();
+            return START_STICKY;
+        }
+
         if (ACTION_STOP.equals(action)) {
             // stopSession may be delivered as a foreground-service start on newer Android;
             // satisfy the FGS contract before tearing down if we never promoted.
@@ -84,20 +96,7 @@ public class BackgroundAudioService extends Service {
             if (body != null && !body.isEmpty()) {
                 currentBody = body;
             }
-            createNotificationChannel();
-            NotificationManager manager = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
-            if (manager != null) {
-                Notification notification = buildNotification(currentTitle);
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                    startForeground(
-                        NOTIFICATION_ID,
-                        notification,
-                        android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK
-                    );
-                } else {
-                    startForeground(NOTIFICATION_ID, notification);
-                }
-            }
+            repromoteForegroundNotification();
             return START_STICKY;
         }
 
@@ -128,6 +127,17 @@ public class BackgroundAudioService extends Service {
 
     /** Must run before any slow setup when started via startForegroundService(). */
     private void promoteToForeground(String title) {
+        repromoteForegroundNotification(title);
+        sessionActive = true;
+    }
+
+    /** Re-post the FGS notification — required after user swipe on Android 13+. */
+    private void repromoteForegroundNotification() {
+        repromoteForegroundNotification(currentTitle);
+    }
+
+    private void repromoteForegroundNotification(String title) {
+        createNotificationChannel();
         Notification notification = buildNotification(title);
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             startForeground(
@@ -138,7 +148,6 @@ public class BackgroundAudioService extends Service {
         } else {
             startForeground(NOTIFICATION_ID, notification);
         }
-        sessionActive = true;
     }
 
     private void satisfyForegroundServiceRequirement() {
@@ -154,6 +163,9 @@ public class BackgroundAudioService extends Service {
             currentBody = getString(R.string.background_audio_notification_text);
         }
 
+        if (mediaSession == null) {
+            activateMediaButtonSession();
+        }
         createNotificationChannel();
         promoteToForeground(title);
     }
@@ -226,7 +238,16 @@ public class BackgroundAudioService extends Service {
             ? currentBody
             : getString(R.string.background_audio_notification_text);
 
-        NotificationCompat.Builder builder = new NotificationCompat.Builder(this, CHANNEL_ID)
+        Intent dismissIntent = new Intent(this, BackgroundNotificationDismissReceiver.class);
+        dismissIntent.setPackage(getPackageName());
+        PendingIntent dismissPendingIntent = PendingIntent.getBroadcast(
+            this,
+            NOTIFICATION_DISMISS_REQUEST_CODE,
+            dismissIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE
+        );
+
+        NotificationCompat.Builder builder = new NotificationCompat.Builder(this, getChannelId())
             .setSmallIcon(R.mipmap.ic_launcher)
             .setContentTitle(displayTitle)
             .setContentText(displayBody)
@@ -234,20 +255,31 @@ public class BackgroundAudioService extends Service {
             .setAutoCancel(false)
             .setOnlyAlertOnce(true)
             .setContentIntent(pendingIntent)
+            .setDeleteIntent(dismissPendingIntent)
             .setCategory(NotificationCompat.CATEGORY_SERVICE)
             .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC);
+
+        if (mediaSession != null) {
+            builder.setStyle(
+                new MediaStyle().setMediaSession(mediaSession.getSessionToken())
+            );
+        }
 
         if (silentNotification) {
             builder
                 .setSilent(true)
                 .setShowWhen(false)
-                .setPriority(NotificationCompat.PRIORITY_LOW);
+                .setPriority(NotificationCompat.PRIORITY_DEFAULT);
         } else {
             builder.setPriority(NotificationCompat.PRIORITY_DEFAULT);
         }
 
         return builder.build();
+    }
+
+    private String getChannelId() {
+        return silentNotification ? SILENT_CHANNEL_ID : CHANNEL_ID;
     }
 
     private void createNotificationChannel() {
@@ -260,10 +292,11 @@ public class BackgroundAudioService extends Service {
             return;
         }
 
+        String channelId = getChannelId();
         NotificationChannel channel = new NotificationChannel(
-            CHANNEL_ID,
+            channelId,
             getString(R.string.background_audio_channel_name),
-            silentNotification ? NotificationManager.IMPORTANCE_LOW : NotificationManager.IMPORTANCE_DEFAULT
+            NotificationManager.IMPORTANCE_DEFAULT
         );
         channel.setDescription(getString(R.string.background_audio_channel_description));
         channel.setShowBadge(false);
@@ -400,6 +433,13 @@ public class BackgroundAudioService extends Service {
             wakeLock.release();
         }
         wakeLock = null;
+    }
+
+    @Override
+    public void onTimeout(int startId, int fgsType) {
+        if (sessionActive) {
+            repromoteForegroundNotification();
+        }
     }
 
     @Override

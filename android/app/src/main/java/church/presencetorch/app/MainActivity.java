@@ -53,7 +53,18 @@ public class MainActivity extends BridgeActivity {
         super.onResume();
         BackgroundLogoutScheduler.cancel(this);
         SessionPrefs.clearSessionBackgrounded(this);
+        reinforceBackgroundListenNotification();
         refreshWebViewAfterResume();
+    }
+
+    /** Restore the listen-session notification if the user swiped it away on Android 13+. */
+    private void reinforceBackgroundListenNotification() {
+        if (!BackgroundAudioService.isSessionActive()) {
+            return;
+        }
+        Intent intent = new Intent(this, BackgroundAudioService.class);
+        intent.setAction(BackgroundAudioService.ACTION_REPROMOTE);
+        startService(intent);
     }
 
     /** Called from {@link BackgroundLogoutReceiver} after 6h background timeout. */

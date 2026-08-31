@@ -32,7 +32,7 @@ import {
   canAccessMonitorPage,
 } from "@/lib/userUtils";
 import { isDailyCodeVerified } from "@/lib/dailyCode";
-import usePublishPresence from "@/hooks/usePublishPresence";
+import { useRegisterTalkPresence } from "@/components/presence/PresenceProvider";
 import useChannelPresence from "@/hooks/useChannelPresence";
 import { useAuth } from "@/lib/AuthContext";
 import {
@@ -76,6 +76,7 @@ export default function Talk() {
   /** Active monitor/PTT broadcast on this channel (from PTT signal, not yet heard). */
   const activeLiveBroadcastRef = useRef(null);
   const activeBroadcastClearTimerRef = useRef(null);
+  const pttMaxDurationStopRef = useRef(() => {});
 
   const [searchParams] = useSearchParams();
   const channelParam = searchParams.get("channel");
@@ -113,20 +114,17 @@ export default function Talk() {
     && user
     && (bypassesDailyCode(user) || isDailyCodeVerified(user))
   );
+  const { onlineMembers, onlineCount } = useChannelPresence(effectiveChannelId, {
+    enabled: canPublishPresence,
+    includeCurrentUser: canPublishPresence,
+  });
+  useRegisterTalkPresence(canPublishPresence ? effectiveChannelId : null);
   const canQueryFirestore = Boolean(
     effectiveChannelId &&
     user &&
     canReadMessages &&
     userHasFirestoreChannelAccess(user, effectiveChannelId, activeChannel)
   );
-  const { onlineMembers, onlineCount } = useChannelPresence(effectiveChannelId, {
-    enabled: canQueryFirestore,
-  });
-  usePublishPresence({
-    channelIds: effectiveChannelId ? [effectiveChannelId] : [],
-    displayName: user ? getDisplayName(user) : "",
-    enabled: canPublishPresence,
-  });
 
   const messagesQueryKey = useMemo(
     () => ["messages", effectiveChannelId, user?.id, canReadMessages, canQueryFirestore],
@@ -193,6 +191,7 @@ export default function Talk() {
     userName: user ? getDisplayName(user) : "",
     listenActive: false,
     receiveEnabled: false,
+    onMaxDurationRef: pttMaxDurationStopRef,
   });
 
   const channelLiveActive = hasPassiveMonitor
@@ -835,6 +834,12 @@ export default function Talk() {
     setIsPTTPressed(false);
     finishPttStop();
   }, [finishPttStop]);
+
+  pttMaxDurationStopRef.current = () => {
+    if (!isPTTPressedRef.current && !pttRecordingActiveRef.current) return;
+    toast.info("Maximum transmission time reached (35 seconds)");
+    handlePTTStop();
+  };
 
   useRegisterPagePTTHandlers(
     {

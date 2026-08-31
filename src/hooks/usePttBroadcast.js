@@ -1,5 +1,6 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { isAgoraEnabled } from "@/lib/agora";
+import { armPttMaxTransmission, clearPttMaxTransmission } from "@/lib/pttLimits";
 import useRelayBroadcast from "./useRelayBroadcast";
 import useAgoraPTT from "./useAgoraPTT";
 import useAgoraMultiPublish from "./useAgoraMultiPublish";
@@ -17,8 +18,10 @@ export default function usePttBroadcast(options) {
     userId,
     userName,
     onRemoteLiveAudio,
+    onMaxDurationRef,
   } = options;
   const agoraEnabled = isAgoraEnabled();
+  const maxDurationTimerRef = useRef(null);
   const agoraMulti = useAgoraMultiPublish({ userId });
   const relay = useRelayBroadcast({ channelId, userId, userName });
   const usingAgoraRef = useRef(false);
@@ -34,6 +37,10 @@ export default function usePttBroadcast(options) {
     receiveEnabled,
     onRemoteLiveAudio,
   });
+
+  useEffect(() => () => {
+    clearPttMaxTransmission(maxDurationTimerRef);
+  }, []);
 
   const startRecording = useCallback(async ({ broadcastId: externalBroadcastId, publishChannelIds } = {}) => {
     const publishIds = publishChannelIds?.filter(Boolean)
@@ -78,6 +85,10 @@ export default function usePttBroadcast(options) {
       }
     }
 
+    armPttMaxTransmission(maxDurationTimerRef, () => {
+      onMaxDurationRef?.current?.();
+    });
+
     return true;
   }, [
     agoraEnabled,
@@ -87,9 +98,11 @@ export default function usePttBroadcast(options) {
     relay.startRecording,
     relay.getMediaStream,
     relay.enableLiveRelay,
+    onMaxDurationRef,
   ]);
 
   const stopLiveTransmit = useCallback(async () => {
+    clearPttMaxTransmission(maxDurationTimerRef);
     if (!liveActiveRef.current) return;
     liveActiveRef.current = false;
     setIsTransmitting(false);
@@ -110,6 +123,7 @@ export default function usePttBroadcast(options) {
   }, [agora.stopRecording, agoraMulti.stopRecording, relay.stopLiveRelay]);
 
   const stopRecording = useCallback(async () => {
+    clearPttMaxTransmission(maxDurationTimerRef);
     await stopLiveTransmit();
 
     if (!relayActiveRef.current) return null;

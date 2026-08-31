@@ -126,6 +126,7 @@ function buildTextMessageRecipients(usersSnap, channelData, senderId) {
     recipients.push({
       userId: doc.id,
       tokens: [...tokens],
+      fcm_registrations: data.fcm_registrations || null,
     });
   });
 

@@ -28,6 +28,16 @@ export async function consumeNativeForceLogoutPending() {
   return result?.pending === true;
 }
 
+export async function markNativeForceLogoutOnNextStart() {
+  if (!Capacitor.isNativePlatform()) return;
+  await SessionGuard.markForceLogoutOnNextStart();
+}
+
+export async function clearNativeForceLogoutOnNextStart() {
+  if (!Capacitor.isNativePlatform()) return;
+  await SessionGuard.clearForceLogoutOnNextStart();
+}
+
 export async function revokeNativeGoogleSignInSession() {
   if (!Capacitor.isNativePlatform()) return;
   await SessionGuard.revokeGoogleSignInSession();

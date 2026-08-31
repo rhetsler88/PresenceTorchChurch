@@ -16,8 +16,14 @@ function staffTokens(registrations) {
 }
 
 /** Keep only the current signed-in session's registration (PWA, native, or desktop web). */
-export function buildRegistrationPatch(_existingRegistrations, registrationKey, entry) {
-  const registrations = { [registrationKey]: entry };
+export function buildRegistrationPatch(existingRegistrations, registrationKey, entry) {
+  const existing = existingRegistrations?.[registrationKey];
+  const registrations = {
+    [registrationKey]: {
+      ...entry,
+      text_message_unread: existing?.text_message_unread || {},
+    },
+  };
 
   return {
     fcm_registrations: registrations,

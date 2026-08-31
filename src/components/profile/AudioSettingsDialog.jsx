@@ -15,7 +15,6 @@ import {
   AUDIO_LEVEL_DEFAULT,
   AUDIO_LEVEL_MAX,
   AUDIO_LEVEL_MIN,
-  estimateUserListenStorageBytes,
 } from "@/lib/pttSettings";
 
 function levelLabel(value) {
@@ -24,14 +23,8 @@ function levelLabel(value) {
   return `${value - AUDIO_LEVEL_DEFAULT}%`;
 }
 
-function formatStorage(bytes) {
-  if (bytes < 1024) return `${bytes} bytes`;
-  return `${(bytes / 1024).toFixed(1)} KB`;
-}
-
 export default function AudioSettingsDialog({ open, onOpenChange }) {
   const { overrides, setUserListenVolume, resetUserListenVolume } = usePttSettings();
-  const storageBytes = estimateUserListenStorageBytes();
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -79,10 +72,6 @@ export default function AudioSettingsDialog({ open, onOpenChange }) {
               </div>
             ))
           )}
-
-          <p className="text-xs text-muted-foreground">
-            Stored locally ({formatStorage(storageBytes)}). Typical church use stays under 5 KB even with dozens of adjusted speakers.
-          </p>
         </div>
       </DialogContent>
     </Dialog>

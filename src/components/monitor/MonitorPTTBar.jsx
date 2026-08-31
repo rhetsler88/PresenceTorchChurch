@@ -22,6 +22,7 @@ export default function MonitorPTTBar(props) {
     onSelectedChannelIdsChange,
     isPressed,
     isReceiving,
+    receivingChannel,
     isChannelBusy,
     isSending,
     onStart,
@@ -100,7 +101,9 @@ export default function MonitorPTTBar(props) {
           ? `Broadcasting to ${selectedLabel} — release to send`
           : `Sending to ${selectedLabel} — release to send`)
       : isReceiving
-        ? "Receiving..."
+        ? receivingChannel
+          ? `Receiving live on ${receivingChannel.name}`
+          : "Receiving..."
         : isChannelBusy
           ? "Channel busy"
           : isMulti
@@ -274,8 +277,23 @@ export default function MonitorPTTBar(props) {
         </div>
       </div>
 
-      <p className="text-center text-[10px] text-muted-foreground mt-2 uppercase tracking-widest">
-        {statusText}
+      <p className="text-center text-[10px] text-muted-foreground mt-2 uppercase tracking-widest flex items-center justify-center gap-2 flex-wrap">
+        {isReceiving && receivingChannel ? (
+          <span className="inline-flex items-center gap-1.5 normal-case tracking-normal text-green-400 font-semibold">
+            <span
+              className="w-5 h-5 rounded-md inline-flex items-center justify-center shrink-0"
+              style={{ backgroundColor: (receivingChannel.color || "#f59e0b") + "25" }}
+            >
+              <span
+                className="w-2.5 h-2.5 rounded-full"
+                style={{ backgroundColor: receivingChannel.color || "#f59e0b" }}
+              />
+            </span>
+            Receiving live on {receivingChannel.name}
+          </span>
+        ) : (
+          <span>{statusText}</span>
+        )}
       </p>
     </div>
   );

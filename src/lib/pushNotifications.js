@@ -2,7 +2,7 @@ import { Capacitor } from "@capacitor/core";
 import { PushNotifications } from "@capacitor/push-notifications";
 import { LocalNotifications } from "@capacitor/local-notifications";
 import { getToken, isSupported, onMessage } from "firebase/messaging";
-import { doc, updateDoc } from "firebase/firestore";
+import { doc, getDoc, updateDoc } from "firebase/firestore";
 import { getFirebaseMessaging, db, auth } from "@/lib/firebase";
 import { triggerRedAlert, ensureRedAlertNotificationChannel } from "@/lib/redAlertActions";
 import { playTextMessageTone, playYellowProtectionTone } from "@/lib/pttTones";
@@ -52,19 +52,59 @@ async function clearNativeTextMessageNotificationsFromTray() {
 async function resetTextMessageUnreadCounts(uid) {
   if (!uid) return;
   try {
-    await updateDoc(doc(db, "users", uid), { text_message_unread: {} });
-  } catch {
-    /* ignore */
+    await auth.authStateReady();
+    const userRef = doc(db, "users", uid);
+    const snap = await getDoc(userRef);
+    const data = snap.data() || {};
+    const patch = { text_message_unread: {} };
+
+    if (currentRegistrationKey && data.fcm_registrations?.[currentRegistrationKey]) {
+      patch.fcm_registrations = {
+        ...data.fcm_registrations,
+        [currentRegistrationKey]: {
+          ...data.fcm_registrations[currentRegistrationKey],
+          text_message_unread: {},
+        },
+      };
+    }
+
+    await updateDoc(userRef, patch);
+  } catch (err) {
+    console.warn("Failed to reset text message unread counts:", err);
+    try {
+      await updateDoc(doc(db, "users", uid), { text_message_unread: {} });
+    } catch {
+      /* ignore */
+    }
+  }
+}
+
+async function clearAppIconBadge() {
+  if ("clearAppBadge" in navigator) {
+    try {
+      await navigator.clearAppBadge();
+    } catch {
+      /* ignore */
+    }
   }
 }
 
 /** Remove text-message push notifications and reset unread counts when the app opens. */
 export async function clearTextMessageNotificationsOnForeground() {
   const uid = auth.currentUser?.uid || currentUid;
+  if (!uid) {
+    try {
+      await auth.authStateReady();
+    } catch {
+      return;
+    }
+  }
+  const resolvedUid = auth.currentUser?.uid || currentUid;
   await Promise.all([
     clearNativeTextMessageNotificationsFromTray(),
     clearWebTextMessageNotifications(),
-    resetTextMessageUnreadCounts(uid),
+    resetTextMessageUnreadCounts(resolvedUid),
+    clearAppIconBadge(),
   ]);
 }
 
@@ -78,6 +118,7 @@ function installTextMessageNotificationLifecycle() {
 
   if (Capacitor.isNativePlatform()) {
     window.addEventListener("resume", handleOpen);
+    window.addEventListener("focus", handleOpen);
     return;
   }
 
@@ -86,6 +127,7 @@ function installTextMessageNotificationLifecycle() {
       handleOpen();
     }
   });
+  window.addEventListener("focus", handleOpen);
 }
 
 function handleRedAlertPayload(data) {

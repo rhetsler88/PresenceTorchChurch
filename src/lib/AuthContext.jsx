@@ -30,8 +30,8 @@ import { clearLastAppRoute } from "@/lib/lastAppRoute";
 import { clearPasswordLoginSession } from "@/lib/passwordRotation";
 import { formatAuthError } from "@/api/client";
 import { syncUserChannelMembership } from "@/lib/channelMembership";
-import { consumeNativeForceLogoutPending } from "@/lib/sessionGuardNative";
-import { clearPresence } from "@/lib/presence";
+import { consumeNativeForceLogoutPending, syncNativeActiveSession } from "@/lib/sessionGuardNative";
+import { clearPresence, stopPresenceSession } from "@/lib/presence";
 
 const AuthContext = createContext(null);
 
@@ -89,7 +89,7 @@ async function expireSession() {
   clearLoginTime();
   clearDailyCodeSession();
   clearPasswordLoginSession();
-  await clearPresence().catch(() => {});
+  await stopPresenceSession();
   await authApi.logout();
 }
 
@@ -439,6 +439,7 @@ export const AuthProvider = ({ children }) => {
           recordLoginTime();
         } else {
           ensureIdleLogoutWatch();
+          void syncNativeActiveSession(true).catch(() => {});
         }
 
         applyAuthenticatedUser(currentUser);
@@ -598,7 +599,7 @@ export const AuthProvider = ({ children }) => {
       clearLastAppRoute();
       await stopAllBackgroundAudio();
       await teardownPushNotifications();
-      await clearPresence().catch(() => {});
+      await stopPresenceSession();
       await authApi.logout();
       applySignedOut();
     } catch (err) {

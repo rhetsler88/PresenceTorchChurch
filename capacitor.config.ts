@@ -9,6 +9,9 @@ const config: CapacitorConfig = {
     contentInset: 'never',
     backgroundColor: '#0a0f1a',
   },
+  android: {
+    backgroundColor: '#0a0f1a',
+  },
   plugins: {
     FirebaseAuthentication: {
       // Keep native Google creds on the plugin; bridge into Firebase JS SDK for Firestore.

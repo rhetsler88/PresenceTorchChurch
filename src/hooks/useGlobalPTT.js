@@ -95,6 +95,7 @@ export default function useGlobalPTT() {
   const pttStartInFlightRef = useRef(null);
   const pttStopPendingRef = useRef(false);
   const isPTTPressedRef = useRef(false);
+  const pttMaxDurationStopRef = useRef(() => {});
 
   const { startRecording, stopRecording } = usePttBroadcast({
     channelId: primaryChannelId,
@@ -102,6 +103,7 @@ export default function useGlobalPTT() {
     userName: user ? getDisplayName(user) : "",
     listenActive: false,
     receiveEnabled: false,
+    onMaxDurationRef: pttMaxDurationStopRef,
   });
 
   const sendMutation = useMutation({
@@ -380,6 +382,12 @@ export default function useGlobalPTT() {
     isPTTPressedRef.current = false;
     finishPttStop();
   }, [finishPttStop]);
+
+  pttMaxDurationStopRef.current = () => {
+    if (!isPTTPressedRef.current && !pttRecordingActiveRef.current) return;
+    toast.info("Maximum transmission time reached (35 seconds)");
+    handlePTTStop();
+  };
 
   return useMemo(
     () => ({

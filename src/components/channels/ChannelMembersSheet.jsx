@@ -11,6 +11,24 @@ import SpeakerVolumeControl from "@/components/ptt/SpeakerVolumeControl";
 import { useAuth } from "@/lib/AuthContext";
 import { getDisplayName, getInitials } from "@/lib/userUtils";
 
+function OnlineAvatar({ user, isSelf }) {
+  return (
+    <div className="relative w-9 h-9 shrink-0 isolate">
+      <div className="w-9 h-9 rounded-full bg-primary/15 flex items-center justify-center">
+        <span className="text-xs font-bold text-primary leading-none">
+          {getInitials(user)}
+        </span>
+      </div>
+      <span
+        className={`absolute bottom-0 right-0 w-3 h-3 rounded-full border-2 border-background ${
+          isSelf ? "bg-primary" : "bg-green-500"
+        }`}
+        aria-hidden
+      />
+    </div>
+  );
+}
+
 export default function ChannelMembersSheet({ channel, onlineMembers = [], open, onOpenChange }) {
   const { user: currentUser } = useAuth();
 
@@ -46,7 +64,7 @@ export default function ChannelMembersSheet({ channel, onlineMembers = [], open,
           </p>
           {members.length > 0 && (
             <p className="text-[11px] text-muted-foreground/80 leading-snug">
-              Tap a name to adjust how you hear them on this device.
+              Tap someone&apos;s name to adjust how you hear them on this device.
             </p>
           )}
         </SheetHeader>
@@ -62,16 +80,19 @@ export default function ChannelMembersSheet({ channel, onlineMembers = [], open,
             return (
               <div
                 key={u.id}
-                className="grid grid-cols-[2.25rem_minmax(0,1fr)] items-center gap-x-3 px-5 py-2.5"
+                className="grid grid-cols-[2.25rem_minmax(0,1fr)] items-center gap-x-3 px-5 py-2.5 hover:bg-muted/40 transition-colors"
               >
-                <div className="w-9 h-9 rounded-full bg-primary/15 flex items-center justify-center shrink-0 isolate">
-                  <span className="text-xs font-bold text-primary leading-none">
-                    {getInitials(u)}
-                  </span>
-                </div>
+                <OnlineAvatar user={u} isSelf={isSelf} />
                 <div className="min-w-0 overflow-hidden">
                   {isSelf ? (
-                    <p className="text-sm font-semibold text-foreground truncate">{name}</p>
+                    <div className="min-w-0">
+                      <p className="text-sm font-semibold text-foreground truncate">
+                        {name}
+                        <span className="ml-1.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                          You
+                        </span>
+                      </p>
+                    </div>
                   ) : (
                     <SpeakerVolumeControl
                       userId={u.id}

@@ -1,6 +1,7 @@
 import Capacitor
 import Foundation
 import GoogleSignIn
+import UIKit
 import UserNotifications
 
 enum SessionPrefs {
@@ -163,6 +164,9 @@ public class SessionGuardPlugin: CAPPlugin, CAPBridgedPlugin {
             }
             if !ids.isEmpty {
                 UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: ids)
+            }
+            DispatchQueue.main.async {
+                UIApplication.shared.applicationIconBadgeNumber = 0
             }
             call.resolve()
         }

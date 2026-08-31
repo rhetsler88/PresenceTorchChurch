@@ -446,7 +446,7 @@ service cloud.firestore {
         && request.resource.data.channel_id.size() > 0
         && canSendOnChannel(request.resource.data.channel_id)
         && canUsePttWhenDailyCodeRequired()
-        && request.resource.data.keys().hasOnly(['user_id', 'channel_id', 'last_active_at', 'display_name']);
+        && request.resource.data.keys().hasOnly(['user_id', 'channel_id', 'last_active_at', 'last_active_ms', 'display_name']);
 
       allow update: if isSignedIn()
         && request.resource.data.user_id == request.auth.uid
@@ -456,7 +456,7 @@ service cloud.firestore {
         && canSendOnChannel(request.resource.data.channel_id)
         && canUsePttWhenDailyCodeRequired()
         && request.resource.data.diff(resource.data).affectedKeys()
-            .hasOnly(['channel_id', 'last_active_at', 'display_name']);
+            .hasOnly(['channel_id', 'last_active_at', 'last_active_ms', 'display_name']);
 
       allow delete: if isSignedIn()
         && resource.data.user_id == request.auth.uid;

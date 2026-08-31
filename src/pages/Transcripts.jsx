@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { api } from "@/api/client";
-import { useQuery, useQueryClient, keepPreviousData } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient, keepPreviousData } from "@tanstack/react-query";
 import { Input } from "@/components/ui/input";
-import { Search, FileText, FileUp } from "lucide-react";
+import { Search, FileText, FileUp, CheckSquare, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { etzDayKey, etzFullTimestamp, etzMediumTimestamp } from "@/lib/etz";
 import { getDisplayName, getReadableVoiceChannels, isPlatformAdmin } from "@/lib/userUtils";
@@ -70,6 +70,8 @@ export default function Transcripts() {
   const [exportPhase, setExportPhase] = useState("idle");
   const [selectedDayKeys, setSelectedDayKeys] = useState(() => new Set());
   const [selectedChannelIds, setSelectedChannelIds] = useState(() => new Set());
+  const [selectionMode, setSelectionMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState(() => new Set());
   const queryClient = useQueryClient();
 
   const { data: user } = useQuery({
@@ -81,6 +83,62 @@ export default function Transcripts() {
     () => Boolean(user && (isPlatformAdmin(user) || user.role === "director")),
     [user]
   );
+
+  const canDelete = useMemo(
+    () => Boolean(user && isPlatformAdmin(user)),
+    [user]
+  );
+
+  const handleEnterSelection = useCallback((msgId) => {
+    if (!canDelete) return;
+    setSelectionMode(true);
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      next.add(msgId);
+      return next;
+    });
+  }, [canDelete]);
+
+  const handleToggleSelect = useCallback((msgId) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(msgId)) next.delete(msgId);
+      else next.add(msgId);
+      return next;
+    });
+  }, []);
+
+  const handleCancelSelection = useCallback(() => {
+    setSelectionMode(false);
+    setSelectedIds(new Set());
+  }, []);
+
+  const handleEnterSelectionMode = useCallback(() => {
+    if (!canDelete) return;
+    setSelectionMode(true);
+    setSelectedIds(new Set());
+  }, [canDelete]);
+
+  const deleteMessagesMutation = useMutation({
+    mutationFn: async (/** @type {string[]} */ ids) => {
+      await api.entities.VoiceMessage.deleteAsModerator(ids);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["all-messages"] });
+      queryClient.invalidateQueries({ queryKey: ["messages"] });
+      setSelectionMode(false);
+      setSelectedIds(new Set());
+      toast.success("Messages deleted");
+    },
+    onError: (err) => {
+      console.error("Delete messages failed:", err);
+      if (err?.code === "permission-denied") {
+        toast.error("Permission denied — confirm your account role is admin or director.");
+        return;
+      }
+      toast.error("Could not delete messages. Please try again.");
+    },
+  });
 
   const { data: channels = [] } = useQuery({
     queryKey: ["channels"],
@@ -475,6 +533,20 @@ export default function Transcripts() {
             onChange={(e) => setSearch(e.target.value)}
           />
         </div>
+
+        {canDelete && !selectionMode && (
+          <div className="flex justify-end mt-3">
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-8 gap-1.5 text-muted-foreground hover:text-foreground"
+              onClick={handleEnterSelectionMode}
+            >
+              <CheckSquare className="w-4 h-4" />
+              Select messages
+            </Button>
+          </div>
+        )}
       </div>
 
       <div className="w-full p-3 pb-36 sm:p-4">
@@ -496,6 +568,11 @@ export default function Transcripts() {
                 selectable={canExport}
                 selected={selectedDayKeys.has(dayKey)}
                 onToggleSelect={toggleDaySelection}
+                canDelete={canDelete}
+                selectionMode={selectionMode}
+                selectedIds={selectedIds}
+                onToggleMessageSelect={handleToggleSelect}
+                onEnterSelection={handleEnterSelection}
               />
             ))}
           </div>
@@ -511,6 +588,29 @@ export default function Transcripts() {
           </div>
         )}
       </div>
+
+      {selectionMode && (
+        <div className="fixed inset-x-0 z-40 bottom-tab-bar-offset flex items-center justify-between gap-3 px-4 py-3 bg-card border-t border-border">
+          <span className="text-sm font-medium text-foreground">
+            {selectedIds.size} selected · tap to toggle · hold to select
+          </span>
+          <div className="flex items-center gap-2">
+            <Button variant="ghost" size="sm" onClick={handleCancelSelection}>
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              size="sm"
+              className="gap-1.5"
+              onClick={() => deleteMessagesMutation.mutate([...selectedIds])}
+              disabled={selectedIds.size === 0 || deleteMessagesMutation.isPending}
+            >
+              <Trash2 className="w-4 h-4" />
+              Delete
+            </Button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

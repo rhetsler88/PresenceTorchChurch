@@ -16,7 +16,7 @@ public class SessionTaskService extends Service {
 
     @Override
     public void onTaskRemoved(Intent rootIntent) {
-        if (SessionPrefs.shouldAllowSessionLogout(this)) {
+        if (SessionPrefs.shouldAllowSwipeAwayLogout(this)) {
             SessionPrefs.markForceLogoutOnNextStart(this);
         }
         stopSelf();

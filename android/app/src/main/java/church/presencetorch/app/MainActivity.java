@@ -1,15 +1,21 @@
 package church.presencetorch.app;
 
+import android.content.Intent;
 import android.os.Bundle;
 import android.view.KeyEvent;
 import android.webkit.CookieManager;
 import android.webkit.WebView;
+import androidx.core.splashscreen.SplashScreen;
 import com.getcapacitor.BridgeActivity;
 import com.getcapacitor.PluginHandle;
 
 public class MainActivity extends BridgeActivity {
     @Override
     public void onCreate(Bundle savedInstanceState) {
+        SplashScreen.installSplashScreen(this);
+        if (SessionPrefs.consumeUncleanBackgroundExit(this)) {
+            SessionPrefs.markForceLogoutOnNextStart(this);
+        }
         registerPlugin(BluetoothPermissionsPlugin.class);
         registerPlugin(HeadsetPTTPlugin.class);
         registerPlugin(BackgroundAudioPlugin.class);
@@ -24,23 +30,30 @@ public class MainActivity extends BridgeActivity {
     }
 
     @Override
+    public void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        setIntent(intent);
+        refreshWebViewAfterResume();
+    }
+
+    @Override
     public void onPause() {
-        super.onPause();
-        if (!isFinishing() && SessionPrefs.shouldAllowSessionLogout(this)) {
+        if (!isFinishing() && SessionPrefs.shouldAllowSwipeAwayLogout(this)) {
+            SessionPrefs.markSessionBackgrounded(this);
             long deadline = SessionPrefs.getIdleLogoutDeadlineMs(this);
             if (deadline > System.currentTimeMillis()) {
                 BackgroundLogoutScheduler.scheduleAt(this, deadline);
             }
         }
+        super.onPause();
     }
 
     @Override
     public void onResume() {
         super.onResume();
         BackgroundLogoutScheduler.cancel(this);
-        if (getBridge() != null && getBridge().getWebView() != null) {
-            enableWebViewForRecaptcha();
-        }
+        SessionPrefs.clearSessionBackgrounded(this);
+        refreshWebViewAfterResume();
     }
 
     /** Called from {@link BackgroundLogoutReceiver} after 6h background timeout. */
@@ -53,6 +66,39 @@ public class MainActivity extends BridgeActivity {
     }
 
     private static MainActivity activeInstance;
+
+    private void refreshWebViewAfterResume() {
+        WebView webView = getBridge() != null ? getBridge().getWebView() : null;
+        if (webView == null) {
+            return;
+        }
+
+        enableWebViewForRecaptcha();
+        webView.onResume();
+        webView.resumeTimers();
+
+        webView.post(() -> {
+            webView.invalidate();
+            if (webView.getParent() instanceof android.view.View) {
+                ((android.view.View) webView.getParent()).invalidate();
+            }
+            getWindow().getDecorView().requestLayout();
+            webView.evaluateJavascript(
+                "(function(){"
+                    + "try {"
+                    + "window.dispatchEvent(new Event('resume'));"
+                    + "if (document.documentElement) {"
+                    + "document.documentElement.style.transform='translateZ(0)';"
+                    + "requestAnimationFrame(function(){"
+                    + "document.documentElement.style.transform='';"
+                    + "});"
+                    + "}"
+                    + "} catch (e) {}"
+                    + "})();",
+                null
+            );
+        });
+    }
 
     private void runImmediateLogoutOnWebView() {
         if (!SessionPrefs.shouldAllowSessionLogout(this)) {
@@ -90,7 +136,7 @@ public class MainActivity extends BridgeActivity {
         if (!isFinishing()) {
             return;
         }
-        if (!SessionPrefs.shouldAllowSessionLogout(this)) {
+        if (!SessionPrefs.shouldAllowSwipeAwayLogout(this)) {
             return;
         }
         SessionPrefs.markForceLogoutOnNextStart(this);

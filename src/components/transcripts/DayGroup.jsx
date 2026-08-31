@@ -13,6 +13,11 @@ export default function DayGroup({
   selectable = false,
   selected = false,
   onToggleSelect,
+  canDelete = false,
+  selectionMode = false,
+  selectedIds,
+  onToggleMessageSelect,
+  onEnterSelection,
 }) {
   const isToday = label === "Today";
   const [expanded, setExpanded] = useState(isToday);
@@ -76,6 +81,11 @@ export default function DayGroup({
               msg={msg}
               channel={channelMap[msg.channel_id]}
               senderName={resolveName(msg)}
+              canDelete={canDelete}
+              selectionMode={selectionMode}
+              isSelected={selectedIds?.has(msg.id)}
+              onToggleSelect={onToggleMessageSelect}
+              onEnterSelection={onEnterSelection}
             />
           ))}
         </div>

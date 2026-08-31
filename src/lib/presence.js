@@ -12,11 +12,11 @@ import {
 } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase";
 
-/** Heartbeat interval while the app is foreground on a channel. */
-export const PRESENCE_HEARTBEAT_MS = 15 * 60 * 1000;
+/** Heartbeat while the app is open (~1 write per 3 min per channel). */
+export const PRESENCE_HEARTBEAT_MS = 3 * 60 * 1000;
 
-/** Treat presence as offline after this long without an update. */
-export const PRESENCE_STALE_MS = 16 * 60 * 1000;
+/** Offline if no heartbeat within this window (slightly longer than heartbeat). */
+export const PRESENCE_STALE_MS = 3.5 * 60 * 1000;
 
 async function ensureAuthReady() {
   const user = auth.currentUser;
@@ -37,25 +37,41 @@ function presenceRef(userId, channelId) {
   return doc(db, "presence", presenceDocId(userId, channelId));
 }
 
-function isPresenceFresh(lastActiveAt) {
-  if (!lastActiveAt) return false;
-  const ts = typeof lastActiveAt.toDate === "function"
-    ? lastActiveAt.toDate().getTime()
-    : new Date(lastActiveAt).getTime();
-  if (!Number.isFinite(ts)) return false;
+function readLastActiveMs(data) {
+  if (!data) return null;
+  if (typeof data.last_active_ms === "number" && Number.isFinite(data.last_active_ms)) {
+    return data.last_active_ms;
+  }
+  const lastActiveAt = data.last_active_at;
+  if (!lastActiveAt) return null;
+  if (typeof lastActiveAt.toDate === "function") {
+    return lastActiveAt.toDate().getTime();
+  }
+  const parsed = new Date(lastActiveAt).getTime();
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function isPresenceFresh(data) {
+  const ts = readLastActiveMs(data);
+  if (!ts) return false;
   return Date.now() - ts <= PRESENCE_STALE_MS;
 }
 
 function mapPresenceDoc(docSnap) {
   const data = docSnap.data() || {};
-  const lastActiveAt = data.last_active_at;
-  if (!isPresenceFresh(lastActiveAt)) return null;
+  if (!isPresenceFresh(data)) return null;
   return {
     userId: data.user_id || docSnap.id.split("_")[0] || docSnap.id,
     channelId: data.channel_id || "",
     displayName: data.display_name || "",
-    lastActiveAt,
+    lastActiveAt: data.last_active_at,
+    lastActiveMs: readLastActiveMs(data),
   };
+}
+
+/** Remove legacy single-doc presence rows (`presence/{uid}`). */
+async function deleteLegacyPresenceDoc(uid) {
+  await deleteDoc(doc(db, "presence", uid)).catch(() => {});
 }
 
 /**
@@ -67,11 +83,14 @@ export async function publishPresence({ channelIds = [], displayName = "" } = {}
   const uniqueChannelIds = [...new Set((channelIds || []).filter(Boolean))];
   if (!uid || !(await ensureAuthReady())) return;
 
+  await deleteLegacyPresenceDoc(uid);
+
   if (uniqueChannelIds.length === 0) {
     await clearPresence();
     return;
   }
 
+  const nowMs = Date.now();
   const existingSnap = await getDocs(
     query(collection(db, "presence"), where("user_id", "==", uid))
   );
@@ -86,6 +105,7 @@ export async function publishPresence({ channelIds = [], displayName = "" } = {}
         channel_id: channelId,
         display_name: displayName,
         last_active_at: serverTimestamp(),
+        last_active_ms: nowMs,
       },
       { merge: true }
     );
@@ -94,6 +114,8 @@ export async function publishPresence({ channelIds = [], displayName = "" } = {}
   for (const docSnap of existingSnap.docs) {
     const channelId = docSnap.data()?.channel_id;
     if (channelId && !targetSet.has(channelId)) {
+      batch.delete(docSnap.ref);
+    } else if (!channelId && docSnap.id === uid) {
       batch.delete(docSnap.ref);
     }
   }
@@ -109,18 +131,18 @@ export async function clearPresence() {
   const snap = await getDocs(
     query(collection(db, "presence"), where("user_id", "==", uid))
   );
-  if (snap.empty) return;
-
   const batch = writeBatch(db);
-  for (const docSnap of snap.docs) {
-    batch.delete(docSnap.ref);
+  if (!snap.empty) {
+    for (const docSnap of snap.docs) {
+      batch.delete(docSnap.ref);
+    }
   }
-  await batch.commit();
+  batch.delete(doc(db, "presence", uid));
+  await batch.commit().catch(() => {});
 }
 
 /**
  * Realtime listener for users currently present on a channel.
- * Stale rows are filtered client-side so we only query by channel_id (no composite index required).
  * @returns {() => void} unsubscribe
  */
 export function subscribeChannelPresence(channelId, onChange) {
@@ -147,4 +169,135 @@ export function subscribeChannelPresence(channelId, onChange) {
       onChange([]);
     }
   );
+}
+
+/** @typedef {{ channelIds: string[], displayName?: string, enabled?: boolean }} PresenceRegistration */
+
+const registrations = new Map();
+let heartbeatTimer = null;
+let foregroundListenersInstalled = false;
+let publishInFlight = null;
+
+function mergedPresencePayload() {
+  const channelIds = new Set();
+  let displayName = "";
+  let enabled = false;
+
+  for (const reg of registrations.values()) {
+    if (!reg.enabled) continue;
+    enabled = true;
+    for (const channelId of reg.channelIds || []) {
+      if (channelId) channelIds.add(channelId);
+    }
+    if (reg.displayName) displayName = reg.displayName;
+  }
+
+  return {
+    enabled,
+    displayName,
+    channelIds: [...channelIds],
+  };
+}
+
+export async function flushPresencePublish() {
+  if (publishInFlight) return publishInFlight;
+
+  publishInFlight = (async () => {
+    const { enabled, displayName, channelIds } = mergedPresencePayload();
+    if (!enabled || channelIds.length === 0) {
+      await clearPresence();
+      return;
+    }
+    await publishPresence({ channelIds, displayName });
+  })().finally(() => {
+    publishInFlight = null;
+  });
+
+  return publishInFlight;
+}
+
+function stopHeartbeat() {
+  if (heartbeatTimer != null) {
+    clearInterval(heartbeatTimer);
+    heartbeatTimer = null;
+  }
+}
+
+function startHeartbeat() {
+  stopHeartbeat();
+  heartbeatTimer = setInterval(() => {
+    void flushPresencePublish();
+  }, PRESENCE_HEARTBEAT_MS);
+}
+
+function isAppForeground() {
+  if (typeof document === "undefined") return true;
+  return document.visibilityState === "visible";
+}
+
+function handleBackground() {
+  stopHeartbeat();
+  void clearPresence();
+}
+
+function handleForeground() {
+  void flushPresencePublish();
+  startHeartbeat();
+}
+
+function ensureForegroundListeners() {
+  if (foregroundListenersInstalled || typeof document === "undefined") return;
+  foregroundListenersInstalled = true;
+
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "hidden") {
+      handleBackground();
+    } else {
+      handleForeground();
+    }
+  });
+
+  if (typeof window !== "undefined") {
+    window.addEventListener("pause", handleBackground);
+    window.addEventListener("resume", handleForeground);
+  }
+}
+
+/**
+ * Register a presence source (Talk channel, Monitor listen set, app baseline).
+ * Unregistering recomputes the merged set — does not clear unless nothing remains.
+ */
+export function registerPresenceSource(id, registration) {
+  if (!id) return;
+  registrations.set(id, {
+    channelIds: registration?.channelIds || [],
+    displayName: registration?.displayName || "",
+    enabled: registration?.enabled !== false,
+  });
+  ensureForegroundListeners();
+  if (isAppForeground()) {
+    void flushPresencePublish();
+    startHeartbeat();
+  }
+}
+
+export function unregisterPresenceSource(id) {
+  if (!id) return;
+  registrations.delete(id);
+  if (isAppForeground()) {
+    void flushPresencePublish();
+    if (registrations.size === 0) {
+      stopHeartbeat();
+    }
+  }
+}
+
+export async function stopPresenceSession() {
+  registrations.clear();
+  stopHeartbeat();
+  await clearPresence();
+}
+
+export function getRegisteredPresenceChannelIds() {
+  return mergedPresencePayload().channelIds;
 }

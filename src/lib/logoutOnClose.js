@@ -7,11 +7,17 @@
  * - Web hard close: sign out when the browser tab/window is closed (next visit).
  */
 import { clearDailyCodeSession } from "@/lib/dailyCode";
-import { clearPresence } from "@/lib/presence";
+import { clearPresence, stopPresenceSession } from "@/lib/presence";
 import { Capacitor } from "@capacitor/core";
 import { signOut } from "firebase/auth";
 import { auth } from "@/lib/firebase";
-import { syncNativeActiveSession, syncNativeGoogleSignInPending, syncNativeIdleLogoutDeadline } from "@/lib/sessionGuardNative";
+import {
+  clearNativeForceLogoutOnNextStart,
+  markNativeForceLogoutOnNextStart,
+  syncNativeActiveSession,
+  syncNativeGoogleSignInPending,
+  syncNativeIdleLogoutDeadline,
+} from "@/lib/sessionGuardNative";
 import { isSensitiveOperationActive, resetSensitiveOperation } from "@/lib/sensitiveOperation";
 
 export const IMMEDIATE_LOGOUT_EVENT = "ptc-immediate-logout";
@@ -128,6 +134,7 @@ export function clearBackgroundPending() {
 export function recordLoginTime() {
   immediateLogoutInFlight = false;
   clearHardCloseLogoutFlag();
+  void clearNativeForceLogoutOnNextStart().catch(() => {});
   localStorage.setItem(LOGIN_TIME_KEY, Date.now().toString());
   recordSessionInteraction();
   syncNativeActiveSession(true);
@@ -137,6 +144,7 @@ export function recordLoginTime() {
 export function clearLoginTime() {
   localStorage.removeItem(LOGIN_TIME_KEY);
   clearIdleLogoutState();
+  void clearNativeForceLogoutOnNextStart().catch(() => {});
   void syncNativeActiveSession(false).catch(() => {});
 }
 
@@ -234,7 +242,8 @@ export function performImmediateLogout() {
   clearDailyCodeSession();
   clearNativeGoogleSignInPending();
   localStorage.setItem(HARD_CLOSE_LOGOUT_FLAG, "1");
-  void clearPresence().catch(() => {});
+  void stopPresenceSession();
+  void markNativeForceLogoutOnNextStart().catch(() => {});
   void syncNativeActiveSession(false).catch(() => {});
   void signOut(auth).catch(() => {});
   window.dispatchEvent(new CustomEvent(IMMEDIATE_LOGOUT_EVENT));

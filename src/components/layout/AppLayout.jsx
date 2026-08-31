@@ -17,6 +17,7 @@ import { getLastAppRoute, saveLastAppRoute } from "@/lib/lastAppRoute";
 import { pttSurfaceFromPath, saveLastPttSurface } from "@/lib/lastPttSurface";
 import { recordSessionInteraction } from "@/lib/logoutOnClose";
 import { prewarmMicDenoise } from "@/lib/micDenoise";
+import PresenceProvider from "@/components/presence/PresenceProvider";
 
 export default function AppLayout() {
   const location = useLocation();
@@ -84,6 +85,7 @@ export default function AppLayout() {
       <PassiveTalkListenProvider user={user}>
       <GlobalPTTBridge>
       <DailyCodeGate user={user} onUserUpdate={checkUserAuth}>
+      <PresenceProvider>
       <RedAlertBanner channelName={alertChannel} onDismiss={dismissAlert} />
       <PasswordRotationReminder />
       <GooglePasswordSetupPrompt />
@@ -122,6 +124,7 @@ export default function AppLayout() {
           })}
         </div>
       </nav>
+      </PresenceProvider>
       </DailyCodeGate>
       </GlobalPTTBridge>
       </PassiveTalkListenProvider>

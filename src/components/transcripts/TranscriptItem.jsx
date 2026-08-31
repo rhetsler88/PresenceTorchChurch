@@ -1,11 +1,23 @@
-import React from "react";
+import React, { useRef } from "react";
 import { Badge } from "@/components/ui/badge";
-import { Clock, User, Radio, FileText, MessageSquare, Shield } from "lucide-react";
+import { Clock, User, Radio, FileText, MessageSquare, Shield, Check, Circle } from "lucide-react";
 import { etzTime } from "@/lib/etz";
 import { PROTECTION_LEVELS } from "@/components/ptt/ProtectionLevelBadge";
 import { isProtectionLevelChangeMessage } from "@/lib/protectionLevelHistory";
 
-export default function TranscriptItem({ msg, channel, senderName }) {
+export default function TranscriptItem({
+  msg,
+  channel,
+  senderName,
+  canDelete = false,
+  selectionMode = false,
+  isSelected = false,
+  onToggleSelect,
+  onEnterSelection,
+}) {
+  const longPressTimer = useRef(null);
+  const longPressTriggered = useRef(false);
+
   if (isProtectionLevelChangeMessage(msg)) {
     const level = msg.protection_level || "green";
     const config = PROTECTION_LEVELS[level] || PROTECTION_LEVELS.green;
@@ -41,12 +53,58 @@ export default function TranscriptItem({ msg, channel, senderName }) {
     );
   }
 
+  const clearLongPressTimer = () => {
+    if (longPressTimer.current) {
+      clearTimeout(longPressTimer.current);
+      longPressTimer.current = null;
+    }
+  };
+
+  const startLongPress = () => {
+    if (!canDelete || selectionMode) return;
+    longPressTriggered.current = false;
+    clearLongPressTimer();
+    longPressTimer.current = setTimeout(() => {
+      longPressTriggered.current = true;
+      onEnterSelection?.(msg.id);
+    }, 750);
+  };
+
+  const endLongPress = () => {
+    clearLongPressTimer();
+  };
+
+  const handleClick = () => {
+    if (longPressTriggered.current) {
+      longPressTriggered.current = false;
+      return;
+    }
+    if (selectionMode) {
+      onToggleSelect?.(msg.id);
+    }
+  };
+
   return (
-    <div className="w-full bg-card border border-border rounded-xl p-4">
+    <div
+      className={`w-full bg-card border border-border rounded-xl p-4 transition-all select-none ${
+        selectionMode ? "cursor-pointer" : ""
+      } ${selectionMode && isSelected ? "ring-2 ring-destructive" : ""}`}
+      onPointerDown={startLongPress}
+      onPointerUp={endLongPress}
+      onPointerLeave={endLongPress}
+      onPointerCancel={endLongPress}
+      onClick={handleClick}
+    >
       <div className="flex items-start justify-between gap-2 mb-2">
         <div className="flex items-center gap-2">
-          <div className="w-7 h-7 rounded-full bg-primary/10 flex items-center justify-center">
-            <User className="w-3.5 h-3.5 text-primary" />
+          <div className={`w-7 h-7 rounded-full flex items-center justify-center ${
+            selectionMode && isSelected ? "bg-destructive" : "bg-primary/10"
+          }`}>
+            {selectionMode && isSelected ? (
+              <Check className="w-3.5 h-3.5 text-white" />
+            ) : (
+              <User className="w-3.5 h-3.5 text-primary" />
+            )}
           </div>
           <div>
             <span className="text-sm font-semibold text-foreground">
@@ -60,11 +118,20 @@ export default function TranscriptItem({ msg, channel, senderName }) {
             )}
           </div>
         </div>
-        <div className="flex items-center gap-1 text-muted-foreground flex-shrink-0">
-          <Clock className="w-3 h-3" />
-          <span className="text-[10px]">
-            {msg.device_time || etzTime(msg.created_date)}
-          </span>
+        <div className="flex items-center gap-2 flex-shrink-0">
+          {selectionMode && (
+            <div className={`w-6 h-6 rounded-full flex items-center justify-center ${
+              isSelected ? "bg-destructive text-white" : "bg-muted text-muted-foreground"
+            }`}>
+              {isSelected ? <Check className="w-3.5 h-3.5" /> : <Circle className="w-3.5 h-3.5" />}
+            </div>
+          )}
+          <div className="flex items-center gap-1 text-muted-foreground">
+            <Clock className="w-3 h-3" />
+            <span className="text-[10px]">
+              {msg.device_time || etzTime(msg.created_date)}
+            </span>
+          </div>
         </div>
       </div>
       <p className="text-sm text-foreground/80 leading-relaxed pl-9 italic">

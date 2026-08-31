@@ -24,6 +24,9 @@ function clearTextMessageNotifications() {
   if (typeof self.registration?.getNotifications !== "function") {
     return Promise.resolve();
   }
+  if ("clearAppBadge" in self.navigator) {
+    self.navigator.clearAppBadge().catch(() => {});
+  }
   return self.registration.getNotifications().then((notifications) => {
     notifications.forEach((notification) => {
       const tag = notification.tag || "";

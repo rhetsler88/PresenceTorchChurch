@@ -8,9 +8,7 @@ import { Radio, Volume2, VolumeX, Eye, Play, Pause, WifiOff, GripVertical } from
 import { Button } from "@/components/ui/button";
 import { etzTime } from "@/lib/etz";
 import { deviceDayKey, deviceDayLabel } from "@/lib/deviceDate";
-import { getDisplayName, getInitials, getInitialsFromName, getMonitorChannels, getReadableVoiceChannels, canSendOnChannelForChannel, bypassesDailyCode } from "@/lib/userUtils";
-import { isDailyCodeVerified } from "@/lib/dailyCode";
-import usePublishPresence from "@/hooks/usePublishPresence";
+import { getDisplayName, getInitials, getInitialsFromName, getMonitorChannels, getReadableVoiceChannels, canSendOnChannelForChannel } from "@/lib/userUtils";
 import { playClearTone, playBusyTone, ensureAudioReady, unlockAudioForPTT } from "@/lib/pttTones";
 import { logVoiceMessageFailure } from "@/lib/voiceMessageLogging";
 import { markBroadcastHeard, hasHeardBroadcast } from "@/lib/heardBroadcasts";
@@ -61,14 +59,16 @@ function ChannelMonitorCard({
   userMap,
   isMuted,
   onToggleMute,
+  isLiveBroadcasting,
   dragHandleProps,
 }) {
-  const lastMsg = messages[0];
-  const hasActivity = messages.length > 0;
+  const recentMessages = messages.slice(0, 3);
+  const isPlayingHere = playingId && messages.some((m) => m.id === playingId);
+  const showLiveBadge = isLiveBroadcasting || isPlayingHere;
 
   return (
     <div className={`w-full bg-card border rounded-2xl overflow-hidden transition-all duration-300 ${
-      playingId && messages.some(m => m.id === playingId)
+      showLiveBadge
         ? "border-green-500/50 shadow-lg shadow-green-500/10"
         : "border-border"
     }`}>
@@ -88,7 +88,9 @@ function ChannelMonitorCard({
           className="flex flex-1 items-center gap-3 min-w-0 text-left hover:opacity-90 transition-opacity"
         >
           <div
-            className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0"
+            className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 transition-shadow ${
+              isLiveBroadcasting ? "ring-2 ring-green-500/80 ring-offset-2 ring-offset-card" : ""
+            }`}
             style={{ backgroundColor: (channel.color || "#f59e0b") + "20" }}
           >
             <Radio className="w-4 h-4" style={{ color: channel.color || "#f59e0b" }} />
@@ -96,7 +98,7 @@ function ChannelMonitorCard({
           <div className="flex-1 min-w-0">
             <p className="text-sm font-semibold text-foreground truncate">{channel.name}</p>
             <p className="text-[10px] text-muted-foreground">
-              {isMuted ? "Muted" : "Listening"} · {messages.length} messages
+              {isMuted ? "Muted" : isLiveBroadcasting ? "Live broadcast" : "Listening"} · {recentMessages.length} recent
             </p>
           </div>
         </button>
@@ -112,7 +114,7 @@ function ChannelMonitorCard({
         >
           {isMuted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
         </button>
-        {playingId && messages.some(m => m.id === playingId) && (
+        {showLiveBadge && (
           <motion.div
             animate={{ opacity: [1, 0.3, 1] }}
             transition={{ duration: 0.8, repeat: Infinity }}
@@ -134,8 +136,8 @@ function ChannelMonitorCard({
       </div>
 
       {/* Message list */}
-      <div className="divide-y divide-border max-h-48 overflow-y-auto">
-        {messages.slice(0, 3).map(msg => (
+      <div className="divide-y divide-border">
+        {recentMessages.map(msg => (
           <div
             key={msg.id}
             className="px-4 py-2.5 flex items-start gap-2 hover:bg-muted/30 transition-colors"
@@ -190,7 +192,7 @@ function ChannelMonitorCard({
             )}
           </div>
         ))}
-        {messages.length === 0 && (
+        {recentMessages.length === 0 && (
           <div className="px-4 py-6 text-center">
             <p className="text-xs text-muted-foreground">No activity yet</p>
           </div>
@@ -231,6 +233,7 @@ export default function Monitor() {
   const pttStopPendingRef = useRef(false);
   const pttRecordingActiveRef = useRef(false);
   const isPTTPressedRef = useRef(false);
+  const pttMaxDurationStopRef = useRef(() => {});
   const channelBusyTimeoutRef = useRef(new Map());
   const heardBroadcastsRef = useRef(new Set());
   const broadcastModeRef = useRef(broadcastMode);
@@ -297,24 +300,15 @@ export default function Monitor() {
   );
   const monitorChannelIdKey = monitorChannelIds.join(",");
 
-  const listenChannelIds = passiveMonitor?.listenChannelIds || [];
-  const listenChannelIdsRef = useRef(listenChannelIds);
-  listenChannelIdsRef.current = listenChannelIds;
-  const canPublishPresence = Boolean(
-    user?.id
-    && listenChannelIds.length > 0
-    && (bypassesDailyCode(user) || isDailyCodeVerified(user))
-  );
-  usePublishPresence({
-    channelIds: listenChannelIds,
-    displayName: user ? getDisplayName(user) : "",
-    enabled: canPublishPresence,
-  });
-
-  const { data: allMessages = [] } = useQuery({
+  const { data: messagesByChannel = {} } = useQuery({
     queryKey: ["all-channel-messages", user?.id, monitorChannelIdKey],
     enabled: !!user?.id && monitorChannelIds.length > 0,
     queryFn: async () => {
+      try {
+        await auth.currentUser?.getIdToken(true);
+      } catch {
+        // Continue with cached token if refresh fails.
+      }
       const batches = await Promise.all(
         monitorChannelIds.map(async (id) => {
           try {
@@ -325,9 +319,14 @@ export default function Monitor() {
           }
         })
       );
-      const items = batches.flat();
-      items.sort((a, b) => String(b.created_date || "").localeCompare(String(a.created_date || "")));
-      return items;
+      const grouped = {};
+      monitorChannelIds.forEach((id) => { grouped[id] = []; });
+      batches.forEach((batch, index) => {
+        const channelId = monitorChannelIds[index];
+        if (!channelId) return;
+        grouped[channelId] = batch;
+      });
+      return grouped;
     },
     placeholderData: keepPreviousData,
     refetchInterval: 15000,
@@ -440,6 +439,7 @@ export default function Monitor() {
     userName: user ? getDisplayName(user) : "",
     listenActive: false,
     receiveEnabled: false,
+    onMaxDurationRef: pttMaxDurationStopRef,
   });
 
   // Per-channel PTT subscriptions for transmit busy state (passive listen runs app-wide).
@@ -545,17 +545,26 @@ export default function Monitor() {
     setChannelOrder(reordered.map(c => c.id));
   };
 
-  const userMap = {};
-  users.forEach(u => { userMap[u.id] = u; });
+  const userMap = useMemo(() => {
+    const map = {};
+    users.forEach((u) => { map[u.id] = u; });
+    return map;
+  }, [users]);
 
-  // Group messages by channel
-  const messagesByChannel = {};
-  monitorChannels.forEach(c => { messagesByChannel[c.id] = []; });
-  allMessages.forEach(m => {
-    if (messagesByChannel[m.channel_id]) {
-      messagesByChannel[m.channel_id].push(m);
-    }
-  });
+  const channelMessages = useCallback(
+    (channelId) => {
+      const msgs = messagesByChannel[channelId] || [];
+      return [...msgs].sort((a, b) =>
+        String(b.created_date || "").localeCompare(String(a.created_date || ""))
+      ).slice(0, 3);
+    },
+    [messagesByChannel]
+  );
+
+  const liveBroadcastChannels = useMemo(
+    () => orderedChannels.filter((channel) => busyChannelIds.has(channel.id)),
+    [orderedChannels, busyChannelIds]
+  );
 
   // Real-time subscription scoped to monitor channels
   useEffect(() => {
@@ -976,6 +985,12 @@ export default function Monitor() {
     finishPttStop();
   }, [finishPttStop]);
 
+  pttMaxDurationStopRef.current = () => {
+    if (!isPTTPressedRef.current && !pttRecordingActiveRef.current) return;
+    toast.info("Maximum transmission time reached (35 seconds)");
+    handlePTTStop();
+  };
+
   useRegisterPagePTTHandlers(
     {
       onPress: handlePTTStart,
@@ -984,10 +999,11 @@ export default function Monitor() {
     { surface: "monitor" }
   );
 
-  const showReceiving = isLiveReceiving && !isPTTPressed;
+  const showReceiving = (isLiveReceiving || busyChannelIds.size > 0) && !isPTTPressed;
+  const primaryLiveChannel = liveBroadcastChannels[0] || null;
 
   return (
-    <div className="min-h-screen w-full safe-top">
+    <div className="min-h-full w-full safe-top">
       {/* Header */}
       <div className="px-4 pt-4 pb-4 border-b border-border sm:px-5 sm:pt-6">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between max-sm:pr-12 sm:pr-48">
@@ -1008,22 +1024,40 @@ export default function Monitor() {
 
       {/* Live activity ticker */}
       <AnimatePresence>
-        {playingId && (
+        {(playingId || liveBroadcastChannels.length > 0) && (
           <motion.div
             initial={{ opacity: 0, height: 0 }}
             animate={{ opacity: 1, height: "auto" }}
             exit={{ opacity: 0, height: 0 }}
-            className="px-5 py-2 bg-green-500/10 border-b border-green-500/20 flex items-center gap-2"
+            className="px-5 py-2 bg-green-500/10 border-b border-green-500/20 flex items-center gap-2 flex-wrap"
           >
             <motion.div
               animate={{ scale: [1, 1.3, 1] }}
               transition={{ duration: 0.5, repeat: Infinity }}
-              className="w-2 h-2 bg-green-500 rounded-full"
+              className="w-2 h-2 bg-green-500 rounded-full shrink-0"
             />
-            <Volume2 className="w-3.5 h-3.5 text-green-500" />
-            <span className="text-xs font-semibold text-green-400">
-              Playing from: {monitorChannels.find(c => c.id === playingChannel)?.name || "Unknown Channel"}
-            </span>
+            {playingId ? (
+              <>
+                <Volume2 className="w-3.5 h-3.5 text-green-500 shrink-0" />
+                <span className="text-xs font-semibold text-green-400">
+                  Playing from: {monitorChannels.find(c => c.id === playingChannel)?.name || "Unknown Channel"}
+                </span>
+              </>
+            ) : (
+              liveBroadcastChannels.map((channel) => (
+                <div key={channel.id} className="flex items-center gap-2">
+                  <div
+                    className="w-6 h-6 rounded-lg flex items-center justify-center shrink-0"
+                    style={{ backgroundColor: (channel.color || "#f59e0b") + "25" }}
+                  >
+                    <Radio className="w-3.5 h-3.5" style={{ color: channel.color || "#f59e0b" }} />
+                  </div>
+                  <span className="text-xs font-semibold text-green-400">
+                    Live on {channel.name}
+                  </span>
+                </div>
+              ))
+            )}
           </motion.div>
         )}
       </AnimatePresence>
@@ -1053,7 +1087,7 @@ export default function Monitor() {
                         >
                           <ChannelMonitorCard
                             channel={channel}
-                            messages={messagesByChannel[channel.id] || []}
+                            messages={channelMessages(channel.id)}
                             onPlayMessage={handlePlayMessage}
                             playingId={playingId}
                             onSetProtectionLevel={handleSetProtectionLevel}
@@ -1061,6 +1095,7 @@ export default function Monitor() {
                             userMap={userMap}
                             isMuted={isMuted?.(channel.id)}
                             onToggleMute={toggleMute}
+                            isLiveBroadcasting={busyChannelIds.has(channel.id)}
                             dragHandleProps={dragProvided.dragHandleProps}
                           />
                         </div>
@@ -1087,6 +1122,7 @@ export default function Monitor() {
           onSelectedChannelIdsChange={handleSelectedBroadcastIdsChange}
           isPressed={isPTTPressed}
           isReceiving={showReceiving}
+          receivingChannel={primaryLiveChannel}
           isChannelBusy={isTargetChannelBusy && !isPTTPressed && !showReceiving}
           isSending={sendMutation.isPending}
           onStart={handlePTTStart}

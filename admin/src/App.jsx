@@ -25,23 +25,30 @@ function AdminGate({ user, authError, logout }) {
 
   if (needsSignIn) {
     return (
-      <div className="min-h-dvh flex items-center justify-center bg-background p-4 sm:p-6 safe-top">
-        <div className="max-w-md w-full bg-card border border-border rounded-2xl p-6 sm:p-8">
-          <div className="text-center mb-6">
-            <AppLogo className="w-16 h-16 mx-auto mb-4" />
-            <h1 className="text-xl font-bold text-foreground mb-2">Admin Dashboard</h1>
-            <p className="text-sm text-muted-foreground">
+      <div className="page-adaptive bg-background dark">
+        <div className="page-adaptive-inner-scroll w-full max-w-sm mx-auto px-4 sm:px-6">
+          <div className="bg-card border border-border rounded-2xl p-4 sm:p-5 shrink-0">
+            <img
+              src="/logo-signin-banner.png"
+              alt="Presence Torch Church"
+              className="w-full max-h-28 sm:max-h-32 h-auto object-contain mb-3 mx-auto"
+              draggable={false}
+            />
+            <h2 className="text-base sm:text-lg font-semibold text-foreground text-center mb-1">
+              Admin Dashboard
+            </h2>
+            <p className="text-xs sm:text-sm text-muted-foreground text-center mb-3 leading-snug">
               Sign in with a super admin or organization admin account to manage organizations,
               users, and channels.
             </p>
-          </div>
-          <div className="flex flex-col gap-3">
             {authError?.message && authError.type !== "auth_required" && (
-              <p className="text-xs text-destructive text-center bg-destructive/10 rounded-lg p-3">
+              <p className="text-xs text-destructive text-center bg-destructive/10 rounded-lg p-3 mb-3">
                 {authError.message}
               </p>
             )}
             <AuthSignInPanel />
+          </div>
+          <div className="shrink-0">
             <BackToAppLink className="w-full" />
           </div>
         </div>

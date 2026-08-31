@@ -31,8 +31,20 @@ public class SessionGuardPlugin extends Plugin {
             context.startService(intent);
         } else {
             context.stopService(intent);
-            SessionPrefs.clearForceLogoutOnNextStart(context);
+            BackgroundLogoutScheduler.cancel(context);
         }
+        call.resolve();
+    }
+
+    @PluginMethod
+    public void markForceLogoutOnNextStart(PluginCall call) {
+        SessionPrefs.markForceLogoutOnNextStart(getContext());
+        call.resolve();
+    }
+
+    @PluginMethod
+    public void clearForceLogoutOnNextStart(PluginCall call) {
+        SessionPrefs.clearForceLogoutOnNextStart(getContext());
         call.resolve();
     }
 

@@ -802,21 +802,47 @@ function formatTextMessageNotificationBody(count, channelName) {
   return `${safeCount} new ${label} in ${channelName}`;
 }
 
-async function incrementTextMessageUnreadCount(db, userId, channelId, channelName) {
+async function incrementTextMessageUnreadCount(db, userId, channelId, channelName, registrationKey = null) {
   const userRef = db.collection("users").doc(userId);
   return db.runTransaction(async (tx) => {
     const snap = await tx.get(userRef);
     const data = snap.data() || {};
-    const unread = data.text_message_unread || {};
-    const entry = unread[channelId] || { count: 0, channelName };
+    const channelLabel = channelName || "Channel";
+
+    if (registrationKey && data.fcm_registrations?.[registrationKey]) {
+      const registrations = { ...(data.fcm_registrations || {}) };
+      const entry = { ...registrations[registrationKey] };
+      const unread = { ...(entry.text_message_unread || {}) };
+      const channelEntry = unread[channelId] || { count: 0, channelName: channelLabel };
+      const count = (channelEntry.count || 0) + 1;
+      unread[channelId] = {
+        count,
+        channelName: channelLabel || channelEntry.channelName || "Channel",
+      };
+      entry.text_message_unread = unread;
+      registrations[registrationKey] = entry;
+      tx.update(userRef, { fcm_registrations: registrations });
+      return count;
+    }
+
+    const unread = { ...(data.text_message_unread || {}) };
+    const entry = unread[channelId] || { count: 0, channelName: channelLabel };
     const count = (entry.count || 0) + 1;
     unread[channelId] = {
       count,
-      channelName: channelName || entry.channelName || "Channel",
+      channelName: channelLabel || entry.channelName || "Channel",
     };
     tx.set(userRef, { text_message_unread: unread }, { merge: true });
     return count;
   });
+}
+
+function registrationKeyForToken(fcmRegistrations, token) {
+  if (!fcmRegistrations || !token) return null;
+  for (const [key, entry] of Object.entries(fcmRegistrations)) {
+    if (entry?.token === token) return key;
+  }
+  return null;
 }
 
 function buildTextMessagePushMessage({ token, channelId, channelName, messageId, count }) {
@@ -1057,14 +1083,16 @@ exports.sendTextMessagePush = onDocumentCreated(
     const messages = [];
 
     for (const recipient of recipients) {
-      const count = await incrementTextMessageUnreadCount(
-        db,
-        recipient.userId,
-        channelId,
-        channelName
-      );
-
       for (const token of recipient.tokens) {
+        const registrationKey = registrationKeyForToken(recipient.fcm_registrations, token);
+        const count = await incrementTextMessageUnreadCount(
+          db,
+          recipient.userId,
+          channelId,
+          channelName,
+          registrationKey
+        );
+
         messages.push(
           buildTextMessagePushMessage({
             token,

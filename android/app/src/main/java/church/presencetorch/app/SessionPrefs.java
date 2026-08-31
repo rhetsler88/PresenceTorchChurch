@@ -10,6 +10,7 @@ public final class SessionPrefs {
     private static final String KEY_SENSITIVE_OPERATION = "sensitive_operation_pending";
     private static final String KEY_IDLE_LOGOUT_DEADLINE = "idle_logout_deadline_ms";
     private static final String KEY_FORCE_LOGOUT = "force_logout_on_next_start";
+    private static final String KEY_SESSION_BACKGROUNDED = "session_backgrounded_with_active_session";
 
     private SessionPrefs() {}
 
@@ -21,10 +22,11 @@ public final class SessionPrefs {
     }
 
     public static void setActiveSession(Context context, boolean active) {
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        context.getApplicationContext()
+            .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             .edit()
             .putBoolean(KEY_ACTIVE_SESSION, active)
-            .apply();
+            .commit();
     }
 
     public static void setSensitiveOperationPending(Context context, boolean pending) {
@@ -78,8 +80,44 @@ public final class SessionPrefs {
             .commit();
     }
 
+    /** Set when the app backgrounds with a live session; cleared on a normal foreground return. */
+    public static void markSessionBackgrounded(Context context) {
+        context.getApplicationContext()
+            .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .edit()
+            .putBoolean(KEY_SESSION_BACKGROUNDED, true)
+            .commit();
+    }
+
+    public static void clearSessionBackgrounded(Context context) {
+        context.getApplicationContext()
+            .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .edit()
+            .remove(KEY_SESSION_BACKGROUNDED)
+            .commit();
+    }
+
+    /**
+     * App was backgrounded and relaunched without a clean foreground return (swipe-away / kill).
+     */
+    public static boolean consumeUncleanBackgroundExit(Context context) {
+        var prefs = context.getApplicationContext().getSharedPreferences(PREFS, Context.MODE_PRIVATE);
+        if (!prefs.getBoolean(KEY_SESSION_BACKGROUNDED, false)) {
+            return false;
+        }
+        prefs.edit()
+            .remove(KEY_SESSION_BACKGROUNDED)
+            .commit();
+        return true;
+    }
+
     /** Immediate logout / background alarms only when a signed-in session exists and OAuth is idle. */
     public static boolean shouldAllowSessionLogout(Context context) {
+        return shouldAllowSwipeAwayLogout(context);
+    }
+
+    /** Swipe-away logout when signed in, passively listening, or a force-logout is already pending. */
+    public static boolean shouldAllowSwipeAwayLogout(Context context) {
         Context app = context.getApplicationContext();
         var prefs = app.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
         if (prefs.getBoolean(KEY_SENSITIVE_OPERATION, false)) {
@@ -88,6 +126,12 @@ public final class SessionPrefs {
         if (prefs.getBoolean(KEY_GOOGLE_SIGNIN, false)) {
             return false;
         }
-        return prefs.getBoolean(KEY_ACTIVE_SESSION, false);
+        if (prefs.getBoolean(KEY_FORCE_LOGOUT, false)) {
+            return true;
+        }
+        if (prefs.getBoolean(KEY_ACTIVE_SESSION, false)) {
+            return true;
+        }
+        return BackgroundAudioService.isSessionActive();
     }
 }

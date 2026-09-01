@@ -18,7 +18,7 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: 'autoUpdate',
-      includeAssets: ['favicon.svg', 'logo.png', 'logo-full.png', 'firebase-messaging-sw.js'],
+      includeAssets: ['favicon.svg', 'app-icon.png', 'logo.png', 'logo-full.png', 'firebase-messaging-sw.js'],
       manifest: {
         id: '/',
         name: 'Presence Torch Church',

@@ -46,7 +46,7 @@ public class HeadsetPTTPlugin: CAPPlugin, CAPBridgedPlugin {
             try session.setCategory(
                 .playAndRecord,
                 mode: .voiceChat,
-                options: [.allowBluetooth, .defaultToSpeaker, .mixWithOthers]
+                options: [.allowBluetoothHFP, .defaultToSpeaker]
             )
             try session.setActive(true)
         } catch {

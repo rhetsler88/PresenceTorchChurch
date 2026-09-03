@@ -59,7 +59,7 @@ public class BackgroundAudioPlugin: CAPPlugin, CAPBridgedPlugin {
             try session.setCategory(
                 .playback,
                 mode: .default,
-                options: [.mixWithOthers, .allowBluetooth, .allowBluetoothA2DP]
+                options: [.allowBluetoothHFP, .allowBluetoothA2DP]
             )
             try session.setActive(true)
         } catch {

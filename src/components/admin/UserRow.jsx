@@ -10,12 +10,13 @@ import {
 import DirectorControls from "@/components/admin/DirectorControls";
 import MonitorBroadcastControls from "@/components/admin/MonitorBroadcastControls";
 import { getInitials } from "@/lib/userUtils";
+import { useCompactLayout } from "@/hooks/useViewportWidth";
 
 export const ROLE_CONFIG = {
   super_admin: { label: "Super Admin", color: "text-destructive", bg: "bg-destructive/10", icon: Shield },
   admin: { label: "Admin", color: "text-destructive", bg: "bg-destructive/10", icon: Shield },
-  director: { label: "Director", color: "text-purple-400", bg: "bg-purple-500/10", icon: Shield },
-  lead: { label: "Lead", color: "text-purple-400", bg: "bg-purple-500/10", icon: Crown },
+  director: { label: "Team Lead", color: "text-purple-400", bg: "bg-purple-500/10", icon: Shield },
+  lead: { label: "Coordinator", color: "text-purple-400", bg: "bg-purple-500/10", icon: Crown },
   monitor: { label: "Monitor", color: "text-amber-400", bg: "bg-amber-500/10", icon: Eye },
   user: { label: "User", color: "text-muted-foreground", bg: "bg-muted", icon: User },
 };
@@ -46,24 +47,27 @@ export default function UserRow({
   const roleOptions = assignableRoles
     ? Object.entries(ROLE_CONFIG).filter(([role]) => assignableRoles.includes(role))
     : Object.entries(ROLE_CONFIG);
+  const compact = useCompactLayout();
 
   return (
-    <div className="px-4 py-3 hover:bg-muted/30 rounded-xl transition-colors overflow-hidden">
-      <div className="flex items-center gap-3 flex-wrap">
-        <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
+    <div className="px-2 xs:px-4 py-3 hover:bg-muted/30 rounded-xl transition-colors">
+      <div className={`flex gap-2 xs:gap-3 ${compact ? "flex-col" : "items-center flex-wrap"}`}>
+        <div className="flex items-center gap-2 xs:gap-3 min-w-0 flex-1">
+        <div className="w-9 h-9 xs:w-10 xs:h-10 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
           <span className="text-sm font-bold text-primary">{initials}</span>
         </div>
-        <div className="flex-1 min-w-0 basis-[calc(100%-3.25rem)] sm:basis-auto">
+        <div className="flex-1 min-w-0">
           <p className="text-sm font-semibold text-foreground truncate">
             {[user.first_name, user.last_name].filter(Boolean).join(" ") || user.full_name || "—"}
             {isCurrentUser && (
               <span className="ml-1.5 text-[10px] text-muted-foreground">(you)</span>
             )}
           </p>
-          <p className="text-xs text-muted-foreground truncate capitalize">{user.role || "user"}</p>
+          <p className="text-xs text-muted-foreground truncate">{cfg.label}</p>
+        </div>
         </div>
 
-        <div className="flex items-center gap-2 ml-auto shrink-0">
+        <div className={`flex items-center gap-1.5 xs:gap-2 shrink-0 ${compact ? "w-full pl-11" : "ml-auto"}`}>
         {adminControls && showMonitorToggle && (
           <Button
             variant={user.is_monitor ? "default" : "outline"}
@@ -104,7 +108,7 @@ export default function UserRow({
             <Button
               variant="outline"
               size="sm"
-              className={`gap-1.5 text-xs h-8 max-w-[9rem] sm:max-w-none ${cfg.color} border-border`}
+              className={`gap-1 text-xs h-8 min-w-0 ${compact ? "flex-1 max-w-none" : "max-w-[9rem] sm:max-w-none"} ${cfg.color} border-border`}
               disabled={isCurrentUser}
             >
               <Icon className="w-3.5 h-3.5 shrink-0" />

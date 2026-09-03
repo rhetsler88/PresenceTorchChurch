@@ -202,6 +202,18 @@
   .page-adaptive-fill > .page-adaptive-inner {
     min-height: 100%;
   }
+
+  /* Foldable cover displays — constrain layout to visible viewport width. */
+  html.cover-display body,
+  html.cover-display #root {
+    max-width: var(--app-vw, 100vw);
+    overflow-x: hidden;
+  }
+
+  html.cover-display .app-shell {
+    max-width: var(--app-vw, 100vw);
+    width: 100%;
+  }
 }
 
 @keyframes ptt-bar-pulse {

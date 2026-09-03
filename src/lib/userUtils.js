@@ -147,6 +147,20 @@ export function isLead(user) {
   return user?.role === "lead";
 }
 
+/** User-facing role titles (internal role keys unchanged). */
+export const ROLE_LABELS = {
+  user: "User",
+  monitor: "Monitor",
+  lead: "Coordinator",
+  director: "Team Lead",
+  admin: "Admin",
+  super_admin: "Super Admin",
+};
+
+export function getRoleLabel(role) {
+  return ROLE_LABELS[role] || role || "User";
+}
+
 export function isChannelLead(user) {
   return isLead(user) || isDirector(user);
 }

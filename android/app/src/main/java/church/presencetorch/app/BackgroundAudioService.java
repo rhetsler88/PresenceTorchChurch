@@ -18,7 +18,6 @@ import android.os.PowerManager;
 import android.support.v4.media.session.MediaSessionCompat;
 import android.view.KeyEvent;
 import androidx.core.app.NotificationCompat;
-import androidx.media.app.NotificationCompat.MediaStyle;
 
 /**
  * Foreground service that keeps relay PTT playback alive while the app is backgrounded.
@@ -36,7 +35,6 @@ public class BackgroundAudioService extends Service {
     private static final int NOTIFICATION_ID = 41001;
     private static final int NOTIFICATION_DISMISS_REQUEST_CODE = 41002;
     private static final String CHANNEL_ID = "presence_torch_background_listen_v3";
-    private static final String SILENT_CHANNEL_ID = "presence_torch_background_listen_silent_v1";
     private static final int SAMPLE_RATE = 44100;
 
     private static volatile boolean sessionActive = false;
@@ -163,9 +161,6 @@ public class BackgroundAudioService extends Service {
             currentBody = getString(R.string.background_audio_notification_text);
         }
 
-        if (mediaSession == null) {
-            activateMediaButtonSession();
-        }
         createNotificationChannel();
         promoteToForeground(title);
     }
@@ -247,7 +242,7 @@ public class BackgroundAudioService extends Service {
             PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE
         );
 
-        NotificationCompat.Builder builder = new NotificationCompat.Builder(this, getChannelId())
+        NotificationCompat.Builder builder = new NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(R.mipmap.ic_launcher)
             .setContentTitle(displayTitle)
             .setContentText(displayBody)
@@ -260,26 +255,16 @@ public class BackgroundAudioService extends Service {
             .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC);
 
-        if (mediaSession != null) {
-            builder.setStyle(
-                new MediaStyle().setMediaSession(mediaSession.getSessionToken())
-            );
-        }
-
         if (silentNotification) {
             builder
                 .setSilent(true)
                 .setShowWhen(false)
-                .setPriority(NotificationCompat.PRIORITY_DEFAULT);
+                .setPriority(NotificationCompat.PRIORITY_LOW);
         } else {
             builder.setPriority(NotificationCompat.PRIORITY_DEFAULT);
         }
 
         return builder.build();
-    }
-
-    private String getChannelId() {
-        return silentNotification ? SILENT_CHANNEL_ID : CHANNEL_ID;
     }
 
     private void createNotificationChannel() {
@@ -292,11 +277,10 @@ public class BackgroundAudioService extends Service {
             return;
         }
 
-        String channelId = getChannelId();
         NotificationChannel channel = new NotificationChannel(
-            channelId,
+            CHANNEL_ID,
             getString(R.string.background_audio_channel_name),
-            NotificationManager.IMPORTANCE_DEFAULT
+            silentNotification ? NotificationManager.IMPORTANCE_LOW : NotificationManager.IMPORTANCE_DEFAULT
         );
         channel.setDescription(getString(R.string.background_audio_channel_description));
         channel.setShowBadge(false);

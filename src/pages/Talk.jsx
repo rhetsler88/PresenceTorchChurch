@@ -312,7 +312,7 @@ export default function Talk() {
     onError: (err) => {
       console.error("Delete messages failed:", err);
       if (err?.code === "permission-denied") {
-        toast.error("Permission denied — confirm your account role is admin or director.");
+        toast.error("Permission denied — confirm your account role is admin or team lead.");
         return;
       }
       toast.error("Could not delete messages. Please try again.");

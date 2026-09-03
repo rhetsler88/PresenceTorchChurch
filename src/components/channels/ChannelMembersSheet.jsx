@@ -9,7 +9,7 @@ import {
 } from "@/components/ui/sheet";
 import SpeakerVolumeControl from "@/components/ptt/SpeakerVolumeControl";
 import { useAuth } from "@/lib/AuthContext";
-import { getDisplayName, getInitials } from "@/lib/userUtils";
+import { getDisplayName, getInitials, getRoleLabel } from "@/lib/userUtils";
 
 function OnlineAvatar({ user, isSelf }) {
   return (
@@ -103,7 +103,7 @@ export default function ChannelMembersSheet({ channel, onlineMembers = [], open,
                   )}
                   {u.role && u.role !== "user" && (
                     <span className="mt-0.5 block text-[10px] font-semibold uppercase tracking-wide text-primary truncate">
-                      {u.role === "lead" ? "Lead" : u.role === "director" ? "Director" : u.role}
+                      {getRoleLabel(u.role)}
                     </span>
                   )}
                 </div>

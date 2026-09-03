@@ -37,6 +37,7 @@ import {
   isSuperAdmin,
   filterChannelsByOrganization,
   matchesOrganization,
+  getRoleLabel,
 } from "@/lib/userUtils";
 import {
   getChannelsFromMembershipLists,
@@ -320,7 +321,7 @@ export default function Users() {
                   </td>
                   <td className="px-4 py-3">
                     <span className="px-2 py-0.5 rounded-md bg-primary/10 text-primary text-xs font-semibold">
-                      {u.role || "user"}
+                      {getRoleLabel(u.role)}
                     </span>
                   </td>
                   <td className="px-4 py-3">
@@ -454,7 +455,7 @@ export default function Users() {
                 <SelectContent>
                   {ROLES.map((role) => (
                     <SelectItem key={role} value={role}>
-                      {role}
+                      {getRoleLabel(role)}
                     </SelectItem>
                   ))}
                 </SelectContent>

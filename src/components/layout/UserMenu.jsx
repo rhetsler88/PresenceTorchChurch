@@ -14,6 +14,7 @@ import { ADMIN_APP_URL } from "@/lib/appLinks";
 import { useBluetoothPTTContext } from "@/components/ptt/BluetoothPTTContext";
 import EditProfileDialog from "@/components/profile/EditProfileDialog";
 import AudioSettingsDialog from "@/components/profile/AudioSettingsDialog";
+import { useCompactLayout } from "@/hooks/useViewportWidth";
 
 export default function UserMenu() {
   const { user, logout } = useAuth();
@@ -26,17 +27,24 @@ export default function UserMenu() {
   const displayName = getDisplayName(user);
   const initials = getInitials(user);
   const isPlatformAdmin = user.role === "super_admin" || user.role === "admin";
+  const compact = useCompactLayout();
 
   return (
     <>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <button
-            className="fixed z-[60] flex items-center gap-2 p-1 sm:pl-1 sm:pr-2.5 rounded-full bg-card border border-border shadow-sm hover:border-primary/40 transition-colors active:scale-95 right-[calc(1.75rem+env(safe-area-inset-right,0px))]"
+            className={`fixed z-[60] flex items-center rounded-full bg-card border border-border shadow-sm hover:border-primary/40 transition-colors active:scale-95 ${
+              compact
+                ? "gap-0 p-0.5 right-[calc(0.5rem+env(safe-area-inset-right,0px))]"
+                : "gap-2 p-1 sm:pl-1 sm:pr-2.5 right-[calc(1.75rem+env(safe-area-inset-right,0px))]"
+            }`}
             style={{ top: "calc(env(safe-area-inset-top, 0px) + 0.75rem)" }}
             title="Account menu"
           >
-            <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-bold leading-none text-primary">
+            <span className={`inline-flex shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-bold leading-none text-primary ${
+              compact ? "h-7 w-7" : "h-8 w-8"
+            }`}>
               {initials}
             </span>
             <span className="text-xs font-semibold text-foreground max-w-[7rem] truncate hidden sm:inline">

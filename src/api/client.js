@@ -281,6 +281,17 @@ function createEntityApi(collectionName) {
       let items = [];
       try {
         await waitForFirestoreAuth();
+        const hasRangeFilter = Object.values(filters || {}).some(
+          (value) => value && typeof value === "object" && "$lt" in value
+        );
+
+        if (!hasRangeFilter) {
+          const q = buildQuery(collectionName, filters, sortField, limitCount);
+          const snap = await getDocs(q);
+          items = snap.docs.map(docToObject);
+          return items;
+        }
+
         const equalityConstraints = [];
         const rangeFilters = [];
 

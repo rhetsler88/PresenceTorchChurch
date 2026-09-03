@@ -284,8 +284,8 @@ export default function LandingPage() {
             <p>Assign the right listening and broadcast capabilities to each person.</p>
             <div className="role-row">
               <span>User</span>
-              <span>Lead</span>
-              <span>Director</span>
+              <span>Coordinator</span>
+              <span>Team Lead</span>
               <span>Admin</span>
             </div>
           </article>

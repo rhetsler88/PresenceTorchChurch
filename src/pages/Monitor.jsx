@@ -8,7 +8,7 @@ import { Radio, Volume2, VolumeX, Eye, Play, Pause, WifiOff, GripVertical } from
 import { Button } from "@/components/ui/button";
 import { etzTime } from "@/lib/etz";
 import { deviceDayKey, deviceDayLabel } from "@/lib/deviceDate";
-import { getDisplayName, getInitials, getInitialsFromName, getMonitorChannels, getReadableVoiceChannels, canSendOnChannelForChannel } from "@/lib/userUtils";
+import { getDisplayName, getInitials, getInitialsFromName, getMonitorChannels, canSendOnChannelForChannel } from "@/lib/userUtils";
 import { playClearTone, playBusyTone, ensureAudioReady, unlockAudioForPTT } from "@/lib/pttTones";
 import { logVoiceMessageFailure } from "@/lib/voiceMessageLogging";
 import { markBroadcastHeard, hasHeardBroadcast } from "@/lib/heardBroadcasts";
@@ -47,6 +47,16 @@ function readStoredBroadcastSelection() {
   } catch {
     return null;
   }
+}
+
+function sortMessagesNewestFirst(messages = []) {
+  return [...messages].sort((a, b) =>
+    String(b.created_date || "").localeCompare(String(a.created_date || ""))
+  );
+}
+
+function takeRecentMessages(messages = [], count = 3) {
+  return sortMessagesNewestFirst(messages).slice(0, count);
 }
 
 function ChannelMonitorCard({
@@ -290,13 +300,9 @@ export default function Monitor() {
     [sendableMonitorChannels]
   );
   sendableChannelIdsRef.current = sendableChannelIds;
-  const readableMonitorChannels = useMemo(
-    () => getReadableVoiceChannels(user, monitorChannels),
-    [monitorChannels, user]
-  );
   const monitorChannelIds = useMemo(
-    () => readableMonitorChannels.map((c) => c.id).filter(Boolean),
-    [readableMonitorChannels]
+    () => monitorChannels.map((c) => c.id).filter(Boolean),
+    [monitorChannels]
   );
   const monitorChannelIdKey = monitorChannelIds.join(",");
 
@@ -552,14 +558,22 @@ export default function Monitor() {
   }, [users]);
 
   const channelMessages = useCallback(
-    (channelId) => {
-      const msgs = messagesByChannel[channelId] || [];
-      return [...msgs].sort((a, b) =>
-        String(b.created_date || "").localeCompare(String(a.created_date || ""))
-      ).slice(0, 3);
-    },
+    (channelId) => takeRecentMessages(messagesByChannel[channelId] || []),
     [messagesByChannel]
   );
+
+  const patchChannelMessagesCache = useCallback((channelId, updater) => {
+    if (!channelId || !user?.id) return;
+    queryClient.setQueryData(
+      ["all-channel-messages", user.id, monitorChannelIdKey],
+      (old) => {
+        const grouped = { ...(old || {}) };
+        const next = updater(grouped[channelId] || []);
+        grouped[channelId] = takeRecentMessages(next);
+        return grouped;
+      }
+    );
+  }, [monitorChannelIdKey, queryClient, user?.id]);
 
   const liveBroadcastChannels = useMemo(
     () => orderedChannels.filter((channel) => busyChannelIds.has(channel.id)),
@@ -571,9 +585,24 @@ export default function Monitor() {
     if (!user?.id || monitorChannelIds.length === 0) return;
 
     const onEvent = (event) => {
-      if (!monitorChannelIds.includes(event.data?.channel_id)) return;
+      const channelId = event.data?.channel_id;
+      if (!channelId || !monitorChannelIds.includes(channelId)) return;
 
-      queryClient.invalidateQueries({ queryKey: ["all-channel-messages"] });
+      if (event.type === "create") {
+        patchChannelMessagesCache(channelId, (prev) => {
+          const without = prev.filter((msg) => msg.id !== event.data.id);
+          return [event.data, ...without];
+        });
+      } else if (event.type === "update") {
+        patchChannelMessagesCache(channelId, (prev) =>
+          prev.map((msg) => (msg.id === event.data.id ? { ...msg, ...event.data } : msg))
+        );
+      } else if (event.type === "delete") {
+        patchChannelMessagesCache(channelId, (prev) =>
+          prev.filter((msg) => msg.id !== event.data?.id)
+        );
+        queryClient.invalidateQueries({ queryKey: ["all-channel-messages"] });
+      }
 
       if (event.type !== "create") return;
 
@@ -606,7 +635,18 @@ export default function Monitor() {
       monitorChannelIds.map((channelId) => ({ channel_id: channelId }))
     );
     return unsub;
-  }, [monitorChannelIds, monitorChannels, user, queryClient, heardBroadcastsRef, pttHeardRef, passiveHeardRef, relayHeardRef, agoraHeardRef]);
+  }, [
+    monitorChannelIds,
+    monitorChannels,
+    user,
+    queryClient,
+    patchChannelMessagesCache,
+    heardBroadcastsRef,
+    pttHeardRef,
+    passiveHeardRef,
+    relayHeardRef,
+    agoraHeardRef,
+  ]);
 
   const transcribeOnReplay = useCallback(async (msg) => {
     if (!needsTranscription(msg)) return;

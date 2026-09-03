@@ -64,8 +64,8 @@ export default function AdminShell() {
   const PrimaryIcon = isLeadUser && !isAdmin && !isDirectorUser ? Crown : Shield;
 
   return (
-    <div className="w-full max-w-full overflow-x-hidden">
-      <div className="px-4 pt-4 pb-3 sm:px-5 sm:pt-6 max-sm:pr-12 sm:pr-48">
+    <div className="w-full max-w-full min-w-0 overflow-x-hidden">
+      <div className="px-2 pt-4 pb-3 xs:px-4 sm:px-5 sm:pt-6 max-xs:pr-10 xs:max-sm:pr-12 sm:pr-48">
         <nav
           className="inline-flex h-10 w-full max-w-md items-center rounded-lg bg-muted p-1 text-muted-foreground"
           aria-label="Admin sections"

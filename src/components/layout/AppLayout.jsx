@@ -18,6 +18,7 @@ import { pttSurfaceFromPath, saveLastPttSurface } from "@/lib/lastPttSurface";
 import { recordSessionInteraction } from "@/lib/logoutOnClose";
 import { prewarmMicDenoise } from "@/lib/micDenoise";
 import PresenceProvider from "@/components/presence/PresenceProvider";
+import { useCompactLayout } from "@/hooks/useViewportWidth";
 
 export default function AppLayout() {
   const location = useLocation();
@@ -25,6 +26,7 @@ export default function AppLayout() {
   const restoredRouteRef = useRef(false);
   const { user, checkUserAuth } = useAuth();
   const { alertChannel, dismiss: dismissAlert } = useRedAlert(user);
+  const compact = useCompactLayout();
 
   const showMonitor = canAccessMonitorPage(user);
   const isAdmin = isPlatformAdmin(user);
@@ -79,7 +81,7 @@ export default function AppLayout() {
   }, [location.pathname, location.search]);
 
   return (
-    <div className="h-full min-h-0 w-full bg-background flex flex-col safe-top">
+    <div className="app-shell h-full min-h-0 w-full max-w-full bg-background flex flex-col safe-top">
       <BluetoothPTTProvider>
       <PassiveMonitorProvider user={user}>
       <PassiveTalkListenProvider user={user}>
@@ -92,12 +94,16 @@ export default function AppLayout() {
       <UserMenu />
       <div
         className="flex-1 w-full min-w-0 overflow-x-hidden overflow-y-auto [scrollbar-gutter:stable]"
-        style={{ paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 5rem)" }}
+        style={{
+          paddingBottom: compact
+            ? "calc(env(safe-area-inset-bottom, 0px) + 3.5rem)"
+            : "calc(env(safe-area-inset-bottom, 0px) + 5rem)",
+        }}
       >
         <Outlet />
       </div>
-      <nav className="fixed bottom-0 left-0 right-0 bg-card border-t border-border z-50 safe-bottom">
-        <div className="flex items-center justify-around max-w-2xl mx-auto px-1 py-1.5">
+      <nav className="fixed bottom-0 left-0 right-0 bg-card border-t border-border z-50 safe-bottom max-w-[var(--app-vw,100%)]">
+        <div className={`flex items-center mx-auto w-full min-w-0 ${compact ? "justify-evenly px-0.5 py-1" : "justify-around max-w-2xl px-1 py-1.5"}`}>
           {navItems.map(({ path, icon: Icon, label }) => {
             const isActive = path === "/admin"
               ? location.pathname === "/admin" || location.pathname.startsWith("/admin/")
@@ -106,14 +112,16 @@ export default function AppLayout() {
               <Link
                 key={path}
                 to={path}
-                className={`relative flex flex-col items-center gap-1 px-3 py-2 rounded-xl transition-all duration-200 active:scale-95 ${
+                className={`relative flex flex-col items-center rounded-xl transition-all duration-200 active:scale-95 ${
+                  compact ? "gap-0 px-1.5 py-1.5 min-w-0 flex-1" : "gap-1 px-3 py-2"
+                } ${
                   isActive
                     ? "text-primary"
                     : "text-muted-foreground hover:text-foreground"
                 }`}
               >
-                <Icon className={`w-5 h-5 ${isActive ? "stroke-[2.5]" : ""}`} />
-                <span className="text-[10px] font-semibold tracking-wide uppercase">
+                <Icon className={`${compact ? "w-5 h-5" : "w-5 h-5"} ${isActive ? "stroke-[2.5]" : ""}`} />
+                <span className={`font-semibold tracking-wide uppercase ${compact ? "sr-only" : "text-[10px]"}`}>
                   {label}
                 </span>
                 {isActive && (

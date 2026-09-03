@@ -176,7 +176,7 @@ function DailyCodeEntry({ onVerified, organization }) {
             </Button>
           </form>
           <p className="text-xs text-muted-foreground text-center mt-4">
-            Contact your admin or Lead for today's code
+            Contact your admin or Coordinator for today's code
           </p>
         </div>
 

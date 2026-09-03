@@ -26,7 +26,7 @@ function mutationErrorToast(action) {
     console.error(`Admin ${action} failed:`, err);
     if (err?.code === "permission-denied") {
       toast.error(
-        "Permission denied — confirm your role is admin, director, or lead and that your assigned channels are correct, then refresh."
+        "Permission denied — confirm your role is admin, team lead, or coordinator and that your assigned channels are correct, then refresh."
       );
       return;
     }
@@ -239,8 +239,8 @@ export default function Admin() {
   // Lead-only view: approve membership only
   if (isLeadUser && !isAdmin && !isDirectorUser) {
     return (
-      <div className="w-full max-w-full overflow-x-hidden">
-        <div className="px-4 pb-4 sm:px-5 max-sm:pr-12 sm:pr-48">
+      <div className="w-full max-w-full min-w-0 overflow-x-hidden">
+        <div className="px-2 pb-4 xs:px-4 sm:px-5 max-xs:pr-10 xs:max-sm:pr-12 sm:pr-48">
           <div className="flex items-center gap-2 mb-1">
             <Crown className="w-5 h-5 text-purple-400" />
             <h1 className="text-xl font-bold text-foreground">Channel Approvals</h1>
@@ -266,8 +266,8 @@ export default function Admin() {
     const channelMembers = filterUsersInManagedChannels(currentUser, orgUsers, orgChannels);
 
     return (
-      <div className="w-full max-w-full overflow-x-hidden">
-        <div className="px-4 pb-4 sm:px-5 max-sm:pr-12 sm:pr-48">
+      <div className="w-full max-w-full min-w-0 overflow-x-hidden">
+        <div className="px-2 pb-4 xs:px-4 sm:px-5 max-xs:pr-10 xs:max-sm:pr-12 sm:pr-48">
           <div className="flex items-center gap-2 mb-1">
             <Shield className="w-5 h-5 text-purple-400" />
             <h1 className="text-xl font-bold text-foreground">Channel Management</h1>
@@ -284,7 +284,7 @@ export default function Admin() {
           onReject={(ch, memberId) => rejectMutation.mutate({ channel: ch, memberId })}
           showEmpty
         />
-        <div className="px-4 pb-24">
+        <div className="px-2 pb-24 xs:px-4">
           {isLoading ? (
             <div className="flex justify-center py-16">
               <div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin" />
@@ -317,8 +317,8 @@ export default function Admin() {
 
   // Admin view: full user management
   return (
-    <div className="w-full max-w-full overflow-x-hidden">
-      <div className="px-4 pb-4 sm:px-5 max-sm:pr-12 sm:pr-48">
+    <div className="w-full max-w-full min-w-0 overflow-x-hidden">
+      <div className="px-2 pb-4 xs:px-4 sm:px-5 max-xs:pr-10 xs:max-sm:pr-12 sm:pr-48">
         <div className="flex items-center gap-2 mb-1">
           <Shield className="w-5 h-5 text-primary" />
           <h1 className="text-xl font-bold text-foreground">User Management</h1>
@@ -360,7 +360,7 @@ export default function Admin() {
         onReject={(ch, memberId) => rejectMutation.mutate({ channel: ch, memberId })}
       />
 
-      <div className="px-4 pb-24">
+      <div className="px-2 pb-24 xs:px-4">
         {isLoading ? (
           <div className="flex justify-center py-16">
             <div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin" />
@@ -371,7 +371,7 @@ export default function Admin() {
             {directors.length > 0 && (
               <div className="mb-3">
                 <p className="text-[10px] font-bold text-purple-400 uppercase tracking-widest px-1 mb-1">
-                  Directors ({directors.length})
+                  Team Leads ({directors.length})
                 </p>
                 {directors.map(u => (
                   <UserRow {...rowProps(u)} />
@@ -382,7 +382,7 @@ export default function Admin() {
             {leads.length > 0 && (
               <div className="mb-3">
                 <p className="text-[10px] font-bold text-purple-400 uppercase tracking-widest px-1 mb-1">
-                  Leads ({leads.length})
+                  Coordinators ({leads.length})
                 </p>
                 {leads.map(u => (
                   <UserRow {...rowProps(u)} />

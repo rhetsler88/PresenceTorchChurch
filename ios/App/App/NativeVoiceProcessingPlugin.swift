@@ -29,7 +29,8 @@ public class NativeVoiceProcessingPlugin: CAPPlugin, CAPBridgedPlugin {
                 try session.setCategory(
                     .playAndRecord,
                     mode: .voiceChat,
-                    .allowBluetoothHFP                )
+                    options: [.defaultToSpeaker, .allowBluetoothHFP]
+                    )
                 try session.setActive(true)
                 self.sessionActive = true
                 call.resolve([

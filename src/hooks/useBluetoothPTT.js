@@ -173,7 +173,7 @@ export default function useBluetoothPTT({ onPress, onRelease }) {
       await BleClient.disconnect(device.deviceId);
       nativeDeviceIdRef.current = null;
       setError(
-        "Device connected but no PTT button notifications were found. Zello-style buttons expose service FFE0 / characteristic FFE1 (or FFF0 / FFF1)."
+        "Device connected but no PTT button notifications were found. Check that the button exposes service FFE0 / characteristic FFE1 (or FFF0 / FFF1)."
       );
       return;
     }

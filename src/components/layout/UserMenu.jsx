@@ -100,7 +100,7 @@ export default function UserMenu() {
                 )}
               </DropdownMenuItem>
               <DropdownMenuLabel className="text-xs text-muted-foreground font-normal leading-snug whitespace-normal">
-                Pair a Zello-style BLE button (service FFE0 / FFF0) or use buttons already paired in your phone&apos;s Bluetooth settings.
+                Pair a BLE GATT button (service FFE0 / FFF0) or use buttons already paired in your phone&apos;s Bluetooth settings.
                 Press and hold to talk on Talk or Monitor.
               </DropdownMenuLabel>
               {!bluetooth.isSupported && (

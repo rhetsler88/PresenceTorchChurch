@@ -1,5 +1,10 @@
 /** @typedef {{ width: number, height: number, layoutWidth: number, isCoverDisplay: boolean }} ViewportSnapshot */
 
+import {
+  applyCoverLockTransition,
+  shouldUnfoldOnResume,
+} from "./viewportSyncLogic.js";
+
 const DEFAULT_VIEWPORT =
   "width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content";
 
@@ -32,30 +37,13 @@ export function getViewportSnapshot() {
     ? Math.max(window.screen?.width ?? 0, window.screen?.height ?? 0)
     : layoutWidth;
 
-  // Cover display: visible area is much narrower than the physical screen.
-  // Lock width so we don't oscillate after the meta viewport reflows layout.
-  const looksLikeCover = width > 0 && width < 400 && screenWidth > width * 1.3;
-  if (looksLikeCover) {
-    lockedCoverWidth = width;
-    lockedCoverHeight = height;
-  } else if (width >= 400) {
-    lockedCoverWidth = 0;
-    lockedCoverHeight = 0;
-  }
-
-  // Unfold detection: inner screen is much taller than the cover strip.
-  // Width stays stale while meta viewport is locked to the cover width.
-  if (lockedCoverWidth > 0) {
-    const unfoldedByHeight =
-      height >= 700 ||
-      (lockedCoverHeight > 0 && height > lockedCoverHeight * 1.35);
-    if (unfoldedByHeight) {
-      lockedCoverWidth = 0;
-      lockedCoverHeight = 0;
-    }
-  }
-
-  const isCoverDisplay = lockedCoverWidth > 0;
+  const lock = applyCoverLockTransition(
+    { lockedCoverWidth, lockedCoverHeight },
+    { width, height, screenWidth }
+  );
+  lockedCoverWidth = lock.lockedCoverWidth;
+  lockedCoverHeight = lock.lockedCoverHeight;
+  const isCoverDisplay = lock.isCoverDisplay;
 
   return { width, height, layoutWidth, isCoverDisplay };
 }
@@ -78,11 +66,14 @@ function remeasureWithDefaultViewport() {
   };
 }
 
-/** Probe with default viewport after native resume (fold/unfold). */
+/** Probe for unfold after native resume — height ratio only, never resets meta viewport. */
 export function probeUnfoldOnResume() {
-  if (lockedCoverWidth === 0) return;
-  const { width, height } = remeasureWithDefaultViewport();
-  if (width >= 400 || height >= 700) {
+  if (
+    shouldUnfoldOnResume(
+      { lockedCoverWidth, lockedCoverHeight },
+      getEffectiveViewportHeight()
+    )
+  ) {
     lockedCoverWidth = 0;
     lockedCoverHeight = 0;
   }

@@ -7,6 +7,8 @@ let installed = false;
 let lastSyncedWidth = 0;
 /** @type {number} Locked cover-screen width — persists until unfold. */
 let lockedCoverWidth = 0;
+/** @type {number} Cover-screen height at lock time — used to detect unfold. */
+let lockedCoverHeight = 0;
 
 /** Effective visible width — visualViewport on foldable cover screens, else layout width. */
 export function getEffectiveViewportWidth() {
@@ -35,8 +37,22 @@ export function getViewportSnapshot() {
   const looksLikeCover = width > 0 && width < 400 && screenWidth > width * 1.3;
   if (looksLikeCover) {
     lockedCoverWidth = width;
+    lockedCoverHeight = height;
   } else if (width >= 400) {
     lockedCoverWidth = 0;
+    lockedCoverHeight = 0;
+  }
+
+  // Unfold detection: inner screen is much taller than the cover strip.
+  // Width stays stale while meta viewport is locked to the cover width.
+  if (lockedCoverWidth > 0) {
+    const unfoldedByHeight =
+      height >= 700 ||
+      (lockedCoverHeight > 0 && height > lockedCoverHeight * 1.35);
+    if (unfoldedByHeight) {
+      lockedCoverWidth = 0;
+      lockedCoverHeight = 0;
+    }
   }
 
   const isCoverDisplay = lockedCoverWidth > 0;
@@ -48,11 +64,42 @@ function dispatchViewportChange(detail) {
   window.dispatchEvent(new CustomEvent("appviewportchange", { detail }));
 }
 
+/** Temporarily restore default meta viewport to measure true layout width. */
+function remeasureWithDefaultViewport() {
+  const meta = document.querySelector('meta[name="viewport"]');
+  if (meta && meta.getAttribute("content") !== DEFAULT_VIEWPORT) {
+    meta.setAttribute("content", DEFAULT_VIEWPORT);
+  }
+  void document.documentElement.clientWidth;
+  return {
+    width: getEffectiveViewportWidth(),
+    height: getEffectiveViewportHeight(),
+    layoutWidth: document.documentElement.clientWidth,
+  };
+}
+
+/** Probe with default viewport after native resume (fold/unfold). */
+export function probeUnfoldOnResume() {
+  if (lockedCoverWidth === 0) return;
+  const { width, height } = remeasureWithDefaultViewport();
+  if (width >= 400 || height >= 700) {
+    lockedCoverWidth = 0;
+    lockedCoverHeight = 0;
+  }
+}
+
 /** Reconcile layout viewport with the visible area (Motorola Razr cover, fold transitions). */
 export function syncViewport() {
   if (typeof document === "undefined") return;
 
-  const { width, height, layoutWidth, isCoverDisplay } = getViewportSnapshot();
+  let { width, height, layoutWidth, isCoverDisplay } = getViewportSnapshot();
+  const meta = document.querySelector('meta[name="viewport"]');
+
+  // Leaving cover mode — reset meta first so width isn't stuck at the cover lock.
+  if (!isCoverDisplay && meta?.getAttribute("content") !== DEFAULT_VIEWPORT) {
+    ({ width, height, layoutWidth } = remeasureWithDefaultViewport());
+  }
+
   const root = document.documentElement;
   const effectiveWidth = isCoverDisplay ? lockedCoverWidth : width;
 
@@ -61,7 +108,6 @@ export function syncViewport() {
   root.style.setProperty("--app-layout-w", `${layoutWidth}px`);
   root.classList.toggle("cover-display", isCoverDisplay);
 
-  const meta = document.querySelector('meta[name="viewport"]');
   if (meta) {
     const targetContent = isCoverDisplay
       ? `width=${effectiveWidth}, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content`

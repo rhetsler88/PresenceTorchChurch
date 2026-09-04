@@ -1,6 +1,6 @@
 import { Capacitor } from "@capacitor/core";
 import { ensureAudioReady } from "@/lib/pttTones";
-import { scheduleViewportSync } from "@/lib/viewportSync";
+import { probeUnfoldOnResume, scheduleViewportSync, syncViewport } from "@/lib/viewportSync";
 
 /** Nudge WebView/React to repaint after native resume (fold/unfold, notification tap). */
 function forceUiRepaint() {
@@ -15,7 +15,12 @@ function forceUiRepaint() {
 
 function handleAppResume() {
   ensureAudioReady();
+  probeUnfoldOnResume();
+  syncViewport();
   scheduleViewportSync();
+  // Fold/unfold animations can finish after the first sync.
+  window.setTimeout(scheduleViewportSync, 150);
+  window.setTimeout(scheduleViewportSync, 400);
   forceUiRepaint();
 }
 

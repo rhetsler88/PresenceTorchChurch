@@ -9,7 +9,10 @@ export function useViewportWidth() {
   const [width, setWidth] = useState(() => getEffectiveViewportWidth());
 
   useEffect(() => {
-    const update = () => setWidth(getEffectiveViewportWidth());
+    const update = (event) => {
+      const next = event?.detail?.width;
+      setWidth(typeof next === "number" && next > 0 ? next : getEffectiveViewportWidth());
+    };
     update();
     window.addEventListener("appviewportchange", update);
     window.addEventListener("resize", update);
@@ -27,7 +30,8 @@ export function useViewportWidth() {
 /** True on ultra-narrow displays (e.g. Motorola Razr cover ~264px). */
 export function useCompactLayout() {
   const width = useViewportWidth();
-  return width > 0 && width < 360;
+  const isCover = useCoverDisplay();
+  return isCover || (width > 0 && width < 360);
 }
 
 /** True when layout viewport exceeds visible width (cover / fold mismatch). */
@@ -37,7 +41,13 @@ export function useCoverDisplay() {
   );
 
   useEffect(() => {
-    const update = () => setIsCover(getViewportSnapshot().isCoverDisplay);
+    const update = (event) => {
+      setIsCover(
+        typeof event?.detail?.isCoverDisplay === "boolean"
+          ? event.detail.isCoverDisplay
+          : getViewportSnapshot().isCoverDisplay
+      );
+    };
     update();
     window.addEventListener("appviewportchange", update);
     return () => window.removeEventListener("appviewportchange", update);

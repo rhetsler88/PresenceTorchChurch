@@ -14,6 +14,8 @@ let lastSyncedWidth = 0;
 let lockedCoverWidth = 0;
 /** @type {number} Cover-screen height at lock time — used to detect unfold. */
 let lockedCoverHeight = 0;
+/** @type {boolean} Set after unfold so stale narrow width does not immediately re-lock. */
+let hasUnfolded = false;
 
 /** Effective visible width — visualViewport on foldable cover screens, else layout width. */
 export function getEffectiveViewportWidth() {
@@ -38,11 +40,12 @@ export function getViewportSnapshot() {
     : layoutWidth;
 
   const lock = applyCoverLockTransition(
-    { lockedCoverWidth, lockedCoverHeight },
-    { width, height, screenWidth }
+    { lockedCoverWidth, lockedCoverHeight, hasUnfolded },
+    { width, height, layoutWidth, screenWidth }
   );
   lockedCoverWidth = lock.lockedCoverWidth;
   lockedCoverHeight = lock.lockedCoverHeight;
+  hasUnfolded = lock.hasUnfolded;
   const isCoverDisplay = lock.isCoverDisplay;
 
   return { width, height, layoutWidth, isCoverDisplay };
@@ -76,6 +79,7 @@ export function probeUnfoldOnResume() {
   ) {
     lockedCoverWidth = 0;
     lockedCoverHeight = 0;
+    hasUnfolded = true;
   }
 }
 
@@ -109,7 +113,10 @@ export function syncViewport() {
     }
   }
 
-  if (Math.abs(effectiveWidth - lastSyncedWidth) >= 1) {
+  if (
+    Math.abs(effectiveWidth - lastSyncedWidth) >= 1 ||
+    isCoverDisplay !== root.classList.contains("cover-display")
+  ) {
     lastSyncedWidth = effectiveWidth;
     dispatchViewportChange({ width: effectiveWidth, height, layoutWidth, isCoverDisplay });
   }
@@ -129,6 +136,9 @@ export function installViewportSync() {
   installed = true;
 
   syncViewport();
+  scheduleViewportSync();
+  window.setTimeout(syncViewport, 200);
+  window.setTimeout(syncViewport, 600);
 
   window.addEventListener("resize", scheduleViewportSync);
   window.visualViewport?.addEventListener("resize", scheduleViewportSync);

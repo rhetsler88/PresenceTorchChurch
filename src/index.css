@@ -214,6 +214,13 @@
     max-width: var(--app-vw, 100vw);
     width: 100%;
   }
+
+  html.cover-display .app-shell nav.fixed {
+    width: var(--app-vw, 100vw);
+    max-width: var(--app-vw, 100vw);
+    left: 0;
+    right: auto;
+  }
 }
 
 @keyframes ptt-bar-pulse {

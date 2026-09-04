@@ -3,8 +3,9 @@ import { Capacitor } from "@capacitor/core";
 import { ensureBluetoothPermissions } from "@/lib/bluetoothPermissions";
 import {
   BLE_OPTIONAL_SERVICES,
-  PTT_CHAR_UUID,
-  PTT_SERVICE_UUID,
+  BLE_SCAN_SERVICES,
+  PTT_NOTIFY_TARGETS,
+  isStandardServiceToSkip,
   parseBleButtonState,
 } from "@/lib/blePttConstants";
 
@@ -21,19 +22,40 @@ async function loadBleClient() {
   return mod.BleClient;
 }
 
+async function subscribeCharacteristic(char, onValueChanged, bucket) {
+  char.addEventListener("characteristicvaluechanged", onValueChanged);
+  await char.startNotifications();
+  bucket.push(char);
+}
+
 async function subscribeWebBluetoothNotifications(device, onValueChanged) {
   const server = await device.gatt.connect();
   const services = await server.getPrimaryServices();
   const foundCharacteristics = [];
 
+  for (const target of PTT_NOTIFY_TARGETS) {
+    try {
+      const service = await server.getPrimaryService(target.serviceUuid);
+      const char = await service.getCharacteristic(target.characteristicUuid);
+      if (char.properties.notify) {
+        await subscribeCharacteristic(char, onValueChanged, foundCharacteristics);
+      }
+    } catch {
+      // Service or characteristic not present on this button.
+    }
+  }
+
+  if (foundCharacteristics.length > 0) {
+    return foundCharacteristics;
+  }
+
   for (const service of services) {
+    if (isStandardServiceToSkip(service.uuid)) continue;
     try {
       const characteristics = await service.getCharacteristics();
       for (const char of characteristics) {
         if (char.properties.notify) {
-          char.addEventListener("characteristicvaluechanged", onValueChanged);
-          await char.startNotifications();
-          foundCharacteristics.push(char);
+          await subscribeCharacteristic(char, onValueChanged, foundCharacteristics);
         }
       }
     } catch {
@@ -65,11 +87,14 @@ async function subscribeNativeBleNotifications(deviceId, onValueChanged) {
     }
   };
 
-  if (await trySubscribe(PTT_SERVICE_UUID, PTT_CHAR_UUID)) {
-    return subscribed;
+  for (const target of PTT_NOTIFY_TARGETS) {
+    if (await trySubscribe(target.serviceUuid, target.characteristicUuid)) {
+      return subscribed;
+    }
   }
 
   for (const service of services) {
+    if (isStandardServiceToSkip(service.uuid)) continue;
     for (const characteristic of service.characteristics ?? []) {
       if (!characteristic.properties?.notify) continue;
       if (await trySubscribe(service.uuid, characteristic.uuid)) {
@@ -132,7 +157,7 @@ export default function useBluetoothPTT({ onPress, onRelease }) {
     await ensureBluetoothPermissions();
 
     const device = await BleClient.requestDevice({
-      services: [PTT_SERVICE_UUID, ...BLE_OPTIONAL_SERVICES],
+      services: BLE_SCAN_SERVICES,
       optionalServices: BLE_OPTIONAL_SERVICES,
     });
 
@@ -148,7 +173,7 @@ export default function useBluetoothPTT({ onPress, onRelease }) {
       await BleClient.disconnect(device.deviceId);
       nativeDeviceIdRef.current = null;
       setError(
-        "Device connected but no PTT button notifications were found. Check that the button exposes service FFF0 / characteristic FFF1."
+        "Device connected but no PTT button notifications were found. Zello-style buttons expose service FFE0 / characteristic FFE1 (or FFF0 / FFF1)."
       );
       return;
     }

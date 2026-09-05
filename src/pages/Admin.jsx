@@ -1,6 +1,7 @@
 import React from "react";
 import { api } from "@/api/client";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import useChannels from "@/hooks/useChannels";
 import { Shield, Crown, User } from "lucide-react";
 import UserRow, { ROLE_CONFIG } from "@/components/admin/UserRow";
 import PendingRequests from "@/components/admin/PendingRequests";
@@ -49,10 +50,7 @@ export default function Admin() {
     queryFn: () => api.entities.User.list(),
   });
 
-  const { data: channels = [] } = useQuery({
-    queryKey: ["channels"],
-    queryFn: () => api.entities.Channel.list("-created_date", 100),
-  });
+  const { data: channels = [] } = useChannels();
 
   const changeRoleMutation = useMutation({
     mutationFn: (/** @type {{ user: any, role: any }} */ { user, role }) => api.entities.User.update(user.id, { role }),

@@ -181,7 +181,8 @@ export function formatAuthError(err) {
     case "firestore/unknown":
       return err?.message || "Could not reach Firebase. Check your connection and try again.";
     case "firestore/permission-denied":
-      return err?.message || "Your account is not registered for this app yet.";
+    case "permission-denied":
+      return "Could not load your profile yet. Wait a moment and try signing in again.";
     default:
       return err?.message || "Something went wrong. Please try again.";
   }
@@ -738,7 +739,8 @@ export function getAuthErrorMessage(err) {
     case "firestore/unknown":
       return err?.message || "Could not reach Firebase. Check your connection and try again.";
     case "firestore/permission-denied":
-      return err?.message || "Your account is not registered for this app yet.";
+    case "permission-denied":
+      return "Could not load your profile yet. Wait a moment and try signing in again.";
     default:
       return err?.message || "Sign-in failed. Please try again.";
   }
@@ -831,6 +833,7 @@ export const authApi = {
     await verifyRecaptchaToken(captchaToken);
     validatePasswordLength(password);
     const cred = await createUserWithEmailAndPassword(auth, email.trim(), password);
+    await waitForFirestoreAuth({ forceRefresh: true });
     await setDoc(
       doc(db, "users", cred.user.uid),
       { password_updated_at: new Date().toISOString() },

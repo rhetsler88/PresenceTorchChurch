@@ -1,8 +1,7 @@
 import { useCallback, useMemo, useRef } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/lib/AuthContext";
 import { api } from "@/api/client";
-import { auth } from "@/lib/firebase";
 import {
   canAccessMonitorPage,
   canSendOnChannelForChannel,
@@ -12,8 +11,10 @@ import {
 } from "@/lib/userUtils";
 import { isDailyCodeVerified } from "@/lib/dailyCode";
 import { usePassiveTalkListen } from "@/components/ptt/PassiveTalkListenProvider";
-import { usePassiveMonitor } from "@/components/monitor/PassiveMonitorProvider";
 import usePttBroadcast from "@/hooks/usePttBroadcast";
+import usePttBusyChannels from "@/hooks/usePttBusyChannels";
+import useChannels from "@/hooks/useChannels";
+import { ensurePttAccess, invalidatePttAccess } from "@/lib/pttAccessCache";
 import { playBusyTone, playClearTone, unlockAudioForPTT } from "@/lib/pttTones";
 import { logVoiceMessageFailure } from "@/lib/voiceMessageLogging";
 import { claimPttChannels, cleanupStalePTTSignals, releasePttSignals } from "@/lib/pttSignals";
@@ -42,16 +43,11 @@ function resolveMonitorSendableChannels(user, channels) {
 export default function useGlobalPTT() {
   const { user, refreshChannelMembership } = useAuth();
   const passiveTalk = usePassiveTalkListen();
-  const passiveMonitor = usePassiveMonitor();
   const queryClient = useQueryClient();
   const lastSurface = getLastPttSurface();
   const monitorMode = lastSurface === "monitor" && canAccessMonitorPage(user);
 
-  const { data: channels = [] } = useQuery({
-    queryKey: ["channels"],
-    queryFn: () => api.entities.Channel.list("-created_date", 50),
-    enabled: Boolean(user?.id),
-  });
+  const { data: channels = [] } = useChannels({ enabled: Boolean(user?.id) });
 
   const sendableMonitorChannels = useMemo(
     () => (monitorMode ? resolveMonitorSendableChannels(user, channels) : []),
@@ -98,6 +94,16 @@ export default function useGlobalPTT() {
   const isPTTPressedRef = useRef(false);
   const pttMaxDurationStopRef = useRef(() => {});
 
+  const busyWatchIds = useMemo(
+    () => (monitorMode ? monitorTargetIds : (primaryChannelId ? [primaryChannelId] : [])),
+    [monitorMode, monitorTargetIds, primaryChannelId]
+  );
+  const { isAnyChannelBusy } = usePttBusyChannels({
+    channelIds: busyWatchIds,
+    userId: user?.id ?? null,
+    enabled: Boolean(user?.id && busyWatchIds.length > 0),
+  });
+
   const { startRecording, stopRecording, stopLiveTransmit } = usePttBroadcast({
     channelId: primaryChannelId,
     userId: user?.id,
@@ -115,8 +121,11 @@ export default function useGlobalPTT() {
         throw Object.assign(new Error("No active channel"), { code: "app/no-session" });
       }
 
-      await refreshChannelMembership();
-      await auth.currentUser?.getIdToken(true);
+      await ensurePttAccess({
+        userId: user.id,
+        channelId: primaryChannelId,
+        refreshMembership: refreshChannelMembership,
+      });
 
       const result = await stopRecording();
       if (!result) {
@@ -190,6 +199,9 @@ export default function useGlobalPTT() {
       queryClient.invalidateQueries({ queryKey: ["all-channel-messages"] });
     },
     onError: (err) => {
+      if (err?.code === "permission-denied" || err?.code === "auth/not-authenticated") {
+        invalidatePttAccess(user?.id, primaryChannelId);
+      }
       if (!err?.logged) {
         const isRecordingStage =
           err?.code === "app/recording-failed" || err?.code === "storage/unauthorized";
@@ -216,21 +228,21 @@ export default function useGlobalPTT() {
       api.entities.PTTSignal.delete(id).catch(() => {});
     });
 
+    void stopLiveTransmit();
+
     if (pttRecordingActiveRef.current) {
       pttRecordingActiveRef.current = false;
       sendMutation.mutate();
+      return;
     }
-  }, [monitorMode, sendMutation]);
 
-  const isChannelBusy = useCallback(() => {
-    if (monitorMode) {
-      return Boolean(passiveMonitor?.isLiveReceiving);
-    }
-    return Boolean(
-      passiveTalk?.isLiveReceiving
-      && passiveTalk?.listenChannelId === primaryChannelId
-    );
-  }, [monitorMode, passiveMonitor?.isLiveReceiving, passiveTalk?.isLiveReceiving, passiveTalk?.listenChannelId, primaryChannelId]);
+    void stopRecording().catch(() => {});
+  }, [monitorMode, sendMutation, stopLiveTransmit, stopRecording]);
+
+  const isChannelBusy = useCallback(
+    () => isAnyChannelBusy(busyWatchIds),
+    [isAnyChannelBusy, busyWatchIds]
+  );
 
   const handlePTTStart = useCallback(async () => {
     if (
@@ -279,7 +291,11 @@ export default function useGlobalPTT() {
           pttSignalRefs.current = [];
         }
 
-        void auth.currentUser?.getIdToken(true).catch(() => {});
+        void ensurePttAccess({
+          userId: user.id,
+          channelId: targetIds[0] ?? null,
+          refreshMembership: refreshChannelMembership,
+        }).catch(() => {});
 
         void cleanupStalePTTSignals({
           channelIds: targetIds,
@@ -361,6 +377,9 @@ export default function useGlobalPTT() {
 
     if (result.aborted || cancelled) {
       isPTTPressedRef.current = false;
+      if (pttRecordingActiveRef.current || cancelled) {
+        finishPttStop();
+      }
       return;
     }
 
@@ -388,6 +407,7 @@ export default function useGlobalPTT() {
     startRecording,
     stopRecording,
     finishPttStop,
+    refreshChannelMembership,
   ]);
 
   const handlePTTStop = useCallback(() => {
@@ -396,7 +416,6 @@ export default function useGlobalPTT() {
       isPTTPressedRef.current = false;
       return;
     }
-    if (!isPTTPressedRef.current && !pttRecordingActiveRef.current) return;
     isPTTPressedRef.current = false;
     finishPttStop();
   }, [finishPttStop]);

@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import useChannels from "@/hooks/useChannels";
 import { api } from "@/api/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -74,10 +75,7 @@ export default function Users() {
     queryFn: () => api.entities.User.list(),
   });
 
-  const { data: channels = [] } = useQuery({
-    queryKey: ["channels"],
-    queryFn: () => api.entities.Channel.list("-created_date", 200),
-  });
+  const { data: channels = [] } = useChannels();
 
   const { data: orgs = [] } = useQuery({
     queryKey: ["organizations"],

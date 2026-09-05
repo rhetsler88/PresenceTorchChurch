@@ -14,11 +14,12 @@ import { logVoiceMessageFailure } from "@/lib/voiceMessageLogging";
 import { markBroadcastHeard, hasHeardBroadcast } from "@/lib/heardBroadcasts";
 import { auth } from "@/lib/firebase";
 import { cleanupStalePTTSignals, claimPttChannels, releasePttSignals } from "@/lib/pttSignals";
-import { recordLivePttSignal } from "@/lib/liveSpeakerRegistry";
 import { pttDebugLog } from "@/lib/pttDebugLog";
 import { playAudioUrl, stopAudio } from "@/lib/audioPlayer";
 import { needsTranscription, requestTranscription } from "@/lib/transcription";
 import usePttBroadcast from "../hooks/usePttBroadcast";
+import useChannels from "@/hooks/useChannels";
+import usePttBusyChannels from "@/hooks/usePttBusyChannels";
 import { usePassiveMonitor } from "../components/monitor/PassiveMonitorProvider";
 import MonitorPTTBar from "../components/monitor/MonitorPTTBar";
 import { useRegisterPagePTTHandlers } from "@/components/ptt/PTTHandlerProvider";
@@ -235,8 +236,6 @@ export default function Monitor() {
   const [broadcastMode, setBroadcastMode] = useState(readStoredBroadcastMode);
   const [selectedBroadcastIds, setSelectedBroadcastIds] = useState([]);
   const [isPTTPressed, setIsPTTPressed] = useState(false);
-  const [isChannelBusy, setIsChannelBusy] = useState(false);
-  const [busyChannelIds, setBusyChannelIds] = useState(() => new Set());
 
   const isPlayingRef = useRef(false);
   const pttSignalRefs = useRef([]);
@@ -245,7 +244,6 @@ export default function Monitor() {
   const pttRecordingActiveRef = useRef(false);
   const isPTTPressedRef = useRef(false);
   const pttMaxDurationStopRef = useRef(() => {});
-  const channelBusyTimeoutRef = useRef(new Map());
   const heardBroadcastsRef = useRef(new Set());
   const broadcastModeRef = useRef(broadcastMode);
   broadcastModeRef.current = broadcastMode;
@@ -283,10 +281,7 @@ export default function Monitor() {
     ensureAudioReady();
   }, []);
 
-  const { data: channels = [] } = useQuery({
-    queryKey: ["channels"],
-    queryFn: () => api.entities.Channel.list("-created_date", 50),
-  });
+  const { data: channels = [] } = useChannels();
 
   const monitorChannels = useMemo(
     () => getMonitorChannels(user, channels),
@@ -306,6 +301,12 @@ export default function Monitor() {
     [monitorChannels]
   );
   const monitorChannelIdKey = monitorChannelIds.join(",");
+
+  const { busyChannelIds } = usePttBusyChannels({
+    channelIds: monitorChannelIds,
+    userId: user?.id ?? null,
+    enabled: Boolean(user?.id && monitorChannelIds.length > 0),
+  });
 
   const { data: messagesByChannel = {} } = useQuery({
     queryKey: ["all-channel-messages", user?.id, monitorChannelIdKey],
@@ -461,72 +462,6 @@ export default function Monitor() {
     onMaxDurationRef: pttMaxDurationStopRef,
   });
 
-  // Per-channel PTT subscriptions for transmit busy state (passive listen runs app-wide).
-  useEffect(() => {
-    if (!user?.id || monitorChannelIds.length === 0) return;
-
-    const unsub = api.entities.PTTSignal.subscribeMany(
-      (event) => {
-        if (event.data?.sender_id === user.id) return;
-
-        const channelId = event.data.channel_id;
-        if (event.type === "create") {
-          if (event.data?.broadcast_id) {
-            heardBroadcastsRef.current.add(event.data.broadcast_id);
-          }
-          recordLivePttSignal(event.data);
-          // Clear tone is handled app-wide by PassiveMonitorProvider (Firestore signal).
-          setBusyChannelIds((prev) => new Set(prev).add(channelId));
-          setIsChannelBusy(true);
-          const prevTimeout = channelBusyTimeoutRef.current.get(channelId);
-          if (prevTimeout) clearTimeout(prevTimeout);
-          channelBusyTimeoutRef.current.set(channelId, setTimeout(() => {
-            channelBusyTimeoutRef.current.delete(channelId);
-            setBusyChannelIds((prev) => {
-              const next = new Set(prev);
-              next.delete(channelId);
-              setIsChannelBusy(next.size > 0);
-              return next;
-            });
-          }, 15000));
-        } else if (event.type === "delete") {
-          const prevTimeout = channelBusyTimeoutRef.current.get(channelId);
-          if (prevTimeout) {
-            clearTimeout(prevTimeout);
-            channelBusyTimeoutRef.current.delete(channelId);
-          }
-          setBusyChannelIds((prev) => {
-            const next = new Set(prev);
-            next.delete(channelId);
-            setIsChannelBusy(next.size > 0);
-            return next;
-          });
-        }
-      },
-      monitorChannelIds.map((channelId) => ({ channel_id: channelId }))
-    );
-    return unsub;
-  }, [monitorChannelIdKey, user?.id]);
-
-  // Clean up stale PTT signals on mount
-  useEffect(() => {
-    if (!user?.id) return;
-    cleanupStalePTTSignals({ channelIds: monitorChannelIds, excludeSenderId: user.id })
-      .then((active) => {
-        if (active.length > 0) {
-          setBusyChannelIds(new Set(active.map((s) => s.channel_id)));
-          setIsChannelBusy(true);
-          const listenIds = passiveMonitor?.listenChannelIds || [];
-          for (const signal of active) {
-            if (!signal.broadcast_id || !listenIds.includes(signal.channel_id)) continue;
-            recordLivePttSignal(signal);
-            playClearTone(signal.broadcast_id);
-          }
-        }
-      })
-      .catch(() => {});
-  }, [monitorChannelIdKey, user?.id, passiveMonitor?.listenChannelIds]);
-
   // Clean up PTT signals on unmount
   useEffect(() => {
     const deleteOwnSignals = () => {
@@ -541,10 +476,6 @@ export default function Monitor() {
     return () => {
       window.removeEventListener("pagehide", handlePageExit);
       deleteOwnSignals();
-      for (const timeout of channelBusyTimeoutRef.current.values()) {
-        clearTimeout(timeout);
-      }
-      channelBusyTimeoutRef.current.clear();
     };
   }, []);
 
@@ -874,11 +805,16 @@ export default function Monitor() {
       api.entities.PTTSignal.delete(id).catch(() => {});
     });
 
+    void stopLiveTransmit();
+
     if (pttRecordingActiveRef.current) {
       pttRecordingActiveRef.current = false;
       sendMutation.mutate();
+      return;
     }
-  }, [sendMutation]);
+
+    void stopRecording().catch(() => {});
+  }, [sendMutation, stopLiveTransmit, stopRecording]);
 
   const handlePTTStart = useCallback(async () => {
     if (isPTTPressed || !user?.id || pttStartInFlightRef.current || pttRecordingActiveRef.current) return;
@@ -990,7 +926,11 @@ export default function Monitor() {
     }
 
     if (result.aborted || cancelled) {
+      isPTTPressedRef.current = false;
       setIsPTTPressed(false);
+      if (pttRecordingActiveRef.current || cancelled) {
+        finishPttStop();
+      }
       return;
     }
 
@@ -1038,7 +978,6 @@ export default function Monitor() {
       setIsPTTPressed(false);
       return;
     }
-    if (!isPTTPressedRef.current && !pttRecordingActiveRef.current) return;
     isPTTPressedRef.current = false;
     setIsPTTPressed(false);
     finishPttStop();

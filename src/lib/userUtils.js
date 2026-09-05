@@ -47,31 +47,35 @@ export function userHasDisplayName(user) {
   return false;
 }
 
+/** Name tokens suitable for initials — strips parenthetical nicknames and punctuation. */
+function nameTokensForInitials(name) {
+  return (name || "")
+    .trim()
+    .replace(/\([^)]*\)/g, " ")
+    .replace(/[()[\]{}]/g, " ")
+    .split(/\s+/)
+    .filter((word) => /^[A-Za-z]/.test(word));
+}
+
 /**
  * Returns initials from a display name string ("Jane Doe" → "JD", "Jane" → "JA").
  */
 export function getInitialsFromName(name) {
-  const trimmed = name?.trim();
-  if (!trimmed) return "?";
-  const parts = trimmed.split(/\s+/);
-  if (parts.length >= 2) {
-    return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+  const words = nameTokensForInitials(name);
+  if (words.length >= 2) {
+    return (words[0][0] + words[words.length - 1][0]).toUpperCase();
   }
-  return parts[0].slice(0, 2).toUpperCase();
+  if (words.length === 1) return words[0].slice(0, 2).toUpperCase();
+  return "?";
 }
 
 /**
- * Returns initials from first/last name (e.g. "Jane" + "Doe" → "JD").
- * Falls back to the first two letters of first name when no last name is set.
+ * Returns initials from the user's display name (e.g. "Safety TL (Ryan)" → "ST").
  */
 export function getInitials(user) {
   if (!user) return "?";
-  const first = user.first_name?.trim();
-  const last = user.last_name?.trim();
-  if (first && last) return (first[0] + last[0]).toUpperCase();
-  if (first) return first.slice(0, 2).toUpperCase();
-  if (last) return last.slice(0, 2).toUpperCase();
-  if (user.full_name?.trim()) return getInitialsFromName(user.full_name);
+  const display = getDisplayName(user);
+  if (display !== "Unknown") return getInitialsFromName(display);
   if (user.email?.trim()) {
     const local = user.email.split("@")[0];
     return local.slice(0, 2).toUpperCase();

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { api } from "@/api/client";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import useChannels from "@/hooks/useChannels";
 import { Button } from "@/components/ui/button";
 import { Plus, Radio } from "lucide-react";
 import SetAllProtectionLevel from "@/components/monitor/SetAllProtectionLevel";
@@ -44,10 +45,7 @@ export default function Channels() {
     return unsub;
   }, [queryClient]);
 
-  const { data: channels = [], isLoading } = useQuery({
-    queryKey: ["channels"],
-    queryFn: () => api.entities.Channel.list("-created_date", 100),
-  });
+  const { data: channels = [], isLoading } = useChannels();
 
   const createMutation = useMutation({
     mutationFn: async (data) => {

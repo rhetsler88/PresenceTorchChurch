@@ -1,7 +1,6 @@
 import React, { createContext, useContext, useEffect, useRef } from "react";
 import { useLocation } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
-import { api } from "@/api/client";
+import useChannels from "@/hooks/useChannels";
 import { useAuth } from "@/lib/AuthContext";
 import { usePassiveMonitor } from "@/components/monitor/PassiveMonitorProvider";
 import { bypassesDailyCode, canAccessChannel, getDisplayName } from "@/lib/userUtils";
@@ -44,12 +43,7 @@ export default function PresenceProvider({ children }) {
   );
   const displayName = user ? getDisplayName(user) : "";
 
-  const { data: channels = [] } = useQuery({
-    queryKey: ["channels"],
-    queryFn: () => api.entities.Channel.list("-created_date", 50),
-    enabled: presenceEnabled,
-    staleTime: 60_000,
-  });
+  const { data: channels = [] } = useChannels({ enabled: presenceEnabled });
 
   useEffect(() => {
     if (!presenceEnabled) {

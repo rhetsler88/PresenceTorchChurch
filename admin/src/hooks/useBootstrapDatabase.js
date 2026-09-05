@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import useChannels from "@/hooks/useChannels";
 import { api } from "@/api/client";
 import { isDefaultSetupComplete } from "@/lib/defaultSeed";
 import { toast } from "sonner";
@@ -13,10 +14,7 @@ export function useBootstrapDatabase(user, { autoSeed = false } = {}) {
     queryFn: () => api.organizations.list(),
   });
 
-  const { data: channels = [], isLoading: channelsLoading } = useQuery({
-    queryKey: ["channels"],
-    queryFn: () => api.entities.Channel.list("-created_date", 200),
-  });
+  const { data: channels = [], isLoading: channelsLoading } = useChannels();
 
   const setupComplete = isDefaultSetupComplete(orgs, channels);
   const needsSeed = !setupComplete;

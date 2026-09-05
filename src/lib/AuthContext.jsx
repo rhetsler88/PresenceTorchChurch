@@ -1,7 +1,7 @@
 import React, { createContext, useState, useContext, useEffect, useRef, useCallback } from "react";
 import { onAuthStateChanged, getRedirectResult } from "firebase/auth";
 import { Capacitor } from "@capacitor/core";
-import { doc, getDoc, setDoc, collection, query, where, limit, getDocs } from "firebase/firestore";
+import { doc, getDoc, setDoc } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase";
 import { authApi, OAUTH_PROVIDER_IDS } from "@/api/client";
 import { initPushNotifications, teardownPushNotifications, refreshWebPushAfterInstall } from "@/lib/pushNotifications";
@@ -93,65 +93,43 @@ async function expireSession() {
   await authApi.logout();
 }
 
-async function findOrphanProfileByEmail(email, excludeUid) {
-  if (!email) return null;
-  const snap = await getDocs(
-    query(collection(db, "users"), where("email", "==", email), limit(5))
+function isFirestorePermissionError(error) {
+  return (
+    error?.code === "permission-denied"
+    || /missing or insufficient permissions/i.test(error?.message || "")
   );
-  let best = null;
-  let bestRank = roleRank("user");
-  for (const candidate of snap.docs) {
-    if (candidate.id === excludeUid) continue;
-    const data = candidate.data() || {};
-    const role = data.role || "user";
-    const hasChannels = (data.member_of_channels || []).length > 0;
-    const rank = roleRank(role) + (data.is_monitor ? 0.5 : 0) + (hasChannels ? 0.25 : 0);
-    const isElevated = role !== "user" || data.is_monitor || hasChannels;
-    if (!isElevated) continue;
-    if (rank > bestRank) {
-      bestRank = rank;
-      best = { orphanId: candidate.id, ...data };
-    }
+}
+
+async function clearStaleAuthSession() {
+  try {
+    await expireSession();
+  } catch (err) {
+    console.warn("Failed to clear stale auth session:", err?.message || err);
   }
-  return best;
 }
 
-function roleRank(role) {
-  const ranks = { user: 0, monitor: 1, lead: 2, director: 3, admin: 4, super_admin: 5 };
-  return ranks[role] ?? 0;
-}
-
-function buildMergedProfile(existing, orphanData, firebaseUser, displayName, firstName, lastName) {
-  const existingRole = existing.role || "user";
-  const orphanRole = orphanData.role || "user";
-  const useOrphanRole = roleRank(orphanRole) > roleRank(existingRole);
+function buildNewUserProfile(firebaseUser, displayName, firstName, lastName) {
   return {
-    role: useOrphanRole ? orphanRole : existingRole,
-    onboarded: orphanData.onboarded ?? existing.onboarded,
-    directed_channels: orphanData.directed_channels?.length
-      ? orphanData.directed_channels
-      : (existing.directed_channels || []),
-    broadcast_excluded_channels: orphanData.broadcast_excluded_channels?.length
-      ? orphanData.broadcast_excluded_channels
-      : (existing.broadcast_excluded_channels || []),
-    member_of_channels: [
-      ...new Set([
-        ...(existing.member_of_channels || []),
-        ...(orphanData.member_of_channels || []),
-      ]),
-    ],
-    is_monitor: orphanData.is_monitor ?? existing.is_monitor ?? false,
-    organization: orphanData.organization || existing.organization || "",
-    receives_staff_alerts: orphanData.receives_staff_alerts ?? existing.receives_staff_alerts,
-    pending_staff_alerts: orphanData.pending_staff_alerts ?? existing.pending_staff_alerts,
     email: firebaseUser.email,
-    first_name: orphanData.first_name || existing.first_name || firstName,
-    last_name: orphanData.last_name || existing.last_name || lastName,
-    full_name: orphanData.full_name || existing.full_name || displayName,
+    first_name: firstName,
+    last_name: lastName,
+    full_name: displayName,
+    role: "user",
+    onboarded: false,
+    directed_channels: [],
+    broadcast_excluded_channels: [],
+    member_of_channels: [],
+    is_monitor: false,
+    pending_staff_alerts: false,
   };
 }
 
-async function loadOrCreateUser(firebaseUser) {
+async function ensureFirestoreAuth(firebaseUser, { forceRefresh = false } = {}) {
+  await auth.authStateReady();
+  await firebaseUser.getIdToken(forceRefresh);
+}
+
+async function loadOrCreateUserOnce(firebaseUser) {
   const userRef = doc(db, "users", firebaseUser.uid);
   const userDoc = await getDoc(userRef);
   const displayName = firebaseUser.displayName || "";
@@ -159,65 +137,12 @@ async function loadOrCreateUser(firebaseUser) {
   const lastName = rest.join(" ");
 
   if (!userDoc.exists()) {
-    const orphan = await findOrphanProfileByEmail(firebaseUser.email, firebaseUser.uid);
-    if (orphan) {
-      console.warn("[Auth] Migrating elevated profile to users/{auth.uid}", {
-        auth_uid: firebaseUser.uid,
-        orphan_doc_id: orphan.orphanId,
-        role: orphan.role,
-      });
-      const { orphanId: _orphanId, ...orphanData } = orphan;
-      const profile = buildMergedProfile({}, orphanData, firebaseUser, displayName, firstName, lastName);
-      await setDoc(userRef, profile);
-      return { id: firebaseUser.uid, ...profile };
-    }
-
-    const profile = {
-      email: firebaseUser.email,
-      first_name: firstName,
-      last_name: lastName,
-      full_name: displayName,
-      role: "user",
-      onboarded: false,
-      directed_channels: [],
-      broadcast_excluded_channels: [],
-      member_of_channels: [],
-      is_monitor: false,
-      pending_staff_alerts: false,
-    };
+    const profile = buildNewUserProfile(firebaseUser, displayName, firstName, lastName);
     await setDoc(userRef, profile);
     return { id: firebaseUser.uid, ...profile };
   }
 
   const existing = userDoc.data() || {};
-  const orphan = await findOrphanProfileByEmail(firebaseUser.email, firebaseUser.uid);
-  if (orphan && orphan.orphanId !== firebaseUser.uid) {
-    const { orphanId: _orphanId, ...orphanData } = orphan;
-    const existingRole = existing.role || "user";
-    const orphanRole = orphanData.role || "user";
-    const shouldMerge =
-      roleRank(orphanRole) > roleRank(existingRole)
-      || (
-        existingRole === "user"
-        && !existing.is_monitor
-        && !(existing.member_of_channels || []).length
-      );
-    if (shouldMerge) {
-      console.warn("[Auth] Merging elevated profile into users/{auth.uid}", {
-        auth_uid: firebaseUser.uid,
-        orphan_doc_id: orphan.orphanId,
-        role: orphanRole,
-      });
-      const merged = buildMergedProfile(existing, orphanData, firebaseUser, displayName, firstName, lastName);
-      await setDoc(userRef, merged, { merge: true });
-      return {
-        id: firebaseUser.uid,
-        email: firebaseUser.email,
-        ...existing,
-        ...merged,
-      };
-    }
-  }
 
   // Backfill names when Firebase displayName is set after email registration
   if (displayName && !existing.full_name && !existing.first_name) {
@@ -241,6 +166,22 @@ async function loadOrCreateUser(firebaseUser) {
     ...existing,
     email: existing.email?.trim() || authEmail,
   };
+}
+
+async function loadOrCreateUser(firebaseUser) {
+  let lastErr;
+  for (let attempt = 0; attempt < 4; attempt++) {
+    try {
+      await ensureFirestoreAuth(firebaseUser, { forceRefresh: attempt > 0 });
+      return await loadOrCreateUserOnce(firebaseUser);
+    } catch (err) {
+      lastErr = err;
+      const retryable = err?.code === "permission-denied";
+      if (!retryable || attempt >= 3) throw err;
+      await new Promise((resolve) => setTimeout(resolve, 150 * (attempt + 1)));
+    }
+  }
+  throw lastErr;
 }
 
 export const AuthProvider = ({ children }) => {
@@ -451,7 +392,14 @@ export const AuthProvider = ({ children }) => {
       } catch (error) {
         console.error("Auth state error:", error);
         clearNativeGoogleSignInPending();
-        setAuthError({ type: "unknown", message: error.message });
+        if (isFirestorePermissionError(error)) {
+          await clearStaleAuthSession();
+          finishSignedOut();
+          return;
+        }
+        setAuthError({ type: "unknown", message: formatAuthError(error) });
+        setUser(null);
+        setIsAuthenticated(false);
         setIsLoadingAuth(false);
         setAuthChecked(true);
       } finally {
@@ -484,13 +432,18 @@ export const AuthProvider = ({ children }) => {
         } catch (error) {
           console.error("Redirect sign-in failed:", error);
           if (!cancelled && !authInitSettled) {
-            setAuthError({
-              type: "unknown",
-              message: formatAuthError(error),
-            });
-            setIsLoadingAuth(false);
-            setAuthChecked(true);
-            settleAuthInit();
+            if (isFirestorePermissionError(error)) {
+              await clearStaleAuthSession();
+              finishSignedOut();
+            } else {
+              setAuthError({
+                type: "unknown",
+                message: formatAuthError(error),
+              });
+              setIsLoadingAuth(false);
+              setAuthChecked(true);
+              settleAuthInit();
+            }
           }
         } finally {
           clearOAuthRedirectPending();

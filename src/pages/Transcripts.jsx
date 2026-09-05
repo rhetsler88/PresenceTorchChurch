@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { api } from "@/api/client";
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from "@tanstack/react-query";
+import useChannels from "@/hooks/useChannels";
 import { Input } from "@/components/ui/input";
 import { Search, FileText, FileUp, CheckSquare, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -140,10 +141,7 @@ export default function Transcripts() {
     },
   });
 
-  const { data: channels = [] } = useQuery({
-    queryKey: ["channels"],
-    queryFn: () => api.entities.Channel.list("-created_date", 100),
-  });
+  const { data: channels = [] } = useChannels();
 
   const readableChannels = useMemo(() => {
     if (!user?.id || !user?.role || !channels.length) return [];

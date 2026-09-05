@@ -1,7 +1,7 @@
 import React from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { QueryClientProvider } from "@tanstack/react-query";
-import { Toaster } from "@/components/ui/toaster";
+import AppToaster from "@/components/ui/AppToaster";
 import { AuthProvider, useAuth } from "@/lib/AuthContext";
 import { queryClientInstance } from "@/lib/query-client";
 import AdminLayout from "@admin/layouts/AdminLayout";
@@ -129,7 +129,7 @@ export default function App() {
         <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
           <AdminAppRoutes />
         </BrowserRouter>
-        <Toaster />
+        <AppToaster />
       </QueryClientProvider>
     </AuthProvider>
   );

@@ -8,21 +8,37 @@ export default function PTTButton({ isPressed, isConnected, isReceiving, isChann
   const [isHeld, setIsHeld] = useState(false);
   const timerRef = useRef(null);
   const buttonRef = useRef(null);
+  const activePointerIdRef = useRef(null);
 
   const showPressed = isHeld || isPressed;
 
+  const endPress = useCallback((pointerId) => {
+    if (activePointerIdRef.current == null) return;
+    if (pointerId != null && activePointerIdRef.current !== pointerId) return;
+
+    const capturedId = activePointerIdRef.current;
+    activePointerIdRef.current = null;
+    setIsHeld(false);
+    if (buttonRef.current?.hasPointerCapture?.(capturedId)) {
+      buttonRef.current.releasePointerCapture(capturedId);
+    }
+    onStop?.();
+  }, [onStop]);
+
   // Parent clears isPTTPressed on release even when pointer events are lost (e.g. mic permission dialog).
   useEffect(() => {
-    if (!isPressed) setIsHeld(false);
+    if (!isPressed) {
+      activePointerIdRef.current = null;
+      setIsHeld(false);
+    }
   }, [isPressed]);
 
   // Catch release anywhere on screen — permission dialogs and WebViews often swallow button pointerup.
   useEffect(() => {
     if (!showPressed) return;
 
-    const handleGlobalRelease = () => {
-      setIsHeld(false);
-      onStop?.();
+    const handleGlobalRelease = (e) => {
+      endPress(e.pointerId);
     };
 
     window.addEventListener("pointerup", handleGlobalRelease);
@@ -31,7 +47,7 @@ export default function PTTButton({ isPressed, isConnected, isReceiving, isChann
       window.removeEventListener("pointerup", handleGlobalRelease);
       window.removeEventListener("pointercancel", handleGlobalRelease);
     };
-  }, [showPressed, onStop]);
+  }, [showPressed, endPress]);
 
   useEffect(() => {
     if (showPressed) {
@@ -47,6 +63,7 @@ export default function PTTButton({ isPressed, isConnected, isReceiving, isChann
     if (e.button !== undefined && e.button !== 0) return;
     e.preventDefault();
     unlockAudioForPTT();
+    activePointerIdRef.current = e.pointerId;
     setIsHeld(true);
     buttonRef.current?.setPointerCapture?.(e.pointerId);
     onStart?.();
@@ -54,13 +71,9 @@ export default function PTTButton({ isPressed, isConnected, isReceiving, isChann
 
   const handlePointerUp = useCallback((e) => {
     e.preventDefault();
-    if (!isHeld) return;
-    setIsHeld(false);
-    if (buttonRef.current?.hasPointerCapture?.(e.pointerId)) {
-      buttonRef.current.releasePointerCapture(e.pointerId);
-    }
-    onStop?.();
-  }, [isHeld, onStop]);
+    if (activePointerIdRef.current == null) return;
+    endPress(e.pointerId);
+  }, [endPress]);
 
   const handlePointerCancel = useCallback((e) => {
     handlePointerUp(e);

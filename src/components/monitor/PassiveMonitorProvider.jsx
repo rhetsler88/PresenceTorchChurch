@@ -7,7 +7,7 @@ import React, {
   useRef,
   useState,
 } from "react";
-import { useQuery } from "@tanstack/react-query";
+import useChannels from "@/hooks/useChannels";
 import { api } from "@/api/client";
 import { isAgoraEnabled } from "@/lib/agora";
 import {
@@ -36,9 +36,7 @@ const PassiveMonitorContext = createContext(null);
 export function PassiveMonitorProvider({ user, children }) {
   const enabled = canAccessMonitorPage(user);
 
-  const { data: channels = [] } = useQuery({
-    queryKey: ["channels"],
-    queryFn: () => api.entities.Channel.list("-created_date", 50),
+  const { data: channels = [] } = useChannels({
     enabled: enabled && Boolean(user?.id),
   });
 

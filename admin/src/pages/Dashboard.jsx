@@ -1,5 +1,6 @@
 import React from "react";
 import { useQuery } from "@tanstack/react-query";
+import useChannels from "@/hooks/useChannels";
 import { api } from "@/api/client";
 import { useAuth } from "@/lib/AuthContext";
 import { Building2, Users, Radio, Inbox, MessageSquare } from "lucide-react";
@@ -32,11 +33,7 @@ export default function Dashboard() {
     queryFn: () => api.entities.User.list(),
     enabled: queriesEnabled,
   });
-  const { data: channels = [] } = useQuery({
-    queryKey: ["channels"],
-    queryFn: () => api.entities.Channel.list("-created_date", 200),
-    enabled: queriesEnabled,
-  });
+  const { data: channels = [] } = useChannels({ enabled: queriesEnabled });
   const { data: requests = [] } = useQuery({
     queryKey: ["accessRequests"],
     queryFn: () => api.entities.AccessRequest.list("-created_date", 200),

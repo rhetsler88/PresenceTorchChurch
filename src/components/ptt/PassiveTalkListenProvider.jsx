@@ -7,7 +7,7 @@ import React, {
   useRef,
   useState,
 } from "react";
-import { useQuery } from "@tanstack/react-query";
+import useChannels from "@/hooks/useChannels";
 import { api } from "@/api/client";
 import { isAgoraEnabled } from "@/lib/agora";
 import {
@@ -59,11 +59,7 @@ export function PassiveTalkListenProvider({ user, children }) {
     listenPaused: false,
   });
 
-  const { data: channels = [] } = useQuery({
-    queryKey: ["channels"],
-    queryFn: () => api.entities.Channel.list("-created_date", 50),
-    enabled,
-  });
+  const { data: channels = [] } = useChannels({ enabled });
 
   const fallbackChannelId = useMemo(
     () => (enabled ? resolveStoredTalkChannelId(user, channels) : null),

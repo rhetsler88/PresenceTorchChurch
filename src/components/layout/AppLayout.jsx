@@ -102,7 +102,7 @@ export default function AppLayout() {
       >
         <Outlet />
       </div>
-      <nav className="fixed bottom-0 left-0 right-0 bg-card border-t border-border z-50 safe-bottom max-w-[var(--app-vw,100%)]">
+      <nav className="fixed bottom-0 left-0 right-0 bg-card border-t border-border z-50 safe-bottom">
         <div className={`flex items-center mx-auto w-full min-w-0 ${compact ? "justify-evenly px-0.5 py-1" : "justify-around max-w-2xl px-1 py-1.5"}`}>
           {navItems.map(({ path, icon: Icon, label }) => {
             const isActive = path === "/admin"

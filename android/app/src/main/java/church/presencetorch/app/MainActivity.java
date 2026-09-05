@@ -1,6 +1,7 @@
 package church.presencetorch.app;
 
 import android.content.Intent;
+import android.content.res.Configuration;
 import android.os.Bundle;
 import android.view.KeyEvent;
 import android.webkit.CookieManager;
@@ -57,6 +58,13 @@ public class MainActivity extends BridgeActivity {
         refreshWebViewAfterResume();
     }
 
+    /** Fold/unfold and cover-display moves — let the OS resize the window, then reflow the WebView. */
+    @Override
+    public void onConfigurationChanged(Configuration newConfig) {
+        super.onConfigurationChanged(newConfig);
+        refreshWebViewAfterDisplayChange();
+    }
+
     /** Restore the listen-session notification if the user swiped it away on Android 13+. */
     private void reinforceBackgroundListenNotification() {
         if (!BackgroundAudioService.isSessionActive()) {
@@ -79,6 +87,10 @@ public class MainActivity extends BridgeActivity {
     private static MainActivity activeInstance;
 
     private void refreshWebViewAfterResume() {
+        refreshWebViewAfterDisplayChange();
+    }
+
+    private void refreshWebViewAfterDisplayChange() {
         WebView webView = getBridge() != null ? getBridge().getWebView() : null;
         if (webView == null) {
             return;
@@ -97,6 +109,7 @@ public class MainActivity extends BridgeActivity {
             webView.evaluateJavascript(
                 "(function(){"
                     + "try {"
+                    + "window.dispatchEvent(new Event('resize'));"
                     + "window.dispatchEvent(new Event('resume'));"
                     + "if (document.documentElement) {"
                     + "document.documentElement.style.transform='translateZ(0)';"
@@ -172,6 +185,8 @@ public class MainActivity extends BridgeActivity {
 
         webView.getSettings().setJavaScriptEnabled(true);
         webView.getSettings().setDomStorageEnabled(true);
+        webView.getSettings().setUseWideViewPort(true);
+        webView.getSettings().setLoadWithOverviewMode(true);
     }
 
     @Override

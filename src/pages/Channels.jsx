@@ -147,8 +147,8 @@ export default function Channels() {
       : "Request access to join a channel";
 
   return (
-    <div className="min-h-screen w-full safe-top">
-      <div className="px-4 pt-4 pb-4 border-b border-border sm:px-5 sm:pt-6">
+    <div className="w-full safe-top">
+      <div className="sticky top-0 z-20 bg-background/95 backdrop-blur-sm px-4 pt-4 pb-4 border-b border-border sm:px-5 sm:pt-6">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between max-sm:pr-12 sm:pr-48">
           <div className="min-w-0">
             <h1 className="text-lg font-bold text-foreground sm:text-xl">Channels</h1>

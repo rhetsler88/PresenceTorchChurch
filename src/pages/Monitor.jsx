@@ -908,23 +908,20 @@ export default function Monitor() {
       const broadcastId = crypto.randomUUID();
       pttDebugLog("ptt.sequence.start", { surface: "monitor", broadcastId, channelIds: targetIds });
       try {
-        try {
-          await auth.currentUser?.getIdToken(true);
-        } catch (syncErr) {
-          console.warn("PTT token refresh failed:", syncErr);
-        }
-
         if (pttSignalRefs.current.length) {
           await releasePttSignals(pttSignalRefs.current);
           pttSignalRefs.current = [];
         }
 
-        await cleanupStalePTTSignals({
+        void auth.currentUser?.getIdToken(true).catch((syncErr) => {
+          console.warn("PTT token refresh failed:", syncErr);
+        });
+
+        void cleanupStalePTTSignals({
           channelIds: targetIds,
           excludeSenderId: user.id,
         }).catch(() => {});
 
-        // Claim channels immediately so members hear the clear tone without waiting for mic setup.
         const claimPromise = claimPttChannels({
           channelIds: targetIds,
           senderId: user.id,

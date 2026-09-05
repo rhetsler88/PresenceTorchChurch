@@ -701,18 +701,12 @@ export default function Talk() {
       const broadcastId = crypto.randomUUID();
       pttDebugLog("ptt.sequence.start", { surface: "talk", broadcastId, channelId: effectiveChannelId });
       try {
-        try {
-          await ensureFirestoreMembership();
-        } catch (syncErr) {
-          console.warn("PTT access sync failed:", syncErr);
-        }
-
         void cleanupStalePTTSignals({
           channelId: effectiveChannelId,
           excludeSenderId: user.id,
         }).catch(() => {});
 
-        // Claim channel immediately so listeners hear the clear tone without waiting for mic setup.
+        // Fire PTT claim first — listeners must hear clear tone before mic/Agora setup.
         const claimPromise = claimPttChannels({
           channelIds: [effectiveChannelId],
           senderId: user.id,
@@ -723,7 +717,12 @@ export default function Talk() {
         pttDebugLog("ptt.claim.sent", { surface: "talk", broadcastId, channelIds: [effectiveChannelId] });
         playClearTone(broadcastId);
 
+        const membershipPromise = ensureFirestoreMembership().catch((syncErr) => {
+          console.warn("PTT access sync failed:", syncErr);
+        });
+
         const started = await startRecording({ broadcastId });
+        await membershipPromise;
 
         if (pttStopPendingRef.current) {
           if (started) {

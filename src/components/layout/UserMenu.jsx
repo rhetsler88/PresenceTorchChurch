@@ -34,10 +34,10 @@ export default function UserMenu() {
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <button
-            className={`fixed z-[60] flex items-center rounded-full bg-card border border-border shadow-sm hover:border-primary/40 transition-colors active:scale-95 ${
+            className={`fixed z-[60] flex items-center rounded-full bg-card border border-border shadow-sm hover:border-primary/40 transition-colors active:scale-95 max-w-[calc(100vw-1rem-env(safe-area-inset-left,0px)-env(safe-area-inset-right,0px))] ${
               compact
                 ? "gap-0 p-0.5 right-[calc(0.5rem+env(safe-area-inset-right,0px))]"
-                : "gap-2 p-1 sm:pl-1 sm:pr-2.5 right-[calc(1.75rem+env(safe-area-inset-right,0px))]"
+                : "gap-2 p-1 sm:pl-1 sm:pr-2.5 right-[calc(0.75rem+env(safe-area-inset-right,0px))] sm:right-[calc(1rem+env(safe-area-inset-right,0px))]"
             }`}
             style={{ top: "calc(env(safe-area-inset-top, 0px) + 0.75rem)" }}
             title="Account menu"

@@ -11,6 +11,10 @@ describe("flip cover screen detection", () => {
     assert.equal(isCoverScreenSize(720, 480), true);
   });
 
+  it("treats normal phone portrait width as main screen", () => {
+    assert.equal(isCoverScreenSize(390, 844), false);
+  });
+
   it("treats unfolded inner display as main screen", () => {
     assert.equal(isCoverScreenSize(1080, 2400), false);
   });

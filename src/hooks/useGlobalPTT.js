@@ -274,14 +274,14 @@ export default function useGlobalPTT() {
         channelIds: targetIds,
       });
       try {
-        await auth.currentUser?.getIdToken(true);
-
         if (monitorMode && pttSignalRefs.current.length) {
           await releasePttSignals(pttSignalRefs.current);
           pttSignalRefs.current = [];
         }
 
-        await cleanupStalePTTSignals({
+        void auth.currentUser?.getIdToken(true).catch(() => {});
+
+        void cleanupStalePTTSignals({
           channelIds: targetIds,
           channelId: targetIds[0],
           excludeSenderId: user.id,

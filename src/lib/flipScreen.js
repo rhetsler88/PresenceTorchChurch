@@ -1,15 +1,21 @@
 /** @typedef {{ isCover: boolean, width: number, height: number }} FlipScreenDetail */
 
-const COVER_THRESHOLD_PX = 500;
+/** Razr cover ~264px; normal phones are ~360–430px CSS width — do not treat as cover. */
+const COVER_MAX_WIDTH_PX = 320;
+/** Landscape strip on flip outer display. */
+const COVER_MAX_HEIGHT_PX = 480;
+const COVER_LANDSCAPE_MAX_WIDTH_PX = 720;
 const RESIZE_DEBOUNCE_MS = 150;
 
 /** @type {ReturnType<typeof setTimeout> | null} */
 let resizeTimer = null;
 let installed = false;
 
-/** Most flip outer displays are narrower/shorter than 500 CSS px. */
+/** True only on flip outer displays (e.g. Razr cover), not regular phones. */
 export function isCoverScreenSize(width, height) {
-  return width < COVER_THRESHOLD_PX || height < COVER_THRESHOLD_PX;
+  if (width <= COVER_MAX_WIDTH_PX) return true;
+  if (height <= COVER_MAX_HEIGHT_PX && width <= COVER_LANDSCAPE_MAX_WIDTH_PX) return true;
+  return false;
 }
 
 /** @returns {FlipScreenDetail} */

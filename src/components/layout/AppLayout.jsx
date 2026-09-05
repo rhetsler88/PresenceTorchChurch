@@ -121,7 +121,7 @@ export default function AppLayout() {
                 }`}
               >
                 <Icon className={`${compact ? "w-5 h-5" : "w-5 h-5"} ${isActive ? "stroke-[2.5]" : ""}`} />
-                <span className={`font-semibold tracking-wide uppercase ${compact ? "sr-only" : "text-[10px]"}`}>
+                <span className={`font-semibold tracking-wide uppercase leading-none ${compact ? "text-[9px]" : "text-[10px]"}`}>
                   {label}
                 </span>
                 {isActive && (

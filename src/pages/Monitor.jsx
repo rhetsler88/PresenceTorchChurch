@@ -8,13 +8,14 @@ import { Radio, Volume2, VolumeX, Eye, Play, Pause, WifiOff, GripVertical } from
 import { Button } from "@/components/ui/button";
 import { etzTime } from "@/lib/etz";
 import { deviceDayKey, deviceDayLabel } from "@/lib/deviceDate";
-import { getDisplayName, getInitials, getInitialsFromName, getMonitorChannels, canSendOnChannelForChannel } from "@/lib/userUtils";
+import { getDisplayName, getInitials, getInitialsFromName, getMonitorChannels, canSendOnChannelForChannel, filterAppVisibleMessages } from "@/lib/userUtils";
 import { playClearTone, playBusyTone, ensureAudioReady, unlockAudioForPTT } from "@/lib/pttTones";
 import { logVoiceMessageFailure } from "@/lib/voiceMessageLogging";
 import { markBroadcastHeard, hasHeardBroadcast } from "@/lib/heardBroadcasts";
 import { auth } from "@/lib/firebase";
 import { cleanupStalePTTSignals, claimPttChannels, releasePttSignals } from "@/lib/pttSignals";
 import { recordLivePttSignal } from "@/lib/liveSpeakerRegistry";
+import { pttDebugLog } from "@/lib/pttDebugLog";
 import { playAudioUrl, stopAudio } from "@/lib/audioPlayer";
 import { needsTranscription, requestTranscription } from "@/lib/transcription";
 import usePttBroadcast from "../hooks/usePttBroadcast";
@@ -413,6 +414,15 @@ export default function Monitor() {
     return [targetId].filter((id) => id && sendableChannelIdsRef.current.includes(id));
   }, []);
 
+  const warmPublishChannelIds = useMemo(() => {
+    if (broadcastMode === "multi") {
+      return selectedBroadcastIds.filter((id) => sendableChannelIds.includes(id));
+    }
+    return targetChannelId && sendableChannelIds.includes(targetChannelId)
+      ? [targetChannelId]
+      : [];
+  }, [broadcastMode, selectedBroadcastIds, sendableChannelIds, targetChannelId]);
+
   const handleTargetChannelChange = useCallback((id) => {
     setTargetChannelId(id);
     localStorage.setItem("lastChannelId", id);
@@ -438,6 +448,7 @@ export default function Monitor() {
   const {
     startRecording,
     stopRecording,
+    stopLiveTransmit,
     heardBroadcastsRef: pttHeardRef,
   } = usePttBroadcast({
     channelId: targetChannelId,
@@ -445,6 +456,8 @@ export default function Monitor() {
     userName: user ? getDisplayName(user) : "",
     listenActive: false,
     receiveEnabled: false,
+    warmJoin: true,
+    warmPublishChannelIds,
     onMaxDurationRef: pttMaxDurationStopRef,
   });
 
@@ -462,9 +475,7 @@ export default function Monitor() {
             heardBroadcastsRef.current.add(event.data.broadcast_id);
           }
           recordLivePttSignal(event.data);
-          if (listenChannelIdsRef.current.includes(channelId)) {
-            playClearTone(event.data?.broadcast_id);
-          }
+          // Clear tone is handled app-wide by PassiveMonitorProvider (Firestore signal).
           setBusyChannelIds((prev) => new Set(prev).add(channelId));
           setIsChannelBusy(true);
           const prevTimeout = channelBusyTimeoutRef.current.get(channelId);
@@ -505,10 +516,16 @@ export default function Monitor() {
         if (active.length > 0) {
           setBusyChannelIds(new Set(active.map((s) => s.channel_id)));
           setIsChannelBusy(true);
+          const listenIds = passiveMonitor?.listenChannelIds || [];
+          for (const signal of active) {
+            if (!signal.broadcast_id || !listenIds.includes(signal.channel_id)) continue;
+            recordLivePttSignal(signal);
+            playClearTone(signal.broadcast_id);
+          }
         }
       })
       .catch(() => {});
-  }, [monitorChannelIdKey, user?.id]);
+  }, [monitorChannelIdKey, user?.id, passiveMonitor?.listenChannelIds]);
 
   // Clean up PTT signals on unmount
   useEffect(() => {
@@ -590,6 +607,7 @@ export default function Monitor() {
 
       if (event.type === "create") {
         patchChannelMessagesCache(channelId, (prev) => {
+          if (filterAppVisibleMessages([event.data]).length === 0) return prev;
           const without = prev.filter((msg) => msg.id !== event.data.id);
           return [event.data, ...without];
         });
@@ -884,8 +902,11 @@ export default function Monitor() {
     pttStopPendingRef.current = false;
     pttRecordingActiveRef.current = false;
 
+    pttDebugLog("ptt.press", { surface: "monitor", channelIds: targetIds });
+
     const startSequence = (async () => {
       const broadcastId = crypto.randomUUID();
+      pttDebugLog("ptt.sequence.start", { surface: "monitor", broadcastId, channelIds: targetIds });
       try {
         try {
           await auth.currentUser?.getIdToken(true);
@@ -911,6 +932,7 @@ export default function Monitor() {
           broadcastId,
           primaryChannelId,
         });
+        pttDebugLog("ptt.claim.sent", { surface: "monitor", broadcastId, channelIds: targetIds });
         playClearTone(broadcastId);
 
         const started = await startRecording({ broadcastId, publishChannelIds: targetIds });
@@ -1026,9 +1048,16 @@ export default function Monitor() {
   }, [finishPttStop]);
 
   pttMaxDurationStopRef.current = () => {
-    if (!isPTTPressedRef.current && !pttRecordingActiveRef.current) return;
     toast.info("Maximum transmission time reached (35 seconds)");
-    handlePTTStop();
+    isPTTPressedRef.current = false;
+    setIsPTTPressed(false);
+    pttStopPendingRef.current = false;
+    void stopLiveTransmit();
+    if (pttRecordingActiveRef.current) {
+      finishPttStop();
+    } else {
+      void stopRecording().catch(() => {});
+    }
   };
 
   useRegisterPagePTTHandlers(

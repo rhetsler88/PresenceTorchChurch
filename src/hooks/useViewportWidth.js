@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { getFlipScreenDetail } from "@/lib/flipScreen";
 
 function readViewportWidth() {
   if (typeof window === "undefined") return 0;
@@ -12,10 +13,12 @@ export function useViewportWidth() {
   useEffect(() => {
     const update = () => setWidth(readViewportWidth());
     update();
+    window.addEventListener("flipscreenchange", update);
     window.addEventListener("resize", update);
     window.visualViewport?.addEventListener("resize", update);
     window.addEventListener("orientationchange", update);
     return () => {
+      window.removeEventListener("flipscreenchange", update);
       window.removeEventListener("resize", update);
       window.visualViewport?.removeEventListener("resize", update);
       window.removeEventListener("orientationchange", update);
@@ -25,8 +28,29 @@ export function useViewportWidth() {
   return width;
 }
 
-/** True on ultra-narrow displays (e.g. Motorola Razr cover ~264px). */
+/** True on Motorola Razr cover / other flip outer displays. */
+export function useCoverScreen() {
+  const [isCover, setIsCover] = useState(() => getFlipScreenDetail().isCover);
+
+  useEffect(() => {
+    const update = (event) => {
+      setIsCover(
+        typeof event?.detail?.isCover === "boolean"
+          ? event.detail.isCover
+          : getFlipScreenDetail().isCover
+      );
+    };
+    update();
+    window.addEventListener("flipscreenchange", update);
+    return () => window.removeEventListener("flipscreenchange", update);
+  }, []);
+
+  return isCover;
+}
+
+/** True on ultra-narrow displays (cover screen or width < 360px). */
 export function useCompactLayout() {
   const width = useViewportWidth();
-  return width > 0 && width < 360;
+  const isCover = useCoverScreen();
+  return isCover || (width > 0 && width < 360);
 }

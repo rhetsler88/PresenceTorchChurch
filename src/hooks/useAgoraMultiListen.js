@@ -7,6 +7,7 @@ import {
 } from "@/lib/agoraRemote";
 import { acquireAgoraClient, releaseAgoraClient, sessionKey } from "@/lib/agoraSession";
 import { configureAgoraSdk } from "@/lib/agoraInit";
+import { pttDebugLog } from "@/lib/pttDebugLog";
 
 configureAgoraSdk();
 
@@ -77,6 +78,7 @@ export default function useAgoraMultiListen({
           if (subscribed && !cancelled && activeClients.has(channelId)) {
             remoteCountRef.current += 1;
             setIsReceiving(true);
+            pttDebugLog("agora.remote-audio.start", { channelId, uid: remoteUser.uid });
             paramsRef.current.onRemoteTalkStart?.(channelId, remoteUser.uid);
           }
         } catch (err) {
@@ -127,6 +129,7 @@ export default function useAgoraMultiListen({
             if (cancelled || !activeClients.has(channelId)) return;
             remoteCountRef.current += 1;
             setIsReceiving(true);
+            pttDebugLog("agora.remote-audio.start", { channelId, uid: null, existing: true });
             paramsRef.current.onRemoteTalkStart?.(channelId, null);
           },
           { channelId, firebaseUserId: userId },

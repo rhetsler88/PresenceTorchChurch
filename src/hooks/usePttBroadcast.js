@@ -4,6 +4,7 @@ import { armPttMaxTransmission, clearPttMaxTransmission } from "@/lib/pttLimits"
 import useRelayBroadcast from "./useRelayBroadcast";
 import useAgoraPTT from "./useAgoraPTT";
 import useAgoraMultiPublish from "./useAgoraMultiPublish";
+import { pttDebugLog } from "@/lib/pttDebugLog";
 
 /**
  * PTT broadcast: Firebase relay archives every transmission; live chunks only when Agora is off.
@@ -14,6 +15,8 @@ export default function usePttBroadcast(options) {
   const {
     listenActive = false,
     receiveEnabled = listenActive,
+    warmJoin = false,
+    warmPublishChannelIds = [],
     channelId,
     userId,
     userName,
@@ -30,13 +33,30 @@ export default function usePttBroadcast(options) {
   const liveActiveRef = useRef(false);
   const [isTransmitting, setIsTransmitting] = useState(false);
 
+  const shouldWarmSingleChannel = warmJoin && agoraEnabled && Boolean(channelId);
+
   const agora = useAgoraPTT({
     channelId,
     userId,
     listenActive,
+    warmJoin: shouldWarmSingleChannel,
     receiveEnabled,
     onRemoteLiveAudio,
   });
+
+  const warmPublishKey = warmPublishChannelIds.filter(Boolean).sort().join(",");
+
+  useEffect(() => {
+    if (!agoraEnabled || !userId) return undefined;
+    const ids = warmPublishChannelIds.filter(Boolean);
+    if (ids.length <= 1) return undefined;
+
+    const timer = setTimeout(() => {
+      void agoraMulti.warmJoinChannels(ids);
+    }, 200);
+
+    return () => clearTimeout(timer);
+  }, [agoraEnabled, userId, warmPublishKey, agoraMulti.warmJoinChannels]);
 
   useEffect(() => () => {
     clearPttMaxTransmission(maxDurationTimerRef);
@@ -47,15 +67,44 @@ export default function usePttBroadcast(options) {
       ?? (channelId ? [channelId] : []);
     const broadcastId = externalBroadcastId || crypto.randomUUID();
 
+    pttDebugLog("broadcast.start", {
+      broadcastId,
+      channelId,
+      publishChannelIds: publishIds,
+      agoraEnabled,
+    });
+
     const useArchiveOnly = agoraEnabled && publishIds.length > 0;
-    const relayOk = await relay.startRecording({ broadcastId, archiveOnly: useArchiveOnly });
-    if (!relayOk) return false;
+    const agoraReadyPromise = agoraEnabled && publishIds.length === 1
+      ? agora.ensureJoined()
+      : null;
+    const multiWarmPromise = agoraEnabled && publishIds.length > 1
+      ? agoraMulti.warmJoinChannels(publishIds)
+      : null;
+
+    const relayOk = await Promise.all([
+      relay.startRecording({ broadcastId, archiveOnly: useArchiveOnly }),
+      agoraReadyPromise?.catch(() => null) ?? Promise.resolve(null),
+      multiWarmPromise?.catch(() => null) ?? Promise.resolve(null),
+    ]).then(([started]) => started);
+
+    if (!relayOk) {
+      pttDebugLog("broadcast.mic-denied", { broadcastId });
+      return false;
+    }
+
+    pttDebugLog("broadcast.mic-live", { broadcastId, publishChannelIds: publishIds });
 
     relayActiveRef.current = true;
     liveActiveRef.current = true;
     setIsTransmitting(true);
     usingAgoraRef.current = false;
     usingMultiPublishRef.current = false;
+
+    // Arm cutoff as soon as the mic is live — not after Agora publish (can take several seconds).
+    armPttMaxTransmission(maxDurationTimerRef, () => {
+      onMaxDurationRef?.current?.();
+    }, { broadcastId, channelId, publishChannelIds: publishIds });
 
     if (agoraEnabled && publishIds.length > 0) {
       const stream = relay.getMediaStream();
@@ -80,21 +129,26 @@ export default function usePttBroadcast(options) {
           console.warn("Agora publish failed:", err);
         }
         if (!usingAgoraRef.current) {
+          pttDebugLog("broadcast.agora-fallback-relay", { broadcastId });
           relay.enableLiveRelay();
+        } else {
+          pttDebugLog("broadcast.agora-live", {
+            broadcastId,
+            multi: usingMultiPublishRef.current,
+          });
         }
       }
     }
 
-    armPttMaxTransmission(maxDurationTimerRef, () => {
-      onMaxDurationRef?.current?.();
-    });
-
+    pttDebugLog("broadcast.ready", { broadcastId });
     return true;
   }, [
     agoraEnabled,
     channelId,
+    agora.ensureJoined,
     agora.startRecording,
     agoraMulti.startRecording,
+    agoraMulti.warmJoinChannels,
     relay.startRecording,
     relay.getMediaStream,
     relay.enableLiveRelay,
@@ -104,6 +158,7 @@ export default function usePttBroadcast(options) {
   const stopLiveTransmit = useCallback(async () => {
     clearPttMaxTransmission(maxDurationTimerRef);
     if (!liveActiveRef.current) return;
+    pttDebugLog("broadcast.stop-live", {});
     liveActiveRef.current = false;
     setIsTransmitting(false);
 

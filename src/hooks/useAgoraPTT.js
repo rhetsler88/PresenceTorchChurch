@@ -10,6 +10,7 @@ import { acquireAgoraClient, releaseAgoraClient, sessionKey } from "@/lib/agoraS
 import { configureAgoraSdk } from "@/lib/agoraInit";
 import { AGORA_SPEECH_ENCODER } from "@/lib/agoraAudio";
 import { destroyMicDenoise, openMicSession } from "@/lib/micDenoise";
+import { pttDebugLog } from "@/lib/pttDebugLog";
 
 configureAgoraSdk();
 
@@ -96,6 +97,8 @@ export default function useAgoraPTT({
   channelId,
   userId,
   listenActive = false,
+  /** Join channel on mount (no mic) so PTT only publishes — cuts cold-start latency. */
+  warmJoin = false,
   /** When false, only publish — remote audio is handled elsewhere (e.g. useAgoraMultiListen). */
   receiveEnabled = listenActive,
   /** Called when remote live audio starts (used to mark broadcast heard for auto-play skip). */
@@ -120,6 +123,7 @@ export default function useAgoraPTT({
   const joinPromiseRef = useRef(null);
   const idleLeaveTimerRef = useRef(null);
   const listenActiveRef = useRef(listenActive);
+  const warmJoinRef = useRef(warmJoin);
   const receiveEnabledRef = useRef(receiveEnabled);
   const ownsStreamRef = useRef(true);
   const onRemoteLiveAudioRef = useRef(onRemoteLiveAudio);
@@ -127,6 +131,7 @@ export default function useAgoraPTT({
   const remoteHandlersRef = useRef(null);
 
   listenActiveRef.current = listenActive;
+  warmJoinRef.current = warmJoin;
   receiveEnabledRef.current = receiveEnabled;
   onRemoteLiveAudioRef.current = onRemoteLiveAudio;
 
@@ -142,9 +147,16 @@ export default function useAgoraPTT({
 
   const scheduleIdleLeave = useCallback(() => {
     clearIdleLeaveTimer();
-    if (activeRef.current || listenActiveRef.current) return;
+    if (activeRef.current || listenActiveRef.current || warmJoinRef.current) return;
     idleLeaveTimerRef.current = setTimeout(() => {
-      if (activeRef.current || listenActiveRef.current || remoteSpeakerCountRef.current > 0) return;
+      if (
+        activeRef.current
+        || listenActiveRef.current
+        || warmJoinRef.current
+        || remoteSpeakerCountRef.current > 0
+      ) {
+        return;
+      }
       releaseConnectionRef.current?.();
     }, IDLE_LEAVE_MS);
   }, [clearIdleLeaveTimer]);
@@ -155,6 +167,10 @@ export default function useAgoraPTT({
   }, [clearIdleLeaveTimer, scheduleIdleLeave]);
 
   const notifyRemoteLiveAudio = useCallback(() => {
+    pttDebugLog("agora.remote-audio.start", {
+      channelId: paramsRef.current.channelId,
+      source: "single-channel",
+    });
     onRemoteLiveAudioRef.current?.();
   }, []);
 
@@ -212,7 +228,12 @@ export default function useAgoraPTT({
   const ensureJoined = useCallback(async (retryIndex = 0) => {
     const { channelId: cid, userId: uid } = paramsRef.current;
     if (!cid || !uid) return null;
-    if (clientRef.current) return clientRef.current;
+    if (clientRef.current) {
+      pttDebugLog("agora.ensureJoined.cached", { channelId: cid });
+      return clientRef.current;
+    }
+
+    pttDebugLog("agora.ensureJoined.start", { channelId: cid, retryIndex });
 
     const joinGen = ++joinGenRef.current;
     clearIdleLeaveTimer();
@@ -280,6 +301,7 @@ export default function useAgoraPTT({
         clientRef.current = client;
 
         setIsChannelReady(true);
+        pttDebugLog("agora.ensureJoined.done", { channelId: cid, receiveEnabled: receiveEnabledRef.current });
         scheduleIdleLeave();
         return client;
       } catch (err) {
@@ -302,6 +324,7 @@ export default function useAgoraPTT({
         }
 
         console.error("Agora join failed:", err);
+        pttDebugLog("agora.ensureJoined.failed", { channelId: cid, message: String(err?.message || err) });
         if (joinGen === joinGenRef.current) setIsChannelReady(false);
         return null;
       }
@@ -326,10 +349,15 @@ export default function useAgoraPTT({
   useEffect(() => {
     if (!channelId || !userId) return undefined;
 
-    if (listenActive) {
+    if (listenActive || warmJoin) {
       clearIdleLeaveTimer();
       const timer = setTimeout(() => {
-        if (!listenActiveRef.current) return;
+        if (!listenActiveRef.current && !warmJoinRef.current) return;
+        pttDebugLog("agora.warmJoin.trigger", {
+          channelId,
+          listenActive: listenActiveRef.current,
+          warmJoin: warmJoinRef.current,
+        });
         void ensureJoined();
       }, JOIN_DEBOUNCE_MS);
       return () => clearTimeout(timer);
@@ -337,7 +365,7 @@ export default function useAgoraPTT({
 
     scheduleIdleLeave();
     return undefined;
-  }, [listenActive, channelId, userId, ensureJoined, clearIdleLeaveTimer, scheduleIdleLeave]);
+  }, [listenActive, warmJoin, channelId, userId, ensureJoined, clearIdleLeaveTimer, scheduleIdleLeave]);
 
   useEffect(() => () => {
     clearIdleLeaveTimer();
@@ -347,6 +375,12 @@ export default function useAgoraPTT({
     const { channelId: cid, userId: uid } = paramsRef.current;
     if (!cid || !uid || activeRef.current) return Boolean(activeRef.current);
 
+    pttDebugLog("agora.publish.start", {
+      channelId: cid,
+      broadcastId: broadcastId ?? null,
+      hadWarmClient: Boolean(clientRef.current),
+      sharedStream: Boolean(sharedStream),
+    });
     clearIdleLeaveTimer();
 
     try {
@@ -356,28 +390,35 @@ export default function useAgoraPTT({
 
       ownsStreamRef.current = !sharedStream;
       let stream = sharedStream;
+      let client = clientRef.current;
+      const pendingJoin = client
+        ? Promise.resolve(client)
+        : (joinPromiseRef.current || ensureJoined());
+
       if (!sharedStream) {
-        const opened = await openMicSession();
+        const [opened, joinedClient] = await Promise.all([
+          openMicSession(),
+          pendingJoin,
+        ]);
         stream = opened.publishStream;
         streamRef.current = opened.publishStream;
         rawStreamRef.current = opened.rawStream;
         denoiseHandleRef.current = opened.handle;
         onStreamReady?.(opened.publishStream);
+        client = clientRef.current || joinedClient;
       } else {
         streamRef.current = sharedStream;
         rawStreamRef.current = null;
         denoiseHandleRef.current = null;
+        client = clientRef.current || await pendingJoin;
       }
 
-      let client = clientRef.current;
-      if (!client) {
-        client = await ensureJoined();
-      }
       if (!client && joinPromiseRef.current) {
         client = await joinPromiseRef.current;
       }
       if (!client) {
         console.error("Agora client not ready — join failed or still connecting");
+        pttDebugLog("agora.publish.failed", { channelId: cid, reason: "no-client" });
         if (ownsStreamRef.current) {
           await releaseOwnedStream();
         } else {
@@ -395,9 +436,14 @@ export default function useAgoraPTT({
 
       activeRef.current = true;
       setIsRecording(true);
+      pttDebugLog("agora.publish.done", { channelId: cid, broadcastId: broadcastIdRef.current });
       return true;
     } catch (err) {
       console.error("Agora publish failed:", err);
+      pttDebugLog("agora.publish.failed", {
+        channelId: cid,
+        message: String(err?.message || err),
+      });
       const client = clientRef.current;
       if (localAudioTrackRef.current) {
         await client?.unpublish([localAudioTrackRef.current]).catch(() => {});
@@ -448,6 +494,7 @@ export default function useAgoraPTT({
     isRecording,
     isReceiving,
     isChannelReady,
+    ensureJoined,
     startRecording,
     stopRecording,
     getMediaStream,

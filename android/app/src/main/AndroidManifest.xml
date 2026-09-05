@@ -23,6 +23,12 @@
             </intent-filter>
         </activity>
 
+        <!-- Motorola Razr cover display — allow activity on small external screen -->
+        <meta-data
+            android:name="com.motorola.allow_activities_on_small_external_display"
+            android:value="true"
+        />
+
         <service
             android:name=".BackgroundAudioService"
             android:exported="false"

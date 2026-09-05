@@ -22,7 +22,8 @@ import { playClearTone } from "@/lib/pttTones";
 import { maybePlayTextMessageTone, isIncomingVoiceMessage } from "@/lib/textMessageNotifications";
 import { hasHeardBroadcast } from "@/lib/heardBroadcasts";
 import { cleanupStalePTTSignals } from "@/lib/pttSignals";
-import { recordLivePttSignal, getCachedBroadcastId } from "@/lib/liveSpeakerRegistry";
+import { recordLivePttSignal } from "@/lib/liveSpeakerRegistry";
+import { pttDebugLog } from "@/lib/pttDebugLog";
 
 const PassiveTalkListenContext = createContext(null);
 
@@ -82,9 +83,6 @@ export function PassiveTalkListenProvider({ user, children }) {
   const { isReceiving: agoraReceiving, heardBroadcastsRef: agoraHeardRef } = useAgoraMultiListen({
     userId: enabled ? user?.id : null,
     channelIds: passiveListenActive && agoraEnabled && listenChannelId ? [listenChannelId] : [],
-    onRemoteTalkStart: (channelId) => {
-      playClearTone(getCachedBroadcastId(channelId));
-    },
   });
 
   const { isReceiving: relayReceiving, heardBroadcastsRef: relayHeardRef } = usePttReceiver({
@@ -114,6 +112,11 @@ export function PassiveTalkListenProvider({ user, children }) {
             heardBroadcastsRef.current.add(event.data.broadcast_id);
           }
           recordLivePttSignal(event.data);
+          pttDebugLog("ptt.signal.received", {
+            source: "passive-talk",
+            channelId: listenChannelId,
+            broadcastId: event.data?.broadcast_id ?? null,
+          });
           playClearTone(event.data?.broadcast_id);
         }
       },

@@ -28,7 +28,8 @@ import { maybePlayTextMessageTone, isIncomingVoiceMessage } from "@/lib/textMess
 import { hasHeardBroadcast } from "@/lib/heardBroadcasts";
 import { recordSessionInteraction } from "@/lib/logoutOnClose";
 import { cleanupStalePTTSignals } from "@/lib/pttSignals";
-import { recordLivePttSignal, getCachedBroadcastId } from "@/lib/liveSpeakerRegistry";
+import { recordLivePttSignal } from "@/lib/liveSpeakerRegistry";
+import { pttDebugLog } from "@/lib/pttDebugLog";
 
 const PassiveMonitorContext = createContext(null);
 
@@ -92,9 +93,6 @@ export function PassiveMonitorProvider({ user, children }) {
   const { isReceiving: agoraReceiving, heardBroadcastsRef: agoraHeardRef } = useAgoraMultiListen({
     userId: enabled ? user?.id : null,
     channelIds: passiveListenActive && agoraEnabled ? listenChannelIds : [],
-    onRemoteTalkStart: (channelId) => {
-      playClearTone(getCachedBroadcastId(channelId));
-    },
   });
 
   const { isReceiving: relayReceiving, heardBroadcastsRef: relayHeardRef } = usePttReceiver({
@@ -126,6 +124,11 @@ export function PassiveMonitorProvider({ user, children }) {
             heardBroadcastsRef.current.add(event.data.broadcast_id);
           }
           recordLivePttSignal(event.data);
+          pttDebugLog("ptt.signal.received", {
+            source: "passive-monitor",
+            channelId,
+            broadcastId: event.data?.broadcast_id ?? null,
+          });
           playClearTone(event.data?.broadcast_id);
         }
       },
@@ -140,7 +143,15 @@ export function PassiveMonitorProvider({ user, children }) {
     cleanupStalePTTSignals({
       channelIds: listenChannelIds,
       excludeSenderId: user.id,
-    }).catch(() => {});
+    })
+      .then((active) => {
+        for (const signal of active) {
+          if (!signal.broadcast_id || !listenChannelIds.includes(signal.channel_id)) continue;
+          recordLivePttSignal(signal);
+          playClearTone(signal.broadcast_id);
+        }
+      })
+      .catch(() => {});
   }, [passiveListenActive, listenChannelKey, listenChannelIds, user?.id]);
 
   useEffect(() => {

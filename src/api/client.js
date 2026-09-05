@@ -649,8 +649,13 @@ export const entities = {
           return filterAppVisibleMessages(items);
         },
         async filter(filters, sortField, limitCount) {
-          const items = await voiceMessagesApi.filter(filters, sortField, limitCount);
-          return filterAppVisibleMessages(items);
+          // Over-fetch before hiding reviewer/system rows so callers still get `limitCount` visible items.
+          const fetchLimit = limitCount
+            ? Math.max(limitCount * 5, limitCount + 8)
+            : limitCount;
+          const items = await voiceMessagesApi.filter(filters, sortField, fetchLimit);
+          const visible = filterAppVisibleMessages(items);
+          return limitCount ? visible.slice(0, limitCount) : visible;
         },
       };
     })(),

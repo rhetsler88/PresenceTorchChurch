@@ -14,10 +14,10 @@ import {
 } from "../components/ptt/PassiveTalkListenProvider";
 import { useRegisterPagePTTHandlers } from "@/components/ptt/PTTHandlerProvider";
 import { playClearTone, playBusyTone, unlockAudioForPTT } from "@/lib/pttTones";
-import { isAgoraEnabled } from "@/lib/agora";
 import { logVoiceMessageFailure } from "@/lib/voiceMessageLogging";
 import { cleanupStalePTTSignals, claimPttChannels, releasePttSignals } from "@/lib/pttSignals";
 import { recordLivePttSignal } from "@/lib/liveSpeakerRegistry";
+import { pttDebugLog } from "@/lib/pttDebugLog";
 import { playAudioUrl, stopAudio } from "@/lib/audioPlayer";
 import { needsTranscription, requestTranscription } from "@/lib/transcription";
 import { deviceDayKey } from "@/lib/deviceDate";
@@ -185,12 +185,14 @@ export default function Talk() {
   const {
     startRecording,
     stopRecording,
+    stopLiveTransmit,
   } = usePttBroadcast({
     channelId: effectiveChannelId,
     userId: user?.id,
     userName: user ? getDisplayName(user) : "",
     listenActive: false,
     receiveEnabled: false,
+    warmJoin: true,
     onMaxDurationRef: pttMaxDurationStopRef,
   });
 
@@ -420,9 +422,8 @@ export default function Talk() {
             activeLiveBroadcastRef.current = activeSignal.broadcast_id;
           }
           setIsChannelBusy(true);
-          if (!isAgoraEnabled()) {
-            playClearTone(activeSignal?.broadcast_id);
-          }
+          recordLivePttSignal(activeSignal);
+          playClearTone(activeSignal?.broadcast_id);
         }
       })
       .catch(() => {});
@@ -693,9 +694,12 @@ export default function Talk() {
     pttStopPendingRef.current = false;
     pttRecordingActiveRef.current = false;
 
+    pttDebugLog("ptt.press", { surface: "talk", channelId: effectiveChannelId });
+
     const startSequence = (async () => {
       let signalId = null;
       const broadcastId = crypto.randomUUID();
+      pttDebugLog("ptt.sequence.start", { surface: "talk", broadcastId, channelId: effectiveChannelId });
       try {
         try {
           await ensureFirestoreMembership();
@@ -716,6 +720,7 @@ export default function Talk() {
           broadcastId,
           primaryChannelId: effectiveChannelId,
         });
+        pttDebugLog("ptt.claim.sent", { surface: "talk", broadcastId, channelIds: [effectiveChannelId] });
         playClearTone(broadcastId);
 
         const started = await startRecording({ broadcastId });
@@ -836,9 +841,16 @@ export default function Talk() {
   }, [finishPttStop]);
 
   pttMaxDurationStopRef.current = () => {
-    if (!isPTTPressedRef.current && !pttRecordingActiveRef.current) return;
     toast.info("Maximum transmission time reached (35 seconds)");
-    handlePTTStop();
+    isPTTPressedRef.current = false;
+    setIsPTTPressed(false);
+    pttStopPendingRef.current = false;
+    void stopLiveTransmit();
+    if (pttRecordingActiveRef.current) {
+      finishPttStop();
+    } else {
+      void stopRecording().catch(() => {});
+    }
   };
 
   useRegisterPagePTTHandlers(

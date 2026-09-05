@@ -22,6 +22,7 @@ import { toast } from "@/lib/toast";
 import { recordSessionInteraction } from "@/lib/logoutOnClose";
 import { getLastPttSurface } from "@/lib/lastPttSurface";
 import { resolveMonitorTargetChannelIds } from "@/lib/monitorBroadcastSettings";
+import { pttDebugLog } from "@/lib/pttDebugLog";
 
 function resolveTalkChannel(user, channels, passiveTalkChannelId) {
   if (!user?.id || !channels?.length) return null;
@@ -97,12 +98,14 @@ export default function useGlobalPTT() {
   const isPTTPressedRef = useRef(false);
   const pttMaxDurationStopRef = useRef(() => {});
 
-  const { startRecording, stopRecording } = usePttBroadcast({
+  const { startRecording, stopRecording, stopLiveTransmit } = usePttBroadcast({
     channelId: primaryChannelId,
     userId: user?.id,
     userName: user ? getDisplayName(user) : "",
     listenActive: false,
     receiveEnabled: false,
+    warmJoin: true,
+    warmPublishChannelIds: monitorMode ? monitorTargetIds : (primaryChannelId ? [primaryChannelId] : []),
     onMaxDurationRef: pttMaxDurationStopRef,
   });
 
@@ -258,8 +261,18 @@ export default function useGlobalPTT() {
     pttStopPendingRef.current = false;
     pttRecordingActiveRef.current = false;
 
+    pttDebugLog("ptt.press", {
+      surface: monitorMode ? "global-monitor" : "global-talk",
+      channelIds: targetIds,
+    });
+
     const startSequence = (async () => {
       const broadcastId = crypto.randomUUID();
+      pttDebugLog("ptt.sequence.start", {
+        surface: monitorMode ? "global-monitor" : "global-talk",
+        broadcastId,
+        channelIds: targetIds,
+      });
       try {
         await auth.currentUser?.getIdToken(true);
 
@@ -281,6 +294,12 @@ export default function useGlobalPTT() {
           broadcastId,
           primaryChannelId: targetIds[0],
         });
+        pttDebugLog("ptt.claim.sent", {
+          surface: monitorMode ? "global-monitor" : "global-talk",
+          broadcastId,
+          channelIds: targetIds,
+        });
+        playClearTone(broadcastId);
 
         const started = await startRecording({
           broadcastId,
@@ -308,7 +327,6 @@ export default function useGlobalPTT() {
         }
 
         pttRecordingActiveRef.current = true;
-        playClearTone(broadcastId);
 
         if (monitorMode) {
           try {
@@ -384,9 +402,15 @@ export default function useGlobalPTT() {
   }, [finishPttStop]);
 
   pttMaxDurationStopRef.current = () => {
-    if (!isPTTPressedRef.current && !pttRecordingActiveRef.current) return;
     toast.info("Maximum transmission time reached (35 seconds)");
-    handlePTTStop();
+    isPTTPressedRef.current = false;
+    pttStopPendingRef.current = false;
+    void stopLiveTransmit();
+    if (pttRecordingActiveRef.current) {
+      finishPttStop();
+    } else {
+      void stopRecording().catch(() => {});
+    }
   };
 
   return useMemo(

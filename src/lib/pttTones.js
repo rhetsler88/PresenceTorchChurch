@@ -1,3 +1,5 @@
+import { pttDebugLog } from "./pttDebugLog.js";
+
 let audioContext = null;
 let isUnlocked = false;
 let lastClearToneAt = 0;
@@ -88,9 +90,19 @@ async function playClearToneNow(broadcastId) {
   const now = Date.now();
   if (broadcastId) {
     const lastForBroadcast = lastClearToneByBroadcast.get(broadcastId);
-    if (lastForBroadcast != null && now - lastForBroadcast < 5000) return;
+    // Short per-broadcast dedup — duplicate Firestore/Agora listeners only.
+    if (lastForBroadcast != null && now - lastForBroadcast < 800) {
+      pttDebugLog("clearTone.skipped", {
+        broadcastId,
+        reason: "dedup",
+        sinceLastMs: now - lastForBroadcast,
+      });
+      return;
+    }
+  } else if (now - lastClearToneAt < 800) {
+    pttDebugLog("clearTone.skipped", { reason: "dedup-no-broadcast-id" });
+    return;
   }
-  if (now - lastClearToneAt < 1200) return;
 
   const ctx = getContext();
   if (ctx.state === "suspended") {
@@ -112,6 +124,7 @@ async function playClearToneNow(broadcastId) {
     }
   }
   lastClearToneAt = playedAt;
+  pttDebugLog("clearTone.play", { broadcastId: broadcastId ?? null });
   void playTone(800, 0.12, 0);
   void playTone(800, 0.12, 0.18);
 }

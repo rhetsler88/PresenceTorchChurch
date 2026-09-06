@@ -1,5 +1,6 @@
 import { isProtectionLevelChangeMessage } from "@/lib/protectionLevelHistory";
 import { playTextMessageTone } from "@/lib/pttTones";
+import { notifyTextMessageInBackground } from "@/lib/pushNotifications";
 
 export function isIncomingTextMessage(event, userId) {
   return (
@@ -28,4 +29,8 @@ export function maybePlayTextMessageTone(event, userId, heardBroadcastIds = null
   if (broadcastId && heardBroadcastIds?.has?.(broadcastId)) return;
 
   playTextMessageTone();
+  notifyTextMessageInBackground({
+    channelName: event.data?.channel_name || event.data?.channelName || "Channel",
+    channelId: event.data?.channel_id || "channel",
+  });
 }

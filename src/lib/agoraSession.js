@@ -12,6 +12,12 @@ export function sessionKey(channelName, uid) {
   return `${channelName}:${uid}`;
 }
 
+/** True when another holder still has this channel joined in the shared pool. */
+export function hasActiveAgoraClient(key) {
+  const state = sessions.get(key);
+  return Boolean(state?.client);
+}
+
 async function leaveClient(client) {
   if (!client) return;
   client.removeAllListeners();

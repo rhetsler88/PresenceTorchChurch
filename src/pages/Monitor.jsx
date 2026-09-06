@@ -457,7 +457,7 @@ export default function Monitor() {
     userName: user ? getDisplayName(user) : "",
     listenActive: false,
     receiveEnabled: false,
-    warmJoin: true,
+    warmJoin: false,
     warmPublishChannelIds,
     onMaxDurationRef: pttMaxDurationStopRef,
   });
@@ -805,14 +805,13 @@ export default function Monitor() {
       api.entities.PTTSignal.delete(id).catch(() => {});
     });
 
-    void stopLiveTransmit();
-
     if (pttRecordingActiveRef.current) {
       pttRecordingActiveRef.current = false;
       sendMutation.mutate();
       return;
     }
 
+    void stopLiveTransmit();
     void stopRecording().catch(() => {});
   }, [sendMutation, stopLiveTransmit, stopRecording]);
 
@@ -833,15 +832,17 @@ export default function Monitor() {
 
     recordSessionInteraction();
     unlockAudioForPTT();
+    const broadcastId = crypto.randomUUID();
+    playClearTone(broadcastId);
+
     isPTTPressedRef.current = true;
     setIsPTTPressed(true);
     pttStopPendingRef.current = false;
     pttRecordingActiveRef.current = false;
 
-    pttDebugLog("ptt.press", { surface: "monitor", channelIds: targetIds });
+    pttDebugLog("ptt.press", { surface: "monitor", channelIds: targetIds, broadcastId });
 
     const startSequence = (async () => {
-      const broadcastId = crypto.randomUUID();
       pttDebugLog("ptt.sequence.start", { surface: "monitor", broadcastId, channelIds: targetIds });
       try {
         if (pttSignalRefs.current.length) {
@@ -866,7 +867,6 @@ export default function Monitor() {
           primaryChannelId,
         });
         pttDebugLog("ptt.claim.sent", { surface: "monitor", broadcastId, channelIds: targetIds });
-        playClearTone(broadcastId);
 
         const started = await startRecording({ broadcastId, publishChannelIds: targetIds });
 

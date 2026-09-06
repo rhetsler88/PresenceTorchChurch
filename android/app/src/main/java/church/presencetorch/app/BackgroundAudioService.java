@@ -1,5 +1,6 @@
 package church.presencetorch.app;
 
+import android.app.ActivityManager;
 import android.app.Notification;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
@@ -56,7 +57,7 @@ public class BackgroundAudioService extends Service {
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
         if (intent == null) {
-            stopSelf();
+            stopForegroundSession();
             return START_NOT_STICKY;
         }
 
@@ -65,8 +66,12 @@ public class BackgroundAudioService extends Service {
             if (!sessionActive) {
                 return START_NOT_STICKY;
             }
+            if (!isMainActivityTaskAlive()) {
+                stopForegroundSession();
+                return START_NOT_STICKY;
+            }
             repromoteForegroundNotification();
-            return START_STICKY;
+            return START_NOT_STICKY;
         }
 
         if (ACTION_STOP.equals(action)) {
@@ -95,7 +100,7 @@ public class BackgroundAudioService extends Service {
                 currentBody = body;
             }
             repromoteForegroundNotification();
-            return START_STICKY;
+            return START_NOT_STICKY;
         }
 
         String title = intent.getStringExtra(EXTRA_TITLE);
@@ -111,7 +116,7 @@ public class BackgroundAudioService extends Service {
         currentTitle = title;
         currentBody = body;
         startForegroundSession(title);
-        return START_STICKY;
+        return START_NOT_STICKY;
     }
 
     private void startForegroundSession(String title) {
@@ -210,12 +215,14 @@ public class BackgroundAudioService extends Service {
     }
 
     private Notification buildNotification(String title) {
-        Intent launchIntent = new Intent(this, MainActivity.class);
-        launchIntent.setAction(Intent.ACTION_MAIN);
-        launchIntent.addCategory(Intent.CATEGORY_LAUNCHER);
+        Intent launchIntent = getPackageManager().getLaunchIntentForPackage(getPackageName());
+        if (launchIntent == null) {
+            launchIntent = new Intent(this, MainActivity.class);
+            launchIntent.setAction(Intent.ACTION_MAIN);
+            launchIntent.addCategory(Intent.CATEGORY_LAUNCHER);
+        }
         launchIntent.addFlags(
-            Intent.FLAG_ACTIVITY_NEW_TASK
-                | Intent.FLAG_ACTIVITY_CLEAR_TOP
+            Intent.FLAG_ACTIVITY_CLEAR_TOP
                 | Intent.FLAG_ACTIVITY_SINGLE_TOP
                 | Intent.FLAG_ACTIVITY_REORDER_TO_FRONT
         );
@@ -421,8 +428,10 @@ public class BackgroundAudioService extends Service {
 
     @Override
     public void onTimeout(int startId, int fgsType) {
-        if (sessionActive) {
+        if (sessionActive && isMainActivityTaskAlive()) {
             repromoteForegroundNotification();
+        } else if (sessionActive) {
+            stopForegroundSession();
         }
     }
 
@@ -431,8 +440,38 @@ public class BackgroundAudioService extends Service {
         stopSilentLoop();
         abandonAudioFocus();
         releaseWakeLock();
+        deactivateMediaButtonSession();
+        if (sessionActive) {
+            stopForeground(STOP_FOREGROUND_REMOVE);
+        }
         sessionActive = false;
         super.onDestroy();
+    }
+
+    /** True when the launcher task for MainActivity still exists in recents. */
+    private boolean isMainActivityTaskAlive() {
+        if (MainActivity.isUiAlive()) {
+            return true;
+        }
+
+        ActivityManager manager = (ActivityManager) getSystemService(Context.ACTIVITY_SERVICE);
+        if (manager == null) {
+            return true;
+        }
+        try {
+            for (ActivityManager.AppTask task : manager.getAppTasks()) {
+                ActivityManager.RecentTaskInfo info = task.getTaskInfo();
+                if (info == null || info.baseIntent == null || info.baseIntent.getComponent() == null) {
+                    continue;
+                }
+                if (MainActivity.class.getName().equals(info.baseIntent.getComponent().getClassName())) {
+                    return true;
+                }
+            }
+        } catch (Exception ignored) {
+            return true;
+        }
+        return false;
     }
 
     @Override

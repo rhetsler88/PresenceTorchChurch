@@ -24,7 +24,10 @@ public class BackgroundAudioPlugin extends Plugin {
         intent.putExtra(BackgroundAudioService.EXTRA_SILENT, silent);
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            ContextCompat.startForegroundService(getContext(), intent);
+            ContextCompat.startForegroundService(
+                getActivity() != null ? getActivity() : getContext(),
+                intent
+            );
         } else {
             getContext().startService(intent);
         }

@@ -182,7 +182,9 @@ export default function useAgoraMultiListen({
         activeClients.delete(channelId);
         detachRemoteHandlers(active.client, active.handlers);
         await releaseAgoraClient(active.key);
+        remoteCountRef.current = 0;
       }
+      syncRemoteReceiving();
     };
 
     const syncChannels = async () => {

@@ -6,7 +6,7 @@ import {
   subscribeExistingRemoteUsers,
   subscribeRemoteAudio,
 } from "@/lib/agoraRemote";
-import { acquireAgoraClient, releaseAgoraClient, sessionKey } from "@/lib/agoraSession";
+import { acquireAgoraClient, releaseAgoraClient, sessionKey, hasActiveAgoraClient } from "@/lib/agoraSession";
 import { configureAgoraSdk } from "@/lib/agoraInit";
 import { AGORA_SPEECH_ENCODER } from "@/lib/agoraAudio";
 import { destroyMicDenoise, openMicSession } from "@/lib/micDenoise";
@@ -228,9 +228,17 @@ export default function useAgoraPTT({
   const ensureJoined = useCallback(async (retryIndex = 0) => {
     const { channelId: cid, userId: uid } = paramsRef.current;
     if (!cid || !uid) return null;
-    if (clientRef.current) {
+    if (
+      clientRef.current
+      && sessionKeyRef.current
+      && hasActiveAgoraClient(sessionKeyRef.current)
+    ) {
       pttDebugLog("agora.ensureJoined.cached", { channelId: cid });
       return clientRef.current;
+    }
+    if (clientRef.current) {
+      clientRef.current = null;
+      sessionKeyRef.current = null;
     }
 
     pttDebugLog("agora.ensureJoined.start", { channelId: cid, retryIndex });

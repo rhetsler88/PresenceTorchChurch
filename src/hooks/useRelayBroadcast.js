@@ -198,7 +198,6 @@ export default function useRelayBroadcast({ channelId, userId, userName }) {
       recordStreamRef.current = sharedStream;
       rawStreamRef.current = null;
       denoiseHandleRef.current = null;
-      startTimeRef.current = Date.now();
     } else {
       try {
         if (Capacitor.isNativePlatform()) {
@@ -218,7 +217,6 @@ export default function useRelayBroadcast({ channelId, userId, userName }) {
         streamRef.current = publishStream;
         rawStreamRef.current = rawStream;
         denoiseHandleRef.current = handle;
-        startTimeRef.current = Date.now();
       } catch (err) {
         console.error("Microphone access denied:", err);
         releaseSensitiveOperation();
@@ -312,6 +310,7 @@ export default function useRelayBroadcast({ channelId, userId, userName }) {
       } else {
         startRecorderTiming(fullRecorderRef.current, chunkIntervalRef);
       }
+      startTimeRef.current = Date.now();
     } catch (err) {
       console.error("MediaRecorder.start failed:", err);
       activeRef.current = false;

@@ -89,8 +89,12 @@ async function subscribeNativeBleNotifications(deviceId, onValueChanged) {
 
   for (const target of PTT_NOTIFY_TARGETS) {
     if (await trySubscribe(target.serviceUuid, target.characteristicUuid)) {
-      return subscribed;
+      // Keep scanning — some buttons expose multiple notify characteristics.
     }
+  }
+
+  if (subscribed.length > 0) {
+    return subscribed;
   }
 
   for (const service of services) {
@@ -219,7 +223,7 @@ export default function useBluetoothPTT({ onPress, onRelease }) {
     setIsConnecting(true);
     setError(null);
     try {
-      if (hasWebBluetooth()) {
+      if (hasWebBluetooth() && !Capacitor.isNativePlatform()) {
         await connectWeb();
       } else {
         await connectNative();

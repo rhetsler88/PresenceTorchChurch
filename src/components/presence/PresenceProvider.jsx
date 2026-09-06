@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useRef } from "react";
+import React, { createContext, useContext, useEffect, useState } from "react";
 import { useLocation } from "react-router-dom";
 import useChannels from "@/hooks/useChannels";
 import { useAuth } from "@/lib/AuthContext";
@@ -36,7 +36,7 @@ export default function PresenceProvider({ children }) {
   const { user } = useAuth();
   const location = useLocation();
   const passiveMonitor = usePassiveMonitor();
-  const talkChannelIdRef = useRef(null);
+  const [talkChannelId, setTalkChannelIdState] = useState(null);
 
   const presenceEnabled = Boolean(
     user?.id && (bypassesDailyCode(user) || isDailyCodeVerified(user))
@@ -51,7 +51,7 @@ export default function PresenceProvider({ children }) {
       return undefined;
     }
 
-    const lastChannelId = readLastChannelId();
+    const lastChannelId = talkChannelId || readLastChannelId();
     const lastChannel = channels.find((channel) => channel.id === lastChannelId) || null;
     const baselineChannelIds = lastChannel && canAccessChannel(user, lastChannel)
       ? [lastChannel.id]
@@ -66,7 +66,7 @@ export default function PresenceProvider({ children }) {
     return () => {
       unregisterPresenceSource(APP_BASELINE_ID);
     };
-  }, [presenceEnabled, displayName, user, channels, location.pathname]);
+  }, [presenceEnabled, displayName, user, channels, location.pathname, talkChannelId]);
 
   useEffect(() => {
     if (!presenceEnabled) return undefined;
@@ -91,7 +91,7 @@ export default function PresenceProvider({ children }) {
   ]);
 
   const setTalkChannelId = (channelId) => {
-    talkChannelIdRef.current = channelId || null;
+    setTalkChannelIdState(channelId || null);
     if (!presenceEnabled) return;
     registerPresenceSource(TALK_ID, {
       channelIds: channelId ? [channelId] : [],
@@ -104,15 +104,15 @@ export default function PresenceProvider({ children }) {
     if (!presenceEnabled) return undefined;
 
     registerPresenceSource(TALK_ID, {
-      channelIds: talkChannelIdRef.current ? [talkChannelIdRef.current] : [],
+      channelIds: talkChannelId ? [talkChannelId] : [],
       displayName,
-      enabled: Boolean(talkChannelIdRef.current),
+      enabled: Boolean(talkChannelId),
     });
 
     return () => {
       unregisterPresenceSource(TALK_ID);
     };
-  }, [presenceEnabled, displayName]);
+  }, [presenceEnabled, displayName, talkChannelId]);
 
   useEffect(() => {
     if (!user?.id) {

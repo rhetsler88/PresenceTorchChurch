@@ -33,8 +33,13 @@ import { pttDebugLog } from "@/lib/pttDebugLog";
 
 const PassiveMonitorContext = createContext(null);
 
+const TalkListenRegistrationContext = createContext({
+  setTalkListenChannelId: () => {},
+});
+
 export function PassiveMonitorProvider({ user, children }) {
   const enabled = canAccessMonitorPage(user);
+  const [talkListenChannelId, setTalkListenChannelId] = useState(null);
 
   const { data: channels = [] } = useChannels({
     enabled: enabled && Boolean(user?.id),
@@ -77,12 +82,21 @@ export function PassiveMonitorProvider({ user, children }) {
     });
   }, [user?.id, readableChannelKey, readableChannelIds]);
 
-  const listenChannelIds = useMemo(
-    () => readableChannelIds.filter((id) => !mutedChannelIds.has(id)),
-    [readableChannelIds, mutedChannelIds]
-  );
+  const listenChannelIds = useMemo(() => {
+    const ids = readableChannelIds.filter((id) => !mutedChannelIds.has(id));
+    if (
+      talkListenChannelId
+      && readableChannelIds.includes(talkListenChannelId)
+      && !ids.includes(talkListenChannelId)
+    ) {
+      return [...ids, talkListenChannelId];
+    }
+    return ids;
+  }, [readableChannelIds, mutedChannelIds, talkListenChannelId]);
 
   const listenChannelKey = listenChannelIds.join(",");
+  const clearToneIds = readableChannelIds;
+  const clearToneKey = clearToneIds.join(",");
   const passiveListenActive = enabled && listenChannelIds.length > 0;
 
   const heardBroadcastsRef = useRef(new Set());
@@ -107,15 +121,15 @@ export function PassiveMonitorProvider({ user, children }) {
 
   const isLiveReceiving = passiveListenActive && (agoraReceiving || relayReceiving);
 
-  // Clear tones + heard tracking for unmuted channels on every tab.
+  // Clear tones for all readable monitor channels (independent of mute / passive listen).
   useEffect(() => {
-    if (!passiveListenActive || !user?.id) return undefined;
+    if (!enabled || !user?.id || clearToneIds.length === 0) return undefined;
 
     const unsub = api.entities.PTTSignal.subscribeMany(
       (event) => {
         if (event.data?.sender_id === user.id) return;
         const channelId = event.data?.channel_id;
-        if (!listenChannelIds.includes(channelId)) return;
+        if (!clearToneIds.includes(channelId)) return;
 
         if (event.type === "create") {
           if (event.data?.broadcast_id) {
@@ -130,27 +144,27 @@ export function PassiveMonitorProvider({ user, children }) {
           playClearTone(event.data?.broadcast_id);
         }
       },
-      listenChannelIds.map((channelId) => ({ channel_id: channelId }))
+      clearToneIds.map((channelId) => ({ channel_id: channelId }))
     );
 
     return unsub;
-  }, [passiveListenActive, listenChannelKey, user?.id, listenChannelIds]);
+  }, [enabled, clearToneKey, user?.id, clearToneIds]);
 
   useEffect(() => {
-    if (!passiveListenActive || !user?.id) return;
+    if (!enabled || !user?.id) return;
     cleanupStalePTTSignals({
-      channelIds: listenChannelIds,
+      channelIds: clearToneIds,
       excludeSenderId: user.id,
     })
       .then((active) => {
         for (const signal of active) {
-          if (!signal.broadcast_id || !listenChannelIds.includes(signal.channel_id)) continue;
+          if (!signal.broadcast_id || !clearToneIds.includes(signal.channel_id)) continue;
           recordLivePttSignal(signal);
           playClearTone(signal.broadcast_id);
         }
       })
       .catch(() => {});
-  }, [passiveListenActive, listenChannelKey, listenChannelIds, user?.id]);
+  }, [enabled, clearToneKey, clearToneIds, user?.id]);
 
   useEffect(() => {
     if (!passiveListenActive || !user?.id || listenChannelIds.length === 0) return undefined;
@@ -215,12 +229,25 @@ export function PassiveMonitorProvider({ user, children }) {
   );
 
   return (
-    <PassiveMonitorContext.Provider value={value}>
-      {children}
-    </PassiveMonitorContext.Provider>
+    <TalkListenRegistrationContext.Provider value={{ setTalkListenChannelId }}>
+      <PassiveMonitorContext.Provider value={value}>
+        {children}
+      </PassiveMonitorContext.Provider>
+    </TalkListenRegistrationContext.Provider>
   );
 }
 
 export function usePassiveMonitor() {
   return useContext(PassiveMonitorContext);
+}
+
+/** Register the active Talk channel so monitor users still hear live audio on Talk. */
+export function useMonitorTalkListenRegistration(channelId) {
+  const { setTalkListenChannelId } = useContext(TalkListenRegistrationContext);
+
+  useEffect(() => {
+    if (!setTalkListenChannelId) return undefined;
+    setTalkListenChannelId(channelId || null);
+    return () => setTalkListenChannelId(null);
+  }, [channelId, setTalkListenChannelId]);
 }

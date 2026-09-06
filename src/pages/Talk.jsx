@@ -15,6 +15,10 @@ import {
   usePassiveTalkListen,
   usePassiveTalkListenRegistration,
 } from "../components/ptt/PassiveTalkListenProvider";
+import {
+  usePassiveMonitor,
+  useMonitorTalkListenRegistration,
+} from "../components/monitor/PassiveMonitorProvider";
 import { useRegisterPagePTTHandlers } from "@/components/ptt/PTTHandlerProvider";
 import { playClearTone, playBusyTone, unlockAudioForPTT } from "@/lib/pttTones";
 import { logVoiceMessageFailure } from "@/lib/voiceMessageLogging";
@@ -166,6 +170,7 @@ export default function Talk() {
 
   const hasPassiveMonitor = canAccessMonitorPage(user);
   const passiveTalk = usePassiveTalkListen();
+  const passiveMonitor = usePassiveMonitor();
 
   usePassiveTalkListenRegistration({
     channelId: effectiveChannelId,
@@ -174,6 +179,10 @@ export default function Talk() {
     listenPaused: isPTTPressed,
     persist: true,
   });
+
+  useMonitorTalkListenRegistration(
+    hasPassiveMonitor && canReadMessages ? effectiveChannelId : null
+  );
 
   const {
     startRecording,
@@ -186,7 +195,7 @@ export default function Talk() {
     userName: user ? getDisplayName(user) : "",
     listenActive: false,
     receiveEnabled: false,
-    warmJoin: true,
+    warmJoin: false,
     onMaxDurationRef: pttMaxDurationStopRef,
   });
 
@@ -201,7 +210,11 @@ export default function Talk() {
   });
   const signalBusy = isAnyChannelBusy(watchedChannelIds);
   const channelLiveActive = hasPassiveMonitor
-    ? signalBusy
+    ? Boolean(
+        passiveMonitor?.isLiveReceiving
+        && effectiveChannelId
+        && passiveMonitor?.listenChannelIds?.includes(effectiveChannelId)
+      ) || signalBusy
     : Boolean(
         passiveTalk?.isLiveReceiving
         && passiveTalk?.listenChannelId === effectiveChannelId
@@ -583,18 +596,19 @@ export default function Talk() {
       api.entities.PTTSignal.delete(signalId).catch(() => {});
     }
 
-    void stopLiveTransmit();
-
     if (pttRecordingActiveRef.current) {
       pttRecordingActiveRef.current = false;
       sendMutation.mutate({
         channelId: pttSessionChannelIdRef.current || effectiveChannelId,
         sessionUser: pttSessionUserRef.current || user,
       });
+      pttSessionChannelIdRef.current = null;
+      pttSessionUserRef.current = null;
       return;
     }
 
     // Mic may be live before pttRecordingActiveRef is set (race during start).
+    void stopLiveTransmit();
     void stopRecording().catch(() => {});
     pttSessionChannelIdRef.current = null;
     pttSessionUserRef.current = null;
@@ -629,6 +643,8 @@ export default function Talk() {
 
     recordSessionInteraction();
     unlockAudioForPTT();
+    const broadcastId = crypto.randomUUID();
+    playClearTone(broadcastId);
 
     pttSessionChannelIdRef.current = effectiveChannelId;
     pttSessionUserRef.current = user;
@@ -637,11 +653,10 @@ export default function Talk() {
     pttStopPendingRef.current = false;
     pttRecordingActiveRef.current = false;
 
-    pttDebugLog("ptt.press", { surface: "talk", channelId: effectiveChannelId });
+    pttDebugLog("ptt.press", { surface: "talk", channelId: effectiveChannelId, broadcastId });
 
     const startSequence = (async () => {
       let signalId = null;
-      const broadcastId = crypto.randomUUID();
       pttDebugLog("ptt.sequence.start", { surface: "talk", broadcastId, channelId: effectiveChannelId });
       try {
         void cleanupStalePTTSignals({
@@ -658,7 +673,6 @@ export default function Talk() {
           primaryChannelId: effectiveChannelId,
         });
         pttDebugLog("ptt.claim.sent", { surface: "talk", broadcastId, channelIds: [effectiveChannelId] });
-        playClearTone(broadcastId);
 
         void ensureFirestoreMembership().catch((syncErr) => {
           console.warn("PTT access sync failed:", syncErr);

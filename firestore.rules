@@ -170,6 +170,19 @@ service cloud.firestore {
         || isMonitorForChannel(channelId);
     }
 
+    function canViewChannelPresence(channelId) {
+      return canSendOnChannel(channelId)
+        || isChannelAlertRecipient(channelId);
+    }
+
+    // Match client canAccessChannelAlertsForChannel — PTT signals, relay chunks.
+    function canAccessChannelAlerts(channelId) {
+      return isChannelAlertRecipient(channelId)
+        || isOrgAdminForChannel(channelId)
+        || isChannelLeadForChannel(channelId)
+        || isMonitorForChannel(channelId);
+    }
+
     function userOrganization() {
       return userDoc().data.get('organization', '');
     }
@@ -365,7 +378,7 @@ service cloud.firestore {
     match /pttSignals/{signalId} {
       allow read: if isElevatedFromToken();
       allow read: if channelIdOnResource()
-        && isChannelTalkMember(resource.data.channel_id)
+        && canAccessChannelAlerts(resource.data.channel_id)
         && canUsePttWhenDailyCodeRequired();
 
       allow create: if isSignedIn()
@@ -388,7 +401,7 @@ service cloud.firestore {
     match /audioChunks/{chunkId} {
       allow read: if isElevatedFromToken();
       allow read: if channelIdOnResource()
-        && isChannelTalkMember(resource.data.channel_id)
+        && canAccessChannelAlerts(resource.data.channel_id)
         && canUsePttWhenDailyCodeRequired();
 
       allow create: if isSignedIn()
@@ -438,7 +451,7 @@ service cloud.firestore {
       allow read: if isSignedIn()
         && resource.data.channel_id is string
         && resource.data.channel_id.size() > 0
-        && canSendOnChannel(resource.data.channel_id);
+        && canViewChannelPresence(resource.data.channel_id);
 
       allow create: if isSignedIn()
         && request.resource.data.user_id == request.auth.uid

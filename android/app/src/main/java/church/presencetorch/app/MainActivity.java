@@ -86,6 +86,10 @@ public class MainActivity extends BridgeActivity {
 
     private static MainActivity activeInstance;
 
+    public static boolean isUiAlive() {
+        return activeInstance != null;
+    }
+
     private void refreshWebViewAfterResume() {
         refreshWebViewAfterDisplayChange();
     }
@@ -142,6 +146,7 @@ public class MainActivity extends BridgeActivity {
         if (activeInstance == this) {
             activeInstance = null;
         }
+        stopBackgroundListenIfFinishing();
         triggerImmediateLogoutIfClosing();
         super.onDestroy();
     }
@@ -150,9 +155,20 @@ public class MainActivity extends BridgeActivity {
     public void onStop() {
         if (isFinishing()) {
             BackgroundLogoutScheduler.cancel(this);
+            stopBackgroundListenIfFinishing();
         }
         triggerImmediateLogoutIfClosing();
         super.onStop();
+    }
+
+    /** Prevent orphan listen notifications when the UI task is finishing. */
+    private void stopBackgroundListenIfFinishing() {
+        if (!isFinishing() || !BackgroundAudioService.isSessionActive()) {
+            return;
+        }
+        Intent intent = new Intent(this, BackgroundAudioService.class);
+        intent.setAction(BackgroundAudioService.ACTION_STOP);
+        startService(intent);
     }
 
     /** Swipe-away from recents — sign out while the WebView is still alive. */

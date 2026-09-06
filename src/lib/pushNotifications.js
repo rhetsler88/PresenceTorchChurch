@@ -33,6 +33,14 @@ let currentRegistrationKey = null;
 let staffAlertsEnabled = false;
 let webMessageUnsub = null;
 let textNotificationLifecycleInstalled = false;
+let nativeAppInForeground = true;
+
+function isAppInForeground() {
+  if (Capacitor.isNativePlatform()) {
+    return nativeAppInForeground;
+  }
+  return typeof document === "undefined" || document.visibilityState === "visible";
+}
 
 async function clearWebTextMessageNotifications() {
   if (Capacitor.isNativePlatform()) return;
@@ -117,7 +125,14 @@ function installTextMessageNotificationLifecycle() {
   };
 
   if (Capacitor.isNativePlatform()) {
-    window.addEventListener("resume", handleOpen);
+    nativeAppInForeground = true;
+    window.addEventListener("pause", () => {
+      nativeAppInForeground = false;
+    });
+    window.addEventListener("resume", () => {
+      nativeAppInForeground = true;
+      handleOpen();
+    });
     window.addEventListener("focus", handleOpen);
     return;
   }
@@ -194,6 +209,27 @@ async function showForegroundPushNotification({ title, body, tag, channelId, typ
       /* ignore */
     }
   }
+}
+
+/** Show a tray notification for text messages when the app is not visible. */
+export function notifyTextMessageInBackground({
+  channelName = "Channel",
+  channelId = "channel",
+  count = 1,
+} = {}) {
+  if (isAppInForeground()) {
+    return;
+  }
+
+  const tag = `text_message_${channelId}`;
+  void showForegroundPushNotification({
+    title: "Presence Torch",
+    body: formatTextMessageBody(count, channelName),
+    tag,
+    channelId: TEXT_MESSAGE_CHANNEL_ID,
+    type: "text_message",
+    extra: { channelId, channelName },
+  });
 }
 
 /** Foreground only — FCM/system tray handles visible notifications in background. */

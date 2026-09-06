@@ -27,10 +27,23 @@ import { pttDebugLog } from "@/lib/pttDebugLog";
 
 function resolveTalkChannel(user, channels, passiveTalkChannelId) {
   if (!user?.id || !channels?.length) return null;
-  if (!passiveTalkChannelId) return null;
-  const channel = channels.find((c) => c.id === passiveTalkChannelId);
-  if (!channel || !canSendOnChannelForChannel(user, channel)) return null;
-  return channel;
+
+  const resolveCandidate = (channelId) => {
+    if (!channelId) return null;
+    const channel = channels.find((c) => c.id === channelId);
+    if (!channel || !canSendOnChannelForChannel(user, channel)) return null;
+    return channel;
+  };
+
+  const fromPassive = resolveCandidate(passiveTalkChannelId);
+  if (fromPassive) return fromPassive;
+
+  try {
+    const stored = localStorage.getItem("lastChannelId");
+    return resolveCandidate(stored);
+  } catch {
+    return null;
+  }
 }
 
 function resolveMonitorSendableChannels(user, channels) {
@@ -110,7 +123,7 @@ export default function useGlobalPTT() {
     userName: user ? getDisplayName(user) : "",
     listenActive: false,
     receiveEnabled: false,
-    warmJoin: true,
+    warmJoin: false,
     warmPublishChannelIds: monitorMode ? monitorTargetIds : (primaryChannelId ? [primaryChannelId] : []),
     onMaxDurationRef: pttMaxDurationStopRef,
   });
@@ -228,14 +241,13 @@ export default function useGlobalPTT() {
       api.entities.PTTSignal.delete(id).catch(() => {});
     });
 
-    void stopLiveTransmit();
-
     if (pttRecordingActiveRef.current) {
       pttRecordingActiveRef.current = false;
       sendMutation.mutate();
       return;
     }
 
+    void stopLiveTransmit();
     void stopRecording().catch(() => {});
   }, [monitorMode, sendMutation, stopLiveTransmit, stopRecording]);
 
@@ -269,6 +281,9 @@ export default function useGlobalPTT() {
 
     recordSessionInteraction();
     unlockAudioForPTT();
+    const broadcastId = crypto.randomUUID();
+    playClearTone(broadcastId);
+
     isPTTPressedRef.current = true;
     pttStopPendingRef.current = false;
     pttRecordingActiveRef.current = false;
@@ -276,10 +291,10 @@ export default function useGlobalPTT() {
     pttDebugLog("ptt.press", {
       surface: monitorMode ? "global-monitor" : "global-talk",
       channelIds: targetIds,
+      broadcastId,
     });
 
     const startSequence = (async () => {
-      const broadcastId = crypto.randomUUID();
       pttDebugLog("ptt.sequence.start", {
         surface: monitorMode ? "global-monitor" : "global-talk",
         broadcastId,
@@ -315,7 +330,6 @@ export default function useGlobalPTT() {
           broadcastId,
           channelIds: targetIds,
         });
-        playClearTone(broadcastId);
 
         const started = await startRecording({
           broadcastId,

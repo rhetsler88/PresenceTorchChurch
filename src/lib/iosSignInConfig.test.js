@@ -69,9 +69,10 @@ describe("native iOS sign-in configuration", () => {
       "utf8"
     );
     assert.ok(coordinator.includes(".playAndRecord"));
-    assert.ok(coordinator.includes(".voiceChat"));
+    assert.ok(coordinator.includes(".videoChat"));
     assert.ok(coordinator.includes("overrideOutputAudioPort(.speaker)"));
     assert.ok(coordinator.includes("retain("));
+    assert.ok(coordinator.includes("routeChangeNotification"));
 
     const voice = readFileSync(
       join(root, "ios/App/App/NativeVoiceProcessingPlugin.swift"),
@@ -85,7 +86,10 @@ describe("native iOS sign-in configuration", () => {
       "utf8"
     );
     assert.ok(background.includes("AudioSessionCoordinator.retain(\"background\")"));
-    assert.ok(!background.includes(".playback"));
+    assert.ok(!background.includes("AVAudioEngine()"));
+    assert.ok(!background.includes("silentEngine"));
+    assert.ok(background.includes("AVAudioPlayer"));
+    assert.ok(voice.includes("prepareListen"));
   });
 
   it("uses the web client as the Google ID token audience", () => {

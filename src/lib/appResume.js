@@ -27,6 +27,8 @@ export function installAppResumeHandlers() {
   installed = true;
 
   window.addEventListener("resume", handleAppResume);
+  window.addEventListener("ptt-audio-session", handleAppResume);
+  window.addEventListener("ptt-audio-unlocked", handleAppResume);
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "visible") {
       handleAppResume();

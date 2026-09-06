@@ -5,6 +5,7 @@ import { acquireAgoraClient, releaseAgoraClient, sessionKey } from "@/lib/agoraS
 import { configureAgoraSdk } from "@/lib/agoraInit";
 import { AGORA_SPEECH_ENCODER } from "@/lib/agoraAudio";
 import { destroyMicDenoise, openMicSession } from "@/lib/micDenoise";
+import { prepareNativeAgoraAudio } from "@/lib/nativeVoiceProcessing";
 import { pttDebugLog } from "@/lib/pttDebugLog";
 
 configureAgoraSdk();
@@ -77,6 +78,7 @@ export default function useAgoraMultiPublish({ userId }) {
     }
 
     pttDebugLog("agora.multi.join.start", { channelId });
+    await prepareNativeAgoraAudio();
     const { appId, token, channelName, uid: agoraUid } = await fetchAgoraCredentials(channelId, uid);
     if (!appId || !token) throw new Error("Missing Agora credentials");
 

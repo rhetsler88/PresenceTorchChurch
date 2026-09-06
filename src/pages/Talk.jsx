@@ -16,7 +16,7 @@ import {
   usePassiveTalkListenRegistration,
 } from "../components/ptt/PassiveTalkListenProvider";
 import { useRegisterPagePTTHandlers } from "@/components/ptt/PTTHandlerProvider";
-import { playClearTone, playBusyTone, unlockAudioForPTT } from "@/lib/pttTones";
+import { playClearTone, playBusyTone, ensureAudioReady, unlockAudioForPTT } from "@/lib/pttTones";
 import { logVoiceMessageFailure } from "@/lib/voiceMessageLogging";
 import { cleanupStalePTTSignals, claimPttChannels, releasePttSignals } from "@/lib/pttSignals";
 import { pttDebugLog } from "@/lib/pttDebugLog";
@@ -123,6 +123,10 @@ export default function Talk() {
     () => ["messages", effectiveChannelId, user?.id, canReadMessages, canQueryFirestore],
     [effectiveChannelId, user?.id, canReadMessages, canQueryFirestore]
   );
+
+  useEffect(() => {
+    ensureAudioReady();
+  }, []);
 
   // Backfill users/{uid}.member_of_channels when approved on channel but not yet on user doc.
   useEffect(() => {

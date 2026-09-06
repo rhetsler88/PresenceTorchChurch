@@ -13,6 +13,14 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
             SessionPrefs.markForceLogoutOnNextStart()
         }
         SessionGuardBridge.bindBridgeIfNeeded()
+        AudioSessionCoordinator.startObserving()
+        AudioSessionCoordinator.onNeedsReplay = { reason in
+            let escaped = reason.replacingOccurrences(of: "'", with: "")
+            SessionGuardBridge.resolveBridgeViewController()?.webView?.evaluateJavaScript(
+                "window.dispatchEvent(new CustomEvent('ptt-audio-session', { detail: { reason: '\(escaped)' } }));",
+                completionHandler: nil
+            )
+        }
         return true
     }
 

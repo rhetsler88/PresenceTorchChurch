@@ -18,5 +18,20 @@ describe("Agora remote playback recovery", () => {
 
     const resume = readFileSync(join(root, "src/lib/appResume.js"), "utf8");
     assert.ok(resume.includes("replayActiveRemoteTracks()"));
+    assert.ok(resume.includes("ptt-audio-session"));
+    assert.ok(resume.includes("ptt-audio-unlocked"));
+  });
+
+  it("prepares the native audio session before Agora join", () => {
+    const multi = readFileSync(join(root, "src/hooks/useAgoraMultiListen.js"), "utf8");
+    assert.ok(multi.includes("prepareNativeAgoraAudio()"));
+    assert.ok(multi.includes("releaseNativeAgoraAudio()"));
+
+    const ptt = readFileSync(join(root, "src/hooks/useAgoraPTT.js"), "utf8");
+    assert.ok(ptt.includes("prepareNativeAgoraAudio()"));
+
+    const agora = readFileSync(join(root, "src/lib/agora.js"), "utf8");
+    assert.ok(agora.includes("Capacitor.isNativePlatform()"));
+    assert.ok(agora.includes("VITE_AGORA_DISABLED"));
   });
 });

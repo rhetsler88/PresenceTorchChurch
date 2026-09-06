@@ -34,6 +34,35 @@ describe("native iOS sign-in configuration", () => {
     assert.match(config, /providers:\s*\['google\.com',\s*'apple\.com'\]/);
   });
 
+  it("registers App-target plugins on iOS like Android MainActivity", () => {
+    const config = JSON.parse(
+      readFileSync(join(root, "ios/App/App/capacitor.config.json"), "utf8")
+    );
+    for (const plugin of [
+      "SessionGuardPlugin",
+      "HeadsetPTTPlugin",
+      "BackgroundAudioPlugin",
+      "NativeVoiceProcessingPlugin",
+    ]) {
+      assert.ok(
+        config.packageClassList.includes(plugin),
+        `${plugin} must be in iOS packageClassList`
+      );
+    }
+
+    const storyboard = readFileSync(
+      join(root, "ios/App/App/Base.lproj/Main.storyboard"),
+      "utf8"
+    );
+    assert.ok(storyboard.includes("customClass=\"AppBridgeViewController\""));
+
+    const bridge = readFileSync(
+      join(root, "ios/App/App/AppBridgeViewController.swift"),
+      "utf8"
+    );
+    assert.ok(bridge.includes("registerPluginInstance(SessionGuardPlugin())"));
+  });
+
   it("uses the web client as the Google ID token audience", () => {
     const handler = readFileSync(
       join(

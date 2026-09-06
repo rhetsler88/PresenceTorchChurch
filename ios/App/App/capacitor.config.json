@@ -33,6 +33,10 @@
 		"LocalNotificationsPlugin",
 		"PreferencesPlugin",
 		"PushNotificationsPlugin",
-		"NativeBiometricPlugin"
+		"NativeBiometricPlugin",
+		"SessionGuardPlugin",
+		"HeadsetPTTPlugin",
+		"BackgroundAudioPlugin",
+		"NativeVoiceProcessingPlugin"
 	]
 }

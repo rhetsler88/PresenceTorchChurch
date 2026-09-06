@@ -2,48 +2,49 @@ import { Capacitor, registerPlugin } from "@capacitor/core";
 
 export const SessionGuard = registerPlugin("SessionGuard");
 
+async function callSessionGuard(method, payload) {
+  if (!Capacitor.isNativePlatform()) return undefined;
+  try {
+    return await SessionGuard[method](payload);
+  } catch (err) {
+    console.warn(`[SessionGuard] ${method} failed:`, err?.message || err);
+    return undefined;
+  }
+}
+
 export async function syncNativeGoogleSignInPending(pending) {
-  if (!Capacitor.isNativePlatform()) return;
-  await SessionGuard.setGoogleSignInPending({ pending });
+  await callSessionGuard("setGoogleSignInPending", { pending });
 }
 
 export async function syncNativeActiveSession(active) {
-  if (!Capacitor.isNativePlatform()) return;
-  await SessionGuard.setActiveSession({ active });
+  await callSessionGuard("setActiveSession", { active });
 }
 
 export async function syncNativeSensitiveOperation(pending) {
-  if (!Capacitor.isNativePlatform()) return;
-  await SessionGuard.setSensitiveOperationPending({ pending });
+  await callSessionGuard("setSensitiveOperationPending", { pending });
 }
 
 export async function syncNativeIdleLogoutDeadline(deadlineMs) {
-  if (!Capacitor.isNativePlatform()) return;
-  await SessionGuard.setIdleLogoutDeadline({ deadlineMs: deadlineMs || 0 });
+  await callSessionGuard("setIdleLogoutDeadline", { deadlineMs: deadlineMs || 0 });
 }
 
 export async function consumeNativeForceLogoutPending() {
-  if (!Capacitor.isNativePlatform()) return false;
-  const result = await SessionGuard.consumeForceLogoutOnNextStart();
+  const result = await callSessionGuard("consumeForceLogoutOnNextStart");
   return result?.pending === true;
 }
 
 export async function markNativeForceLogoutOnNextStart() {
-  if (!Capacitor.isNativePlatform()) return;
-  await SessionGuard.markForceLogoutOnNextStart();
+  await callSessionGuard("markForceLogoutOnNextStart");
 }
 
 export async function clearNativeForceLogoutOnNextStart() {
-  if (!Capacitor.isNativePlatform()) return;
-  await SessionGuard.clearForceLogoutOnNextStart();
+  await callSessionGuard("clearForceLogoutOnNextStart");
 }
 
 export async function revokeNativeGoogleSignInSession() {
-  if (!Capacitor.isNativePlatform()) return;
-  await SessionGuard.revokeGoogleSignInSession();
+  await callSessionGuard("revokeGoogleSignInSession");
 }
 
 export async function clearNativeTextMessageNotifications() {
-  if (!Capacitor.isNativePlatform()) return;
-  await SessionGuard.clearTextMessageNotifications();
+  await callSessionGuard("clearTextMessageNotifications");
 }

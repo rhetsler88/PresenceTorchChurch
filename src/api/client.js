@@ -565,6 +565,9 @@ async function signInWithOAuthNative(providerId) {
     await persistOAuthSignIn();
   } catch (err) {
     throwIfAccountLinkRequired(err, providerId);
+    if (err?.code === "auth/invalid-credential") {
+      throw Object.assign(err, { oauthProvider: providerId });
+    }
     throw err;
   }
 }
@@ -711,8 +714,14 @@ export function getAuthErrorMessage(err) {
     case "auth/requires-recent-login":
       return "Please sign out, sign in again, and retry changing your password.";
     case "auth/wrong-password":
-    case "auth/invalid-credential":
       return "Incorrect email or password.";
+    case "auth/invalid-credential":
+      if (err?.oauthProvider) {
+        return "Google or Apple sign-in could not be verified. Try again, or use email and password.";
+      }
+      return "Incorrect email or password.";
+    case "auth/ios-google-config":
+      return "Google Sign-In is missing its iOS client configuration. Rebuild the app from the latest Xcode project.";
     case "auth/user-not-found":
       return "No account found with this email. Try creating an account.";
     case "auth/too-many-requests":
@@ -763,6 +772,10 @@ function enrichGoogleSignInError(err) {
       ),
       { code: "auth/google-developer-error", cause: err }
     );
+  }
+  const message = getNativePluginErrorMessage(err);
+  if (/client ID is missing|GIDClientID|GIDServerClientID|unable to present google/i.test(message)) {
+    return Object.assign(new Error(message), { code: "auth/ios-google-config", cause: err });
   }
   return err;
 }

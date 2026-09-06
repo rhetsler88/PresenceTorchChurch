@@ -48,6 +48,11 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         SessionGuardBridge.bindBridgeIfNeeded()
         SessionGuardBridge.flushPendingLogoutIfNeeded()
         BackgroundLogoutScheduler.shared.checkDeadlineOnForeground()
+        AudioSessionCoordinator.refreshIfNeeded()
+        SessionGuardBridge.resolveBridgeViewController()?.webView?.evaluateJavaScript(
+            "window.dispatchEvent(new Event('resume'));",
+            completionHandler: nil
+        )
     }
 
     func applicationWillTerminate(_ application: UIApplication) {

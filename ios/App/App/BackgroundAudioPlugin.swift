@@ -54,18 +54,7 @@ public class BackgroundAudioPlugin: CAPPlugin, CAPBridgedPlugin {
             return
         }
 
-        let session = AVAudioSession.sharedInstance()
-        do {
-            try session.setCategory(
-                .playback,
-                mode: .default,
-                options: [.allowBluetoothHFP, .allowBluetoothA2DP]
-            )
-            try session.setActive(true)
-        } catch {
-            CAPLog.print("BackgroundAudio session error:", error.localizedDescription)
-        }
-
+        AudioSessionCoordinator.retain("background")
         startSilentLoop()
         sessionActive = true
     }
@@ -74,13 +63,7 @@ public class BackgroundAudioPlugin: CAPPlugin, CAPBridgedPlugin {
         guard sessionActive else { return }
 
         stopSilentLoop()
-
-        do {
-            try AVAudioSession.sharedInstance().setActive(false, options: [.notifyOthersOnDeactivation])
-        } catch {
-            CAPLog.print("BackgroundAudio deactivate error:", error.localizedDescription)
-        }
-
+        AudioSessionCoordinator.release("background")
         sessionActive = false
     }
 

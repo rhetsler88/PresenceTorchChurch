@@ -63,6 +63,31 @@ describe("native iOS sign-in configuration", () => {
     assert.ok(bridge.includes("registerPluginInstance(SessionGuardPlugin())"));
   });
 
+  it("coordinates iOS AVAudioSession for Agora like Android speakerphone", () => {
+    const coordinator = readFileSync(
+      join(root, "ios/App/App/AudioSessionCoordinator.swift"),
+      "utf8"
+    );
+    assert.ok(coordinator.includes(".playAndRecord"));
+    assert.ok(coordinator.includes(".voiceChat"));
+    assert.ok(coordinator.includes("overrideOutputAudioPort(.speaker)"));
+    assert.ok(coordinator.includes("retain("));
+
+    const voice = readFileSync(
+      join(root, "ios/App/App/NativeVoiceProcessingPlugin.swift"),
+      "utf8"
+    );
+    assert.ok(voice.includes("AudioSessionCoordinator.retain(\"voice\")"));
+    assert.ok(!voice.includes("setActive(false"));
+
+    const background = readFileSync(
+      join(root, "ios/App/App/BackgroundAudioPlugin.swift"),
+      "utf8"
+    );
+    assert.ok(background.includes("AudioSessionCoordinator.retain(\"background\")"));
+    assert.ok(!background.includes(".playback"));
+  });
+
   it("uses the web client as the Google ID token audience", () => {
     const handler = readFileSync(
       join(

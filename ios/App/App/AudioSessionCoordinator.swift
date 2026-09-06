@@ -3,117 +3,156 @@ import Capacitor
 import Foundation
 
 /// Single AVAudioSession owner for Agora listen, PTT publish, headset PTT, and
-/// background keep-alive. Android's NativeVoiceProcessing uses
-/// MODE_IN_COMMUNICATION + speakerphone; this is the iOS equivalent.
+/// background keep-alive.
 ///
-/// Do not deactivate the session while any holder is active — `setActive(false)`
-/// tears down WKWebView WebRTC playback.
-///
-/// WebKit resets the session to the earpiece when a PeerConnection starts.
-/// Re-apply speaker on a timer and on route/interruption notifications.
+/// Listen uses `.playback` so the orange mic pill is not stuck on. PTT (`voice`)
+/// switches to `.playAndRecord` + speaker once, then we leave the session alone.
+/// Re-applying `setCategory` during an active WKWebView PeerConnection deadlocks
+/// the main thread (frozen mic, then crash).
 enum AudioSessionCoordinator {
-    private static let queue = DispatchQueue(label: "church.presencetorch.audio-session")
+    private static let lock = NSLock()
     private static var holders = Set<String>()
     private static var observing = false
-    private static var refreshTimer: Timer?
+    private static var applying = false
+    private static var currentMode: SessionMode = .idle
     static var onNeedsReplay: ((String) -> Void)?
 
+    private enum SessionMode {
+        case idle
+        case playback
+        case record
+    }
+
     static func startObserving() {
-        queue.sync {
-            guard !observing else { return }
-            observing = true
-            let center = NotificationCenter.default
-            center.addObserver(
-                forName: AVAudioSession.routeChangeNotification,
-                object: nil,
-                queue: .main
-            ) { _ in
-                refreshIfNeeded()
-                onNeedsReplay?("route")
-            }
-            center.addObserver(
-                forName: AVAudioSession.interruptionNotification,
-                object: nil,
-                queue: .main
-            ) { notification in
-                let raw = notification.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt
-                let type = raw.flatMap(AVAudioSession.InterruptionType.init(rawValue:))
-                if type == .ended {
-                    refreshIfNeeded()
-                    onNeedsReplay?("interruption")
-                }
+        lock.lock()
+        let already = observing
+        observing = true
+        lock.unlock()
+        guard !already else { return }
+
+        NotificationCenter.default.addObserver(
+            forName: AVAudioSession.routeChangeNotification,
+            object: nil,
+            queue: .main
+        ) { _ in
+            routeToSpeakerIfRecording()
+        }
+        NotificationCenter.default.addObserver(
+            forName: AVAudioSession.interruptionNotification,
+            object: nil,
+            queue: .main
+        ) { notification in
+            let raw = notification.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt
+            let type = raw.flatMap(AVAudioSession.InterruptionType.init(rawValue:))
+            if type == .ended {
+                routeToSpeakerIfRecording()
+                onNeedsReplay?("interruption")
             }
         }
     }
 
     static func retain(_ holder: String) {
         startObserving()
-        queue.sync {
-            holders.insert(holder)
-            applyVoiceSession()
-            startRefreshTimerLocked()
-        }
+        let next = mutateHolders { $0.insert(holder) }
+        applyIfModeChanged(next)
     }
 
     static func release(_ holder: String, deactivateIfIdle: Bool = false) {
-        queue.sync {
-            holders.remove(holder)
-            if holders.isEmpty {
-                stopRefreshTimerLocked()
-                if deactivateIfIdle {
-                    deactivate()
-                }
+        let next = mutateHolders { $0.remove(holder) }
+        if next == .idle {
+            if deactivateIfIdle {
+                deactivate()
+            }
+            lock.lock()
+            currentMode = .idle
+            lock.unlock()
+            return
+        }
+        applyIfModeChanged(next)
+    }
+
+    /// Speaker override only — never `setCategory` (unsafe during WebRTC).
+    static func refreshIfNeeded() {
+        routeToSpeakerIfRecording()
+    }
+
+    private static func desiredMode(_ set: Set<String>) -> SessionMode {
+        if set.isEmpty { return .idle }
+        if set.contains("voice") { return .record }
+        return .playback
+    }
+
+    private static func mutateHolders(_ body: (inout Set<String>) -> Void) -> SessionMode {
+        lock.lock()
+        body(&holders)
+        let next = desiredMode(holders)
+        lock.unlock()
+        return next
+    }
+
+    private static func applyIfModeChanged(_ next: SessionMode) {
+        lock.lock()
+        let changed = currentMode != next
+        lock.unlock()
+        guard changed else { return }
+        applySession(next)
+    }
+
+    private static func applySession(_ mode: SessionMode) {
+        let work = {
+            lock.lock()
+            if applying {
+                lock.unlock()
                 return
             }
-            applyVoiceSession()
-        }
-    }
+            applying = true
+            lock.unlock()
 
-    static func refreshIfNeeded() {
-        queue.sync {
-            if !holders.isEmpty {
-                applyVoiceSession()
+            let session = AVAudioSession.sharedInstance()
+            do {
+                switch mode {
+                case .idle:
+                    break
+                case .playback:
+                    try session.setCategory(.playback, mode: .spokenAudio, options: [])
+                    try session.setActive(true)
+                case .record:
+                    try session.setCategory(
+                        .playAndRecord,
+                        mode: .videoChat,
+                        options: [.defaultToSpeaker, .allowBluetoothHFP, .allowBluetoothA2DP]
+                    )
+                    try session.setActive(true)
+                    routeToSpeaker(session)
+                }
+                lock.lock()
+                currentMode = mode
+                applying = false
+                lock.unlock()
+            } catch {
+                lock.lock()
+                applying = false
+                lock.unlock()
+                CAPLog.print("AudioSessionCoordinator error:", error.localizedDescription)
             }
         }
-    }
 
-    static func applyVoiceSession() {
-        let session = AVAudioSession.sharedInstance()
-        do {
-            // videoChat + defaultToSpeaker matches Android speakerphone PTT.
-            // voiceChat prefers the earpiece and sounds like "no audio".
-            try session.setCategory(
-                .playAndRecord,
-                mode: .videoChat,
-                options: [.defaultToSpeaker, .allowBluetoothHFP, .allowBluetoothA2DP]
-            )
-            try session.setActive(true)
-            routeToSpeakerUnlessBluetooth(session)
-        } catch {
-            CAPLog.print("AudioSessionCoordinator error:", error.localizedDescription)
+        if Thread.isMainThread {
+            work()
+        } else {
+            DispatchQueue.main.async(execute: work)
         }
     }
 
-    private static func startRefreshTimerLocked() {
-        DispatchQueue.main.async {
-            guard refreshTimer == nil else { return }
-            refreshTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { _ in
-                refreshIfNeeded()
-            }
-            if let timer = refreshTimer {
-                RunLoop.main.add(timer, forMode: .common)
-            }
-        }
+    private static func routeToSpeakerIfRecording() {
+        lock.lock()
+        let recording = currentMode == .record
+        lock.unlock()
+        guard recording else { return }
+        routeToSpeaker(AVAudioSession.sharedInstance())
     }
 
-    private static func stopRefreshTimerLocked() {
-        DispatchQueue.main.async {
-            refreshTimer?.invalidate()
-            refreshTimer = nil
-        }
-    }
-
-    private static func routeToSpeakerUnlessBluetooth(_ session: AVAudioSession) {
+    private static func routeToSpeaker(_ session: AVAudioSession) {
         let bluetoothTypes: Set<AVAudioSession.Port> = [
             .bluetoothHFP,
             .bluetoothA2DP,

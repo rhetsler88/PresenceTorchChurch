@@ -33,5 +33,11 @@ describe("Agora remote playback recovery", () => {
     const agora = readFileSync(join(root, "src/lib/agora.js"), "utf8");
     assert.ok(agora.includes("Capacitor.isNativePlatform()"));
     assert.ok(agora.includes("VITE_AGORA_DISABLED"));
+
+    const remote = readFileSync(join(root, "src/lib/agoraRemote.js"), "utf8");
+    assert.ok(!remote.includes("refreshNativeAgoraAudio"));
+
+    const broadcast = readFileSync(join(root, "src/hooks/usePttBroadcast.js"), "utf8");
+    assert.ok(broadcast.includes("settleWithin"));
   });
 });

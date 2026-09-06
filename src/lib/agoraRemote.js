@@ -7,7 +7,6 @@ import {
   PTT_SETTINGS_CHANGED,
   USER_LISTEN_VOLUMES_KEY,
 } from "@/lib/pttSettings";
-import { refreshNativeAgoraAudio } from "@/lib/nativeVoiceProcessing";
 import { unlockAudioForPTT } from "@/lib/pttTones";
 
 /** @type {Set<import('agora-rtc-sdk-ng').IRemoteAudioTrack>} */
@@ -117,11 +116,9 @@ export async function fetchAgoraCredentials(channelId, userId) {
 export async function playAgoraRemoteAudio(audioTrack, { speakerUserId, channelId } = {}) {
   if (!audioTrack) return false;
   unlockAudioForPTT();
-  await refreshNativeAgoraAudio();
   try {
     await audioTrack.play();
     trackRemoteAudio(audioTrack, speakerUserId, channelId);
-    await refreshNativeAgoraAudio();
     return true;
   } catch (err) {
     console.warn("Agora remote audio play failed:", err);
@@ -130,12 +127,21 @@ export async function playAgoraRemoteAudio(audioTrack, { speakerUserId, channelI
   }
 }
 
+function trackIsPlaying(audioTrack) {
+  try {
+    if (typeof audioTrack.isPlaying === "function") return audioTrack.isPlaying();
+    return Boolean(audioTrack.isPlaying);
+  } catch {
+    return false;
+  }
+}
+
 /** Retry play() on subscribed remote tracks after iOS autoplay / resume. */
 export function replayActiveRemoteTracks() {
   unlockAudioForPTT();
-  void refreshNativeAgoraAudio();
   let retried = 0;
   for (const track of activeRemoteTracks) {
+    if (trackIsPlaying(track)) continue;
     retried += 1;
     try {
       const playResult = track.play();

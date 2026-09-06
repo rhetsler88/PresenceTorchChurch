@@ -70,9 +70,11 @@ describe("native iOS sign-in configuration", () => {
     );
     assert.ok(coordinator.includes(".playAndRecord"));
     assert.ok(coordinator.includes(".videoChat"));
+    assert.ok(coordinator.includes(".playback"));
     assert.ok(coordinator.includes("overrideOutputAudioPort(.speaker)"));
     assert.ok(coordinator.includes("retain("));
-    assert.ok(coordinator.includes("routeChangeNotification"));
+    assert.ok(!coordinator.includes("scheduledTimer"));
+    assert.ok(coordinator.includes("leave the session alone"));
 
     const voice = readFileSync(
       join(root, "ios/App/App/NativeVoiceProcessingPlugin.swift"),

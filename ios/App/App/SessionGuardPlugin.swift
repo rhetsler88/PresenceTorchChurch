@@ -98,6 +98,8 @@ public class SessionGuardPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "setActiveSession", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "setSensitiveOperationPending", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "setIdleLogoutDeadline", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "markForceLogoutOnNextStart", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "clearForceLogoutOnNextStart", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "consumeForceLogoutOnNextStart", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "revokeGoogleSignInSession", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "clearTextMessageNotifications", returnType: CAPPluginReturnPromise),
@@ -137,6 +139,16 @@ public class SessionGuardPlugin: CAPPlugin, CAPBridgedPlugin {
             BackgroundLogoutScheduler.shared.cancel()
         }
 
+        call.resolve()
+    }
+
+    @objc func markForceLogoutOnNextStart(_ call: CAPPluginCall) {
+        SessionPrefs.markForceLogoutOnNextStart()
+        call.resolve()
+    }
+
+    @objc func clearForceLogoutOnNextStart(_ call: CAPPluginCall) {
+        SessionPrefs.clearForceLogoutOnNextStart()
         call.resolve()
     }
 

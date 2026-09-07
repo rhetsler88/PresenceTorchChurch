@@ -170,6 +170,12 @@ service cloud.firestore {
         || isMonitorForChannel(channelId);
     }
 
+    // Talk / Monitor "users online" — anyone who can read the channel voice log.
+    function canReadChannelPresence(channelId) {
+      return canSendOnChannel(channelId)
+        || isChannelAlertRecipient(channelId);
+    }
+
     function userOrganization() {
       return userDoc().data.get('organization', '');
     }
@@ -438,7 +444,7 @@ service cloud.firestore {
       allow read: if isSignedIn()
         && resource.data.channel_id is string
         && resource.data.channel_id.size() > 0
-        && canSendOnChannel(resource.data.channel_id);
+        && canReadChannelPresence(resource.data.channel_id);
 
       allow create: if isSignedIn()
         && request.resource.data.user_id == request.auth.uid

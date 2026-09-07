@@ -29,8 +29,8 @@ function readLastChannelId() {
 }
 
 /**
- * App-wide Discord-style presence: stays active while the app is foreground,
- * merges Talk + Monitor + last active channel registrations.
+ * App-wide Discord-style presence: publishes while Talk/Monitor/listen sessions
+ * are active and subscribes to per-channel online counts from Firestore.
  */
 export default function PresenceProvider({ children }) {
   const { user } = useAuth();
@@ -71,8 +71,7 @@ export default function PresenceProvider({ children }) {
   useEffect(() => {
     if (!presenceEnabled) return undefined;
 
-    const onMonitorRoute = location.pathname === "/monitor" || location.pathname.startsWith("/monitor/");
-    const listenChannelIds = onMonitorRoute ? (passiveMonitor?.listenChannelIds || []) : [];
+    const listenChannelIds = passiveMonitor?.listenChannelIds || [];
 
     registerPresenceSource(MONITOR_ID, {
       channelIds: listenChannelIds,
@@ -86,7 +85,6 @@ export default function PresenceProvider({ children }) {
   }, [
     presenceEnabled,
     displayName,
-    location.pathname,
     passiveMonitor?.listenChannelIds?.join(","),
   ]);
 

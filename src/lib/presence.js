@@ -10,13 +10,14 @@ import {
   where,
   writeBatch,
 } from "firebase/firestore";
+import { onAuthStateChanged } from "firebase/auth";
 import { auth, db } from "@/lib/firebase";
 
-/** Heartbeat while the app is open (~1 write per 3 min per channel). */
-export const PRESENCE_HEARTBEAT_MS = 3 * 60 * 1000;
+/** Heartbeat while the app is open (Discord-style ~1 write per minute per channel). */
+export const PRESENCE_HEARTBEAT_MS = 60 * 1000;
 
 /** Offline if no heartbeat within this window (slightly longer than heartbeat). */
-export const PRESENCE_STALE_MS = 3.5 * 60 * 1000;
+export const PRESENCE_STALE_MS = 90 * 1000;
 
 async function ensureAuthReady() {
   const user = auth.currentUser;
@@ -51,10 +52,10 @@ function readLastActiveMs(data) {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
-function isPresenceFresh(data) {
+export function isPresenceFresh(data, nowMs = Date.now()) {
   const ts = readLastActiveMs(data);
   if (!ts) return false;
-  return Date.now() - ts <= PRESENCE_STALE_MS;
+  return nowMs - ts <= PRESENCE_STALE_MS;
 }
 
 function mapPresenceDoc(docSnap) {
@@ -176,6 +177,7 @@ export function subscribeChannelPresence(channelId, onChange) {
 const registrations = new Map();
 let heartbeatTimer = null;
 let foregroundListenersInstalled = false;
+let authRetryListenerInstalled = false;
 let publishInFlight = null;
 
 function mergedPresencePayload() {
@@ -237,12 +239,28 @@ function isAppForeground() {
 
 function handleBackground() {
   stopHeartbeat();
-  void clearPresence();
+  const { enabled, channelIds } = mergedPresencePayload();
+  if (!enabled || channelIds.length === 0) {
+    void clearPresence();
+  }
 }
 
 function handleForeground() {
   void flushPresencePublish();
   startHeartbeat();
+}
+
+function ensureAuthRetryListener() {
+  if (authRetryListenerInstalled) return;
+  authRetryListenerInstalled = true;
+  onAuthStateChanged(auth, () => {
+    if (registrations.size > 0) {
+      void flushPresencePublish();
+      if (isAppForeground()) {
+        startHeartbeat();
+      }
+    }
+  });
 }
 
 function ensureForegroundListeners() {
@@ -275,6 +293,7 @@ export function registerPresenceSource(id, registration) {
     enabled: registration?.enabled !== false,
   });
   ensureForegroundListeners();
+  ensureAuthRetryListener();
   if (isAppForeground()) {
     void flushPresencePublish();
     startHeartbeat();

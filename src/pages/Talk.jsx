@@ -107,9 +107,14 @@ export default function Talk() {
     && user
     && (bypassesDailyCode(user) || isDailyCodeVerified(user))
   );
+  const canViewPresence = Boolean(
+    effectiveChannelId
+    && user
+    && canReadMessages
+    && (bypassesDailyCode(user) || isDailyCodeVerified(user))
+  );
   const { onlineMembers, onlineCount } = useChannelPresence(effectiveChannelId, {
-    enabled: canPublishPresence,
-    includeCurrentUser: canPublishPresence,
+    enabled: canViewPresence,
   });
   useRegisterTalkPresence(canPublishPresence ? effectiveChannelId : null);
   const canQueryFirestore = Boolean(

@@ -14,7 +14,9 @@ const config: CapacitorConfig = {
   },
   plugins: {
     FirebaseAuthentication: {
-      // Keep native Google creds on the plugin; bridge into Firebase JS SDK for Firestore.
+      // Native Google/Apple sheets, then JS signInWithCredential for Firestore.
+      // iOS Info.plist must set GIDClientID (iOS client) and GIDServerClientID (web client)
+      // so the Google ID token audience matches the Firebase JS SDK.
       skipNativeAuth: true,
       providers: ['google.com', 'apple.com'],
     },

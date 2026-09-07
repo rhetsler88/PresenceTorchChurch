@@ -4,8 +4,8 @@ import { getDisplayName } from "@/lib/userUtils";
 import { subscribeChannelPresence } from "@/lib/presence";
 
 /**
- * Realtime list of users currently present on a channel.
- * Optionally includes the signed-in user while they are publishing here.
+ * Realtime list of users currently present on a channel (Discord-style).
+ * Optionally includes the signed-in user while they are actively publishing here.
  */
 export default function useChannelPresence(
   channelId,

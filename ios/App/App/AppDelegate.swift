@@ -1,4 +1,5 @@
 import Capacitor
+import GoogleSignIn
 import UIKit
 
 @UIApplicationMain
@@ -12,6 +13,14 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
             SessionPrefs.markForceLogoutOnNextStart()
         }
         SessionGuardBridge.bindBridgeIfNeeded()
+        AudioSessionCoordinator.startObserving()
+        AudioSessionCoordinator.onNeedsReplay = { reason in
+            let escaped = reason.replacingOccurrences(of: "'", with: "")
+            SessionGuardBridge.resolveBridgeViewController()?.webView?.evaluateJavaScript(
+                "window.dispatchEvent(new CustomEvent('ptt-audio-session', { detail: { reason: '\(escaped)' } }));",
+                completionHandler: nil
+            )
+        }
         return true
     }
 
@@ -47,6 +56,11 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         SessionGuardBridge.bindBridgeIfNeeded()
         SessionGuardBridge.flushPendingLogoutIfNeeded()
         BackgroundLogoutScheduler.shared.checkDeadlineOnForeground()
+        AudioSessionCoordinator.refreshIfNeeded()
+        SessionGuardBridge.resolveBridgeViewController()?.webView?.evaluateJavaScript(
+            "window.dispatchEvent(new Event('resume'));",
+            completionHandler: nil
+        )
     }
 
     func applicationWillTerminate(_ application: UIApplication) {
@@ -61,6 +75,9 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     }
 
     func application(_ app: UIApplication, open url: URL, options: [UIApplication.OpenURLOptionsKey: Any] = [:]) -> Bool {
+        if GIDSignIn.sharedInstance.handle(url) {
+            return true
+        }
         return ApplicationDelegateProxy.shared.application(app, open: url, options: options)
     }
 

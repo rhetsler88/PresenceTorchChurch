@@ -5,6 +5,7 @@ import {
   indexedDBLocalPersistence,
 } from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
+import { getDatabase } from "firebase/database";
 import { getStorage } from "firebase/storage";
 import { getMessaging, isSupported } from "firebase/messaging";
 import { Capacitor } from "@capacitor/core";
@@ -17,6 +18,7 @@ const firebaseConfig = {
   messagingSenderId: "956501692008",
   appId: "1:956501692008:web:12f8f8ad119b32c1e335dd",
   measurementId: "G-QNHVG4NRR7",
+  databaseURL: "https://presence-torch-church-default-rtdb.firebaseio.com",
 };
 
 export const app = getApps().length ? getApp() : initializeApp(firebaseConfig);
@@ -37,6 +39,7 @@ function createAuth() {
 
 export const auth = createAuth();
 export const db = getFirestore(app);
+export const rtdb = getDatabase(app);
 export const storage = getStorage(app);
 
 let messagingPromise = null;

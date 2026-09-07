@@ -16,6 +16,7 @@ import { isAccountLinkRequiredError } from "@/lib/accountLinking";
 import {
   getBiometricLabel,
   hasBiometricSignIn,
+  isBiometricCancelled,
   isBiometricHardwareAvailable,
   isBiometricPlatform,
   saveBiometricCredentials,
@@ -48,9 +49,6 @@ export default function AuthSignInPanel() {
 
   const isCaptchaError = (err) =>
     err?.code === "auth/recaptcha-failed" || err?.code === "auth/recaptcha-required";
-
-  const isBiometricCancelled = (err) =>
-    err?.message?.includes("cancel") || err?.code === 10 || err?.code === 13;
 
   const promptBiometricSignIn = useCallback(async () => {
     setBiometricSigningIn(true);

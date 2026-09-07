@@ -1,7 +1,7 @@
 import AVFoundation
 import Capacitor
 
-/// Configures iOS voice processing before WebView getUserMedia (AVAudioSession voiceChat + voice processing).
+/// Configures iOS voice processing before WebView getUserMedia / Agora WebRTC.
 @objc(NativeVoiceProcessingPlugin)
 public class NativeVoiceProcessingPlugin: CAPPlugin, CAPBridgedPlugin {
     public let identifier = "NativeVoiceProcessingPlugin"
@@ -9,37 +9,23 @@ public class NativeVoiceProcessingPlugin: CAPPlugin, CAPBridgedPlugin {
     public let pluginMethods: [CAPPluginMethod] = [
         CAPPluginMethod(name: "enable", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "disable", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "prepareListen", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "releaseListen", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "refresh", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "isSupported", returnType: CAPPluginReturnPromise),
     ]
 
     private var sessionActive = false
-    private var previousCategory: AVAudioSession.Category?
-    private var previousMode: AVAudioSession.Mode?
-    private var previousCategoryOptions: AVAudioSession.CategoryOptions?
+    private var listenActive = false
 
     @objc func enable(_ call: CAPPluginCall) {
         DispatchQueue.main.async {
-            let session = AVAudioSession.sharedInstance()
-            do {
-                if !self.sessionActive {
-                    self.previousCategory = session.category
-                    self.previousMode = session.mode
-                    self.previousCategoryOptions = session.categoryOptions
-                }
-                try session.setCategory(
-                    .playAndRecord,
-                    mode: .voiceChat,
-                    options: [.defaultToSpeaker, .allowBluetoothHFP]
-                    )
-                try session.setActive(true)
-                self.sessionActive = true
-                call.resolve([
-                    "enabled": true,
-                    "voiceProcessing": true,
-                ])
-            } catch {
-                call.reject("Failed to enable voice processing", nil, error)
-            }
+            AudioSessionCoordinator.retain("voice")
+            self.sessionActive = true
+            call.resolve([
+                "enabled": true,
+                "voiceProcessing": true,
+            ])
         }
     }
 
@@ -50,23 +36,36 @@ public class NativeVoiceProcessingPlugin: CAPPlugin, CAPBridgedPlugin {
                 return
             }
             self.sessionActive = false
-            let session = AVAudioSession.sharedInstance()
-            do {
-                if let category = self.previousCategory, let mode = self.previousMode {
-                    try session.setCategory(
-                        category,
-                        mode: mode,
-                        options: self.previousCategoryOptions ?? []
-                    )
-                }
-                try session.setActive(false, options: [.notifyOthersOnDeactivation])
-            } catch {
-                CAPLog.print("NativeVoiceProcessing disable error:", error.localizedDescription)
-            }
-            self.previousCategory = nil
-            self.previousMode = nil
-            self.previousCategoryOptions = nil
+            // Keep the shared session alive so Agora remote playback continues.
+            AudioSessionCoordinator.release("voice")
             call.resolve()
+        }
+    }
+
+    @objc func prepareListen(_ call: CAPPluginCall) {
+        DispatchQueue.main.async {
+            AudioSessionCoordinator.retain("agora")
+            self.listenActive = true
+            call.resolve(["prepared": true])
+        }
+    }
+
+    @objc func releaseListen(_ call: CAPPluginCall) {
+        DispatchQueue.main.async {
+            guard self.listenActive else {
+                call.resolve()
+                return
+            }
+            self.listenActive = false
+            AudioSessionCoordinator.release("agora")
+            call.resolve()
+        }
+    }
+
+    @objc func refresh(_ call: CAPPluginCall) {
+        DispatchQueue.main.async {
+            AudioSessionCoordinator.refreshIfNeeded()
+            call.resolve(["refreshed": true])
         }
     }
 

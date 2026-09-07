@@ -6,6 +6,19 @@ import useAgoraPTT from "./useAgoraPTT";
 import useAgoraMultiPublish from "./useAgoraMultiPublish";
 import { pttDebugLog } from "@/lib/pttDebugLog";
 
+/** Do not let a hung Agora WebRTC call keep the mic open. */
+function settleWithin(promise, ms) {
+  return Promise.race([
+    Promise.resolve(promise).catch((err) => {
+      console.warn("Agora operation failed:", err);
+      return null;
+    }),
+    new Promise((resolve) => {
+      setTimeout(() => resolve(null), ms);
+    }),
+  ]);
+}
+
 /**
  * PTT broadcast: Firebase relay archives every transmission; live chunks only when Agora is off.
  * When Agora is configured, publish the same mic stream over WebRTC (archive-only relay).
@@ -111,19 +124,19 @@ export default function usePttBroadcast(options) {
       if (stream) {
         try {
           if (publishIds.length > 1) {
-            const ok = await agoraMulti.startRecording({
+            const ok = await settleWithin(agoraMulti.startRecording({
               broadcastId,
               channelIds: publishIds,
               sharedStream: stream,
-            });
-            usingMultiPublishRef.current = ok;
-            usingAgoraRef.current = ok;
+            }), 4000);
+            usingMultiPublishRef.current = Boolean(ok);
+            usingAgoraRef.current = Boolean(ok);
           } else {
-            const ok = await agora.startRecording({
+            const ok = await settleWithin(agora.startRecording({
               broadcastId,
               sharedStream: stream,
-            });
-            usingAgoraRef.current = ok;
+            }), 4000);
+            usingAgoraRef.current = Boolean(ok);
           }
         } catch (err) {
           console.warn("Agora publish failed:", err);
@@ -164,9 +177,9 @@ export default function usePttBroadcast(options) {
 
     if (usingAgoraRef.current) {
       if (usingMultiPublishRef.current) {
-        await agoraMulti.stopRecording({ stopStream: false });
+        await settleWithin(agoraMulti.stopRecording({ stopStream: false }), 2000);
       } else {
-        await agora.stopRecording({ stopStream: false });
+        await settleWithin(agora.stopRecording({ stopStream: false }), 2000);
       }
       usingAgoraRef.current = false;
       usingMultiPublishRef.current = false;

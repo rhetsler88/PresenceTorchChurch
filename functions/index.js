@@ -38,6 +38,7 @@ const {
   rejectChannelMember,
 } = require("./channelMembership");
 const { logProtectionLevelChange } = require("./protectionLevelHistory");
+const { syncPresenceToFirestore } = require("./presenceSync");
 
 initializeApp();
 setGlobalOptions({ region: "us-east5" });
@@ -1074,7 +1075,7 @@ exports.sendTextMessagePush = onDocumentCreated(
     const channelName = channelData.name || "Channel";
 
     const usersSnap = await db.collection("users").get();
-    const recipients = buildTextMessageRecipients(usersSnap, channelData, senderId);
+    const recipients = buildTextMessageRecipients(usersSnap, channelData, senderId, channelId);
     if (recipients.length === 0) return;
 
     const messaging = getMessaging();
@@ -1585,6 +1586,8 @@ exports.verifyDailyAccessCode = onCall(CALLABLE_OPTIONS, async (request) => {
     mapDailyCodeError(err);
   }
 });
+
+exports.syncPresenceToFirestore = syncPresenceToFirestore;
 
 exports.getDailyAccessCode = onCall(CALLABLE_OPTIONS, async (request) => {
   if (!request.auth) {

@@ -1,3 +1,5 @@
+import { Capacitor } from "@capacitor/core";
+
 /** Firebase channel id → Agora channel name (max 64 chars). */
 export function toAgoraChannelName(channelId) {
   if (!channelId) return "";
@@ -5,8 +7,15 @@ export function toAgoraChannelName(channelId) {
   return name.slice(0, 64);
 }
 
+/**
+ * Live audio uses Agora when the Vite app id is present OR we are in the
+ * native app. Cloud Agent / Xcode `cap:sync` often omits VITE_AGORA_APP_ID;
+ * `getAgoraToken` still returns `app_id`. Without this, iOS falls back to
+ * WebM storage-relay which WKWebView cannot play.
+ */
 export function isAgoraEnabled() {
-  return Boolean(import.meta.env.VITE_AGORA_APP_ID);
+  if (import.meta.env.VITE_AGORA_DISABLED === "true") return false;
+  return Boolean(import.meta.env.VITE_AGORA_APP_ID) || Capacitor.isNativePlatform();
 }
 
 export function getAgoraAppId() {

@@ -170,17 +170,10 @@ service cloud.firestore {
         || isMonitorForChannel(channelId);
     }
 
-    function canViewChannelPresence(channelId) {
+    // Talk / Monitor "users online" — anyone who can read the channel voice log.
+    function canReadChannelPresence(channelId) {
       return canSendOnChannel(channelId)
         || isChannelAlertRecipient(channelId);
-    }
-
-    // Match client canAccessChannelAlertsForChannel — PTT signals, relay chunks.
-    function canAccessChannelAlerts(channelId) {
-      return isChannelAlertRecipient(channelId)
-        || isOrgAdminForChannel(channelId)
-        || isChannelLeadForChannel(channelId)
-        || isMonitorForChannel(channelId);
     }
 
     function userOrganization() {
@@ -378,7 +371,7 @@ service cloud.firestore {
     match /pttSignals/{signalId} {
       allow read: if isElevatedFromToken();
       allow read: if channelIdOnResource()
-        && canAccessChannelAlerts(resource.data.channel_id)
+        && isChannelTalkMember(resource.data.channel_id)
         && canUsePttWhenDailyCodeRequired();
 
       allow create: if isSignedIn()
@@ -401,7 +394,7 @@ service cloud.firestore {
     match /audioChunks/{chunkId} {
       allow read: if isElevatedFromToken();
       allow read: if channelIdOnResource()
-        && canAccessChannelAlerts(resource.data.channel_id)
+        && isChannelTalkMember(resource.data.channel_id)
         && canUsePttWhenDailyCodeRequired();
 
       allow create: if isSignedIn()
@@ -447,32 +440,14 @@ service cloud.firestore {
     }
 
     // Per-user channel presence (Talk / Monitor "users online").
+    // Writes come from the syncPresenceToFirestore Cloud Function (RTDB onDisconnect).
     match /presence/{presenceId} {
       allow read: if isSignedIn()
         && resource.data.channel_id is string
         && resource.data.channel_id.size() > 0
-        && canViewChannelPresence(resource.data.channel_id);
+        && canReadChannelPresence(resource.data.channel_id);
 
-      allow create: if isSignedIn()
-        && request.resource.data.user_id == request.auth.uid
-        && request.resource.data.channel_id is string
-        && request.resource.data.channel_id.size() > 0
-        && canSendOnChannel(request.resource.data.channel_id)
-        && canUsePttWhenDailyCodeRequired()
-        && request.resource.data.keys().hasOnly(['user_id', 'channel_id', 'last_active_at', 'last_active_ms', 'display_name']);
-
-      allow update: if isSignedIn()
-        && request.resource.data.user_id == request.auth.uid
-        && resource.data.user_id == request.auth.uid
-        && request.resource.data.channel_id is string
-        && request.resource.data.channel_id.size() > 0
-        && canSendOnChannel(request.resource.data.channel_id)
-        && canUsePttWhenDailyCodeRequired()
-        && request.resource.data.diff(resource.data).affectedKeys()
-            .hasOnly(['channel_id', 'last_active_at', 'last_active_ms', 'display_name']);
-
-      allow delete: if isSignedIn()
-        && resource.data.user_id == request.auth.uid;
+      allow create, update, delete: if false;
     }
   }
 }

@@ -10,6 +10,7 @@ import { acquireAgoraClient, releaseAgoraClient, sessionKey, hasActiveAgoraClien
 import { configureAgoraSdk } from "@/lib/agoraInit";
 import { AGORA_SPEECH_ENCODER } from "@/lib/agoraAudio";
 import { destroyMicDenoise, openMicSession } from "@/lib/micDenoise";
+import { prepareNativeAgoraAudio, releaseNativeAgoraAudio } from "@/lib/nativeVoiceProcessing";
 import { pttDebugLog } from "@/lib/pttDebugLog";
 
 configureAgoraSdk();
@@ -129,6 +130,7 @@ export default function useAgoraPTT({
   const onRemoteLiveAudioRef = useRef(onRemoteLiveAudio);
   const releaseConnectionRef = useRef(null);
   const remoteHandlersRef = useRef(null);
+  const agoraPreparedRef = useRef(false);
 
   listenActiveRef.current = listenActive;
   warmJoinRef.current = warmJoin;
@@ -165,6 +167,18 @@ export default function useAgoraPTT({
     clearIdleLeaveTimer();
     scheduleIdleLeave();
   }, [clearIdleLeaveTimer, scheduleIdleLeave]);
+
+  const holdNativeAgoraAudio = useCallback(async () => {
+    if (agoraPreparedRef.current) return;
+    await prepareNativeAgoraAudio();
+    agoraPreparedRef.current = true;
+  }, []);
+
+  const dropNativeAgoraAudio = useCallback(async () => {
+    if (!agoraPreparedRef.current) return;
+    agoraPreparedRef.current = false;
+    await releaseNativeAgoraAudio();
+  }, []);
 
   const notifyRemoteLiveAudio = useCallback(() => {
     pttDebugLog("agora.remote-audio.start", {
@@ -221,7 +235,8 @@ export default function useAgoraPTT({
     if (key) {
       await releaseAgoraClient(key).catch(() => {});
     }
-  }, [clearIdleLeaveTimer, releaseOwnedStream]);
+    await dropNativeAgoraAudio();
+  }, [clearIdleLeaveTimer, dropNativeAgoraAudio, releaseOwnedStream]);
 
   releaseConnectionRef.current = releaseConnection;
 
@@ -245,6 +260,11 @@ export default function useAgoraPTT({
 
     const joinGen = ++joinGenRef.current;
     clearIdleLeaveTimer();
+    await holdNativeAgoraAudio();
+    if (joinGen !== joinGenRef.current) {
+      await dropNativeAgoraAudio();
+      return null;
+    }
 
     const attemptJoin = async (retry = retryIndex) => {
       try {
@@ -321,19 +341,24 @@ export default function useAgoraPTT({
         clientRef.current = null;
 
         if (joinGen !== joinGenRef.current || isExpectedJoinCancel(err)) {
+          await dropNativeAgoraAudio();
           return null;
         }
 
         const nextRetry = retry + 1;
         if (nextRetry <= RETRY_DELAYS_MS.length) {
           await new Promise((r) => setTimeout(r, RETRY_DELAYS_MS[retry] ?? 8000));
-          if (joinGen !== joinGenRef.current) return null;
+          if (joinGen !== joinGenRef.current) {
+            await dropNativeAgoraAudio();
+            return null;
+          }
           return attemptJoin(nextRetry);
         }
 
         console.error("Agora join failed:", err);
         pttDebugLog("agora.ensureJoined.failed", { channelId: cid, message: String(err?.message || err) });
         if (joinGen === joinGenRef.current) setIsChannelReady(false);
+        await dropNativeAgoraAudio();
         return null;
       }
     };
@@ -341,7 +366,7 @@ export default function useAgoraPTT({
     const joinTask = attemptJoin(retryIndex);
     joinPromiseRef.current = joinTask;
     return joinTask;
-  }, [bumpRemoteActivity, clearIdleLeaveTimer, notifyRemoteLiveAudio, scheduleIdleLeave]);
+  }, [bumpRemoteActivity, clearIdleLeaveTimer, dropNativeAgoraAudio, holdNativeAgoraAudio, notifyRemoteLiveAudio, scheduleIdleLeave]);
 
   useEffect(() => {
     if (!channelId || !userId) {

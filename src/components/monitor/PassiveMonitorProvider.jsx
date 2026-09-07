@@ -24,7 +24,7 @@ import useAgoraMultiListen from "@/hooks/useAgoraMultiListen";
 import usePttReceiver from "@/hooks/usePttReceiver";
 import useBackgroundRelayListen from "@/hooks/useBackgroundRelayListen";
 import { playClearTone } from "@/lib/pttTones";
-import { maybePlayTextMessageTone, isIncomingVoiceMessage } from "@/lib/textMessageNotifications";
+import { maybeNotifyIncomingTextMessage, isIncomingVoiceMessage } from "@/lib/textMessageNotifications";
 import { hasHeardBroadcast } from "@/lib/heardBroadcasts";
 import { recordSessionInteraction } from "@/lib/logoutOnClose";
 import { cleanupStalePTTSignals } from "@/lib/pttSignals";
@@ -174,7 +174,10 @@ export function PassiveMonitorProvider({ user, children }) {
         const channelId = event.data?.channel_id;
         if (!listenChannelIds.includes(channelId)) return;
         const heard = heardBroadcastsRef.current;
-        maybePlayTextMessageTone(event, user.id, heard);
+        const channel = monitorChannels.find((entry) => entry.id === channelId);
+        maybeNotifyIncomingTextMessage(event, user.id, heard, {
+          channelName: channel?.name || "",
+        });
         // Voice archives are never auto-played — live Agora/relay only.
         if (isIncomingVoiceMessage(event, user.id) && hasHeardBroadcast(event.data?.broadcast_id, heard, relayHeardRef, agoraHeardRef)) {
           return;
@@ -184,7 +187,7 @@ export function PassiveMonitorProvider({ user, children }) {
     );
 
     return unsub;
-  }, [passiveListenActive, listenChannelKey, listenChannelIds, user?.id]);
+  }, [passiveListenActive, listenChannelKey, listenChannelIds, user?.id, monitorChannels]);
 
   const isMuted = useCallback(
     (channelId) => mutedChannelIds.has(channelId),

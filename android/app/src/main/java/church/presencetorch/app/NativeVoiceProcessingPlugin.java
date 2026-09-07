@@ -19,23 +19,16 @@ import com.getcapacitor.annotation.CapacitorPlugin;
 public class NativeVoiceProcessingPlugin extends Plugin {
 
     private int previousMode = AudioManager.MODE_NORMAL;
-    private boolean sessionActive = false;
+    private boolean voiceActive = false;
+    private boolean listenActive = false;
 
     @PluginMethod
     public void enable(PluginCall call) {
-        AudioManager audioManager = getAudioManager();
-        if (audioManager == null) {
+        if (!applyCommunicationMode(true, listenActive)) {
             call.reject("AudioManager unavailable");
             return;
         }
-
-        if (!sessionActive) {
-            previousMode = audioManager.getMode();
-        }
-
-        audioManager.setMode(AudioManager.MODE_IN_COMMUNICATION);
-        audioManager.setSpeakerphoneOn(true);
-        sessionActive = true;
+        voiceActive = true;
 
         JSObject ret = new JSObject();
         ret.put("enabled", true);
@@ -46,12 +39,38 @@ public class NativeVoiceProcessingPlugin extends Plugin {
 
     @PluginMethod
     public void disable(PluginCall call) {
-        AudioManager audioManager = getAudioManager();
-        if (audioManager != null && sessionActive) {
-            audioManager.setMode(previousMode);
-        }
-        sessionActive = false;
+        voiceActive = false;
+        restoreIfIdle();
         call.resolve();
+    }
+
+    @PluginMethod
+    public void prepareListen(PluginCall call) {
+        if (!applyCommunicationMode(voiceActive, true)) {
+            call.reject("AudioManager unavailable");
+            return;
+        }
+        listenActive = true;
+        JSObject ret = new JSObject();
+        ret.put("prepared", true);
+        call.resolve(ret);
+    }
+
+    @PluginMethod
+    public void releaseListen(PluginCall call) {
+        listenActive = false;
+        restoreIfIdle();
+        call.resolve();
+    }
+
+    @PluginMethod
+    public void refresh(PluginCall call) {
+        if (voiceActive || listenActive) {
+            applyCommunicationMode(voiceActive, listenActive);
+        }
+        JSObject ret = new JSObject();
+        ret.put("refreshed", true);
+        call.resolve(ret);
     }
 
     @PluginMethod
@@ -61,6 +80,30 @@ public class NativeVoiceProcessingPlugin extends Plugin {
         ret.put("noiseSuppressorAvailable", NoiseSuppressor.isAvailable());
         ret.put("aecAvailable", AcousticEchoCanceler.isAvailable());
         call.resolve(ret);
+    }
+
+    private boolean applyCommunicationMode(boolean nextVoice, boolean nextListen) {
+        AudioManager audioManager = getAudioManager();
+        if (audioManager == null) {
+            return false;
+        }
+
+        if (!voiceActive && !listenActive) {
+            previousMode = audioManager.getMode();
+        }
+
+        audioManager.setMode(AudioManager.MODE_IN_COMMUNICATION);
+        audioManager.setSpeakerphoneOn(true);
+        voiceActive = nextVoice;
+        listenActive = nextListen;
+        return true;
+    }
+
+    private void restoreIfIdle() {
+        AudioManager audioManager = getAudioManager();
+        if (audioManager != null && !voiceActive && !listenActive) {
+            audioManager.setMode(previousMode);
+        }
     }
 
     private AudioManager getAudioManager() {

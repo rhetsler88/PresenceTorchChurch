@@ -32,6 +32,7 @@ public class HeadsetPTTPlugin: CAPPlugin, CAPBridgedPlugin {
             self.pttHeld = false
             self.unregisterRemoteCommands()
             self.clearNowPlayingInfo()
+            AudioSessionCoordinator.release("headset")
             call.resolve()
         }
     }
@@ -41,17 +42,7 @@ public class HeadsetPTTPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     private func activateAudioSession() {
-        let session = AVAudioSession.sharedInstance()
-        do {
-            try session.setCategory(
-                .playAndRecord,
-                mode: .voiceChat,
-                options: [.allowBluetoothHFP, .defaultToSpeaker]
-            )
-            try session.setActive(true)
-        } catch {
-            CAPLog.print("HeadsetPTT audio session error:", error.localizedDescription)
-        }
+        AudioSessionCoordinator.retain("headset")
 
         var nowPlayingInfo = [String: Any]()
         nowPlayingInfo[MPMediaItemPropertyTitle] = "Presence Torch PTT"

@@ -335,6 +335,13 @@ async function initNativePush(uid, userProfile) {
 
     try {
       await LocalNotifications.createChannel({
+        id: TEXT_MESSAGE_CHANNEL_ID,
+        name: "Text Messages",
+        importance: 4,
+        vibration: true,
+        sound: "default",
+      });
+      await LocalNotifications.createChannel({
         id: YELLOW_ALERT_CHANNEL_ID,
         name: "Yellow Alerts",
         importance: 5,

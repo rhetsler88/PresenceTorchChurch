@@ -111,8 +111,14 @@ export default function Talk() {
     && user
     && (bypassesDailyCode(user) || isDailyCodeVerified(user))
   );
+  const canViewPresence = Boolean(
+    effectiveChannelId
+    && user
+    && canReadMessages
+    && (bypassesDailyCode(user) || isDailyCodeVerified(user))
+  );
   const { onlineMembers, onlineCount } = useChannelPresence(effectiveChannelId, {
-    enabled: canPublishPresence,
+    enabled: canViewPresence,
     includeCurrentUser: canPublishPresence,
   });
   useRegisterTalkPresence(canPublishPresence ? effectiveChannelId : null);
@@ -708,6 +714,10 @@ export default function Talk() {
 
         try {
           const { signalIds } = await claimPromise;
+          if (pttStopPendingRef.current || !isPTTPressedRef.current) {
+            await releasePttSignals(signalIds);
+            return { pendingSend: true, signalId: null };
+          }
           pttSignalRef.current = signalIds[0] ?? null;
         } catch (err) {
           console.warn("PTT signal create failed:", err);

@@ -23,12 +23,20 @@
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>CFBundleURLName</key>
+			<string>Google Sign-In</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
 				<string>com.googleusercontent.apps.956501692008-v842mpcnv1r10gs8nj3r4j3h1lnmngop</string>
 			</array>
 		</dict>
 	</array>
+	<key>GIDClientID</key>
+	<string>956501692008-v842mpcnv1r10gs8nj3r4j3h1lnmngop.apps.googleusercontent.com</string>
+	<key>GIDServerClientID</key>
+	<string>956501692008-lj14r06gtrg12034uoo362k4qhmfen99.apps.googleusercontent.com</string>
 	<key>CFBundleVersion</key>
 	<string>$(CURRENT_PROJECT_VERSION)</string>
 	<key>LSRequiresIPhoneOS</key>

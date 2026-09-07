@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useState } from "react";
+import React, { createContext, useContext, useEffect, useRef } from "react";
 import { useLocation } from "react-router-dom";
 import useChannels from "@/hooks/useChannels";
 import { useAuth } from "@/lib/AuthContext";
@@ -29,14 +29,14 @@ function readLastChannelId() {
 }
 
 /**
- * App-wide Discord-style presence: stays active while the app is foreground,
- * merges Talk + Monitor + last active channel registrations.
+ * App-wide Discord-style presence: publishes via RTDB onDisconnect while Talk/Monitor
+ * listen sessions are active; online counts subscribe to the Firestore mirror.
  */
 export default function PresenceProvider({ children }) {
   const { user } = useAuth();
   const location = useLocation();
   const passiveMonitor = usePassiveMonitor();
-  const [talkChannelId, setTalkChannelIdState] = useState(null);
+  const talkChannelIdRef = useRef(null);
 
   const presenceEnabled = Boolean(
     user?.id && (bypassesDailyCode(user) || isDailyCodeVerified(user))
@@ -51,7 +51,7 @@ export default function PresenceProvider({ children }) {
       return undefined;
     }
 
-    const lastChannelId = talkChannelId || readLastChannelId();
+    const lastChannelId = readLastChannelId();
     const lastChannel = channels.find((channel) => channel.id === lastChannelId) || null;
     const baselineChannelIds = lastChannel && canAccessChannel(user, lastChannel)
       ? [lastChannel.id]
@@ -66,13 +66,12 @@ export default function PresenceProvider({ children }) {
     return () => {
       unregisterPresenceSource(APP_BASELINE_ID);
     };
-  }, [presenceEnabled, displayName, user, channels, location.pathname, talkChannelId]);
+  }, [presenceEnabled, displayName, user, channels, location.pathname]);
 
   useEffect(() => {
     if (!presenceEnabled) return undefined;
 
-    const onMonitorRoute = location.pathname === "/monitor" || location.pathname.startsWith("/monitor/");
-    const listenChannelIds = onMonitorRoute ? (passiveMonitor?.listenChannelIds || []) : [];
+    const listenChannelIds = passiveMonitor?.listenChannelIds || [];
 
     registerPresenceSource(MONITOR_ID, {
       channelIds: listenChannelIds,
@@ -86,12 +85,11 @@ export default function PresenceProvider({ children }) {
   }, [
     presenceEnabled,
     displayName,
-    location.pathname,
     passiveMonitor?.listenChannelIds?.join(","),
   ]);
 
   const setTalkChannelId = (channelId) => {
-    setTalkChannelIdState(channelId || null);
+    talkChannelIdRef.current = channelId || null;
     if (!presenceEnabled) return;
     registerPresenceSource(TALK_ID, {
       channelIds: channelId ? [channelId] : [],
@@ -104,15 +102,15 @@ export default function PresenceProvider({ children }) {
     if (!presenceEnabled) return undefined;
 
     registerPresenceSource(TALK_ID, {
-      channelIds: talkChannelId ? [talkChannelId] : [],
+      channelIds: talkChannelIdRef.current ? [talkChannelIdRef.current] : [],
       displayName,
-      enabled: Boolean(talkChannelId),
+      enabled: Boolean(talkChannelIdRef.current),
     });
 
     return () => {
       unregisterPresenceSource(TALK_ID);
     };
-  }, [presenceEnabled, displayName, talkChannelId]);
+  }, [presenceEnabled, displayName]);
 
   useEffect(() => {
     if (!user?.id) {

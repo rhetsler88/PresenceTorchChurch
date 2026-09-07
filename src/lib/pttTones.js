@@ -10,10 +10,14 @@ let silentKeepAlive = null;
 /** Call on user gesture (PTT press, tap) so tones are allowed in the browser. */
 export function unlockAudioForPTT() {
   if (typeof window === "undefined") return;
+  const firstUnlock = !isUnlocked;
   isUnlocked = true;
   const ctx = getContext();
   if (ctx.state === "suspended") {
     void ctx.resume().catch(() => {});
+  }
+  if (firstUnlock) {
+    window.dispatchEvent(new CustomEvent("ptt-audio-unlocked"));
   }
 }
 

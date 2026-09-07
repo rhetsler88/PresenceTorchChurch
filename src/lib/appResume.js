@@ -1,4 +1,5 @@
 import { Capacitor } from "@capacitor/core";
+import { replayActiveRemoteTracks } from "@/lib/agoraRemote";
 import { ensureAudioReady } from "@/lib/pttTones";
 
 /** Nudge WebView/React to repaint after native resume (fold/unfold, notification tap). */
@@ -14,6 +15,7 @@ function forceUiRepaint() {
 
 function handleAppResume() {
   ensureAudioReady();
+  replayActiveRemoteTracks();
   forceUiRepaint();
 }
 
@@ -25,6 +27,8 @@ export function installAppResumeHandlers() {
   installed = true;
 
   window.addEventListener("resume", handleAppResume);
+  window.addEventListener("ptt-audio-session", handleAppResume);
+  window.addEventListener("ptt-audio-unlocked", handleAppResume);
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "visible") {
       handleAppResume();

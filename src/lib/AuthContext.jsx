@@ -418,8 +418,12 @@ export const AuthProvider = ({ children }) => {
       setIsLoadingAuth(true);
 
       if (Capacitor.isNativePlatform()) {
-        if (await consumeNativeForceLogoutPending()) {
-          pendingCloseLogout = true;
+        try {
+          if (await consumeNativeForceLogoutPending()) {
+            pendingCloseLogout = true;
+          }
+        } catch (err) {
+          console.warn("[Auth] Native force-logout check failed:", err);
         }
         clearOAuthRedirectPending();
       } else {
@@ -569,10 +573,14 @@ export const AuthProvider = ({ children }) => {
 
   const navigateToLogin = () =>
     authApi.signInWithOAuth(OAUTH_PROVIDER_IDS.google);
-  const signInWithOAuth = (providerId) =>
-    authApi.signInWithOAuth(providerId);
-  const signInWithEmail = (email, password) =>
-    authApi.signInWithEmail(email, password);
+  const signInWithOAuth = async (providerId) => {
+    await authApi.signInWithOAuth(providerId);
+    await checkUserAuth({ silent: true });
+  };
+  const signInWithEmail = async (email, password) => {
+    await authApi.signInWithEmail(email, password);
+    await checkUserAuth({ silent: true });
+  };
   const signUpWithEmail = (email, password, captchaToken) =>
     authApi.signUpWithEmail(email, password, captchaToken);
 

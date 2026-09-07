@@ -1,0 +1,76 @@
+diff --git a/node_modules/@capacitor-firebase/authentication/ios/Plugin/Handlers/AppleAuthProviderHandler.swift b/node_modules/@capacitor-firebase/authentication/ios/Plugin/Handlers/AppleAuthProviderHandler.swift
+index 66cf0a5..38dec36 100644
+--- a/node_modules/@capacitor-firebase/authentication/ios/Plugin/Handlers/AppleAuthProviderHandler.swift
++++ b/node_modules/@capacitor-firebase/authentication/ios/Plugin/Handlers/AppleAuthProviderHandler.swift
+@@ -4,6 +4,7 @@ import FirebaseCore
+ import FirebaseAuth
+ import AuthenticationServices
+ import CryptoKit
++import UIKit
+ 
+ class AppleAuthProviderHandler: NSObject {
+     var pluginImplementation: FirebaseAuthentication
+@@ -37,7 +38,17 @@ class AppleAuthProviderHandler: NSObject {
+ @available(iOS 13.0, *)
+ extension AppleAuthProviderHandler: ASAuthorizationControllerDelegate, ASAuthorizationControllerPresentationContextProviding {
+     func presentationAnchor(for controller: ASAuthorizationController) -> ASPresentationAnchor {
+-        return (self.pluginImplementation.getPlugin().bridge?.webView?.window)!
++        if let window = self.pluginImplementation.getPlugin().bridge?.webView?.window {
++            return window
++        }
++        if let window = self.pluginImplementation.getPlugin().bridge?.viewController?.view.window {
++            return window
++        }
++        let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
++        if let window = scenes.flatMap({ $0.windows }).first(where: { $0.isKeyWindow }) {
++            return window
++        }
++        return UIWindow()
+     }
+ 
+     // Adapted from https://auth0.com/docs/api-auth/tutorials/nonce#generate-a-cryptographically-random-nonce
+diff --git a/node_modules/@capacitor-firebase/authentication/ios/Plugin/Handlers/GoogleAuthProviderHandler.swift b/node_modules/@capacitor-firebase/authentication/ios/Plugin/Handlers/GoogleAuthProviderHandler.swift
+index 2cc2e26..016dcb5 100644
+--- a/node_modules/@capacitor-firebase/authentication/ios/Plugin/Handlers/GoogleAuthProviderHandler.swift
++++ b/node_modules/@capacitor-firebase/authentication/ios/Plugin/Handlers/GoogleAuthProviderHandler.swift
+@@ -28,12 +28,29 @@ class GoogleAuthProviderHandler: NSObject {
+         #endif
+     }
+ 
++    private func rejectStart(_ message: String, isLink: Bool) {
++        if isLink {
++            self.pluginImplementation.handleFailedLink(message: message, error: nil)
++        } else {
++            self.pluginImplementation.handleFailedSignIn(message: message, error: nil)
++        }
++    }
++
+     private func startSignInWithGoogleFlow(_ call: CAPPluginCall, isLink: Bool) {
+         #if RGCFA_INCLUDE_GOOGLE
+-        guard let clientId = FirebaseApp.app()?.options.clientID else { return }
+-        let config = GIDConfiguration(clientID: clientId, serverClientID: clientId)
++        guard let clientId = FirebaseApp.app()?.options.clientID else {
++            rejectStart("Google client ID is missing from GoogleService-Info.plist.", isLink: isLink)
++            return
++        }
++        // Firebase JS SDK signInWithCredential expects an ID token whose audience is the
++        // web OAuth client. Prefer GIDServerClientID from Info.plist when present.
++        let serverClientId = Bundle.main.object(forInfoDictionaryKey: "GIDServerClientID") as? String
++        let config = GIDConfiguration(clientID: clientId, serverClientID: serverClientId ?? clientId)
+         GIDSignIn.sharedInstance.configuration = config
+-        guard let controller = self.pluginImplementation.getPlugin().bridge?.viewController else { return }
++        guard let controller = self.pluginImplementation.getPlugin().bridge?.viewController else {
++            rejectStart("Unable to present Google Sign-In.", isLink: isLink)
++            return
++        }
+         let scopes = call.getArray("scopes", String.self) ?? []
+ 
+         DispatchQueue.main.async {
+@@ -50,6 +67,7 @@ class GoogleAuthProviderHandler: NSObject {
+                 guard let user = result?.user,
+                       let idToken = user.idToken?.tokenString
+                 else {
++                    self.rejectStart("Google Sign-In did not return an ID token.", isLink: isLink)
+                     return
+                 }
+                 let accessToken = user.accessToken.tokenString

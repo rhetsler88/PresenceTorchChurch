@@ -63,6 +63,13 @@ describe("native iOS sign-in configuration", () => {
     assert.ok(bridge.includes("registerPluginInstance(SessionGuardPlugin())"));
   });
 
+  it("refreshes auth state after native sign-in", () => {
+    const auth = readFileSync(join(root, "src/lib/AuthContext.jsx"), "utf8");
+    assert.ok(auth.includes("await checkUserAuth({ silent: true })"));
+    assert.match(auth, /signInWithEmail[\s\S]*checkUserAuth/);
+    assert.match(auth, /signInWithOAuth[\s\S]*checkUserAuth/);
+  });
+
   it("uses the web client as the Google ID token audience", () => {
     const handler = readFileSync(
       join(

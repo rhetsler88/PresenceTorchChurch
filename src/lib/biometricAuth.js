@@ -111,13 +111,15 @@ export async function signInWithBiometric() {
     throw new Error("Biometric sign-in is only available in the mobile app.");
   }
 
+  const label = await getBiometricLabel();
+
   beginSensitiveOperation();
   try {
     const credentials = await NativeBiometric.getSecureCredentials({
       ...secureCredentialOptions(),
       reason: "Sign in to Presence Torch",
-      subtitle: "Confirm your identity",
-      description: "Use biometrics to sign in quickly",
+      subtitle: `Confirm with ${label}`,
+      description: `Use ${label} to sign in quickly`,
     });
 
     return {
@@ -127,4 +129,21 @@ export async function signInWithBiometric() {
   } finally {
     endSensitiveOperation();
   }
+}
+
+/** User dismissed the biometric prompt — not an error. */
+export function isBiometricCancelled(err) {
+  const code = err?.code;
+  const message = String(err?.message || "").toLowerCase();
+  return (
+    code === 10
+    || code === 13
+    || code === 16
+    || code === "10"
+    || code === "13"
+    || code === "16"
+    || message.includes("cancel")
+    || message.includes("canceled")
+    || message.includes("cancelled")
+  );
 }

@@ -189,7 +189,9 @@ export default function useRelayBroadcast({ channelId, userId, userName }) {
     archiveOnlyRef.current = archiveOnly;
     ownsStreamRef.current = ownsStream ?? !sharedStream;
 
-    if (Capacitor.isNativePlatform()) {
+    // Android needs the silent AudioTrack released for mic focus.
+    // iOS must keep the shared AVAudioSession — stopping it kills Agora/WebRTC.
+    if (Capacitor.getPlatform() === "android") {
       await forceStopBackgroundAudio();
     }
 
@@ -481,7 +483,20 @@ export default function useRelayBroadcast({ channelId, userId, userName }) {
     archiveOnlyRef.current = false;
     relayUploadsActiveRef.current = true;
 
-    if (Capacitor.isNativePlatform() || relayRecorderRef.current || !recordStreamRef.current) {
+    // Native uses one recorder for relay + archive — flipping archiveOnly is enough.
+    if (Capacitor.isNativePlatform()) {
+      const recorder = relayRecorderRef.current;
+      if (recorder?.state === "recording") {
+        try {
+          recorder.requestData();
+        } catch {
+          /* ignore */
+        }
+      }
+      return;
+    }
+
+    if (relayRecorderRef.current || !recordStreamRef.current) {
       return;
     }
 

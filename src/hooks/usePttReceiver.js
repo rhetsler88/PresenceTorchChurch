@@ -5,8 +5,8 @@ import useMonitorRelayReceiver from "./useMonitorRelayReceiver";
 const noopHeardRef = { current: new Set() };
 
 /**
- * Live PTT receive via Storage relay chunks.
- * Always enabled when listening — native apps use relay for live audio; web may also use Agora.
+ * Live PTT receive via Storage relay chunks (fallback when Agora is off or unavailable).
+ * Relay stays enabled alongside Agora so mixed web/native clients still hear each other.
  */
 export default function usePttReceiver({
   channelId,

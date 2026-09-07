@@ -7,6 +7,7 @@ import {
 } from "@/lib/agoraRemote";
 import { acquireAgoraClient, releaseAgoraClient, sessionKey } from "@/lib/agoraSession";
 import { configureAgoraSdk } from "@/lib/agoraInit";
+import { prepareNativeAgoraAudio, releaseNativeAgoraAudio } from "@/lib/nativeVoiceProcessing";
 import { pttDebugLog } from "@/lib/pttDebugLog";
 
 configureAgoraSdk();
@@ -207,7 +208,11 @@ export default function useAgoraMultiListen({
       }
     };
 
-    void syncChannels();
+    const preparePromise = prepareNativeAgoraAudio();
+    void (async () => {
+      await preparePromise;
+      if (!cancelled) await syncChannels();
+    })();
 
     return () => {
       cancelled = true;
@@ -216,6 +221,7 @@ export default function useAgoraMultiListen({
       setIsReceiving(false);
 
       void (async () => {
+        await preparePromise;
         for (const pending of pendingJoins.values()) {
           try {
             await pending.promise;
@@ -236,6 +242,7 @@ export default function useAgoraMultiListen({
         activeClients.clear();
         await Promise.all(leaveTasks);
         clientsRef.current = new Map();
+        await releaseNativeAgoraAudio();
       })();
     };
   }, [userId, channelKey]);

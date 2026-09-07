@@ -1,11 +1,23 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Capacitor } from "@capacitor/core";
 import { isAgoraEnabled } from "@/lib/agora";
 import { armPttMaxTransmission, clearPttMaxTransmission } from "@/lib/pttLimits";
 import useRelayBroadcast from "./useRelayBroadcast";
 import useAgoraPTT from "./useAgoraPTT";
 import useAgoraMultiPublish from "./useAgoraMultiPublish";
 import { pttDebugLog } from "@/lib/pttDebugLog";
+
+/** Do not let a hung Agora WebRTC call keep the mic open. */
+function settleWithin(promise, ms) {
+  return Promise.race([
+    Promise.resolve(promise).catch((err) => {
+      console.warn("Agora operation failed:", err);
+      return null;
+    }),
+    new Promise((resolve) => {
+      setTimeout(() => resolve(null), ms);
+    }),
+  ]);
+}
 
 /**
  * PTT broadcast: Firebase relay archives every transmission; live chunks only when Agora is off.
@@ -75,8 +87,7 @@ export default function usePttBroadcast(options) {
       agoraEnabled,
     });
 
-    const preferNativeRelayLive = Capacitor.isNativePlatform();
-    const useArchiveOnly = agoraEnabled && publishIds.length > 0 && !preferNativeRelayLive;
+    const useArchiveOnly = agoraEnabled && publishIds.length > 0;
     const agoraReadyPromise = agoraEnabled && publishIds.length === 1
       ? agora.ensureJoined()
       : null;
@@ -108,24 +119,24 @@ export default function usePttBroadcast(options) {
       onMaxDurationRef?.current?.();
     }, { broadcastId, channelId, publishChannelIds: publishIds });
 
-    if (agoraEnabled && publishIds.length > 0 && !preferNativeRelayLive) {
+    if (agoraEnabled && publishIds.length > 0) {
       const stream = relay.getMediaStream();
       if (stream) {
         try {
           if (publishIds.length > 1) {
-            const ok = await agoraMulti.startRecording({
+            const ok = await settleWithin(agoraMulti.startRecording({
               broadcastId,
               channelIds: publishIds,
               sharedStream: stream,
-            });
-            usingMultiPublishRef.current = ok;
-            usingAgoraRef.current = ok;
+            }), 4000);
+            usingMultiPublishRef.current = Boolean(ok);
+            usingAgoraRef.current = Boolean(ok);
           } else {
-            const ok = await agora.startRecording({
+            const ok = await settleWithin(agora.startRecording({
               broadcastId,
               sharedStream: stream,
-            });
-            usingAgoraRef.current = ok;
+            }), 4000);
+            usingAgoraRef.current = Boolean(ok);
           }
         } catch (err) {
           console.warn("Agora publish failed:", err);
@@ -166,9 +177,9 @@ export default function usePttBroadcast(options) {
 
     if (usingAgoraRef.current) {
       if (usingMultiPublishRef.current) {
-        await agoraMulti.stopRecording({ stopStream: false });
+        await settleWithin(agoraMulti.stopRecording({ stopStream: false }), 2000);
       } else {
-        await agora.stopRecording({ stopStream: false });
+        await settleWithin(agora.stopRecording({ stopStream: false }), 2000);
       }
       usingAgoraRef.current = false;
       usingMultiPublishRef.current = false;

@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import { Capacitor } from "@capacitor/core";
 import { startBackgroundAudio, stopBackgroundAudio } from "@/lib/backgroundAudio";
 import { formatActiveChannelsBody } from "@/lib/backgroundAudioNotification";
+import { prepareNativeAgoraAudio, releaseNativeAgoraAudio } from "@/lib/nativeVoiceProcessing";
 import { ensureAudioReady } from "@/lib/pttTones";
 
 /**
@@ -21,15 +22,23 @@ export default function useBackgroundRelayListen({
 
     ensureAudioReady();
     const body = formatActiveChannelsBody(channelCount);
-    void startBackgroundAudio({
-      title: title || "Presence Torch",
-      body,
-      channelCount,
-      silent: true,
-    });
+    const preparePromise = prepareNativeAgoraAudio();
+    void (async () => {
+      await preparePromise;
+      await startBackgroundAudio({
+        title: title || "Presence Torch",
+        body,
+        channelCount,
+        silent: true,
+      });
+    })();
 
     return () => {
-      void stopBackgroundAudio();
+      void (async () => {
+        await preparePromise;
+        await releaseNativeAgoraAudio();
+        await stopBackgroundAudio();
+      })();
     };
   }, [enabled, title, channelCount]);
 }

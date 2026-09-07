@@ -122,8 +122,39 @@ export async function playAgoraRemoteAudio(audioTrack, { speakerUserId, channelI
     return true;
   } catch (err) {
     console.warn("Agora remote audio play failed:", err);
+    trackRemoteAudio(audioTrack, speakerUserId, channelId);
     return false;
   }
+}
+
+function trackIsPlaying(audioTrack) {
+  try {
+    if (typeof audioTrack.isPlaying === "function") return audioTrack.isPlaying();
+    return Boolean(audioTrack.isPlaying);
+  } catch {
+    return false;
+  }
+}
+
+/** Retry play() on subscribed remote tracks after iOS autoplay / resume. */
+export function replayActiveRemoteTracks() {
+  unlockAudioForPTT();
+  let retried = 0;
+  for (const track of activeRemoteTracks) {
+    if (trackIsPlaying(track)) continue;
+    retried += 1;
+    try {
+      const playResult = track.play();
+      if (playResult?.catch) {
+        playResult.catch((err) => {
+          console.warn("Agora remote audio replay failed:", err);
+        });
+      }
+    } catch (err) {
+      console.warn("Agora remote audio replay failed:", err);
+    }
+  }
+  return retried;
 }
 
 export { untrackRemoteAudio };

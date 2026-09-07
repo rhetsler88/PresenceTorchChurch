@@ -7,10 +7,10 @@ import { fileURLToPath } from "node:url";
 const root = join(dirname(fileURLToPath(import.meta.url)), "../..");
 
 describe("presence", () => {
-  it("uses Discord-style ~1 minute heartbeat and 90s stale window", () => {
+  it("uses a 3 minute heartbeat and 3.5 minute stale window", () => {
     const source = readFileSync(join(root, "src/lib/presence.js"), "utf8");
-    assert.ok(source.includes("export const PRESENCE_HEARTBEAT_MS = 60 * 1000"));
-    assert.ok(source.includes("export const PRESENCE_STALE_MS = 90 * 1000"));
+    assert.ok(source.includes("export const PRESENCE_HEARTBEAT_MS = 3 * 60 * 1000"));
+    assert.ok(source.includes("export const PRESENCE_STALE_MS = 3.5 * 60 * 1000"));
     assert.ok(source.includes("export function isPresenceFresh"));
   });
 

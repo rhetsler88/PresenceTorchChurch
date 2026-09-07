@@ -13,11 +13,11 @@ import {
 import { onAuthStateChanged } from "firebase/auth";
 import { auth, db } from "@/lib/firebase";
 
-/** Heartbeat while the app is open (Discord-style ~1 write per minute per channel). */
-export const PRESENCE_HEARTBEAT_MS = 60 * 1000;
+/** Heartbeat while the app is open (~1 write per 3 min per channel). */
+export const PRESENCE_HEARTBEAT_MS = 3 * 60 * 1000;
 
 /** Offline if no heartbeat within this window (slightly longer than heartbeat). */
-export const PRESENCE_STALE_MS = 90 * 1000;
+export const PRESENCE_STALE_MS = 3.5 * 60 * 1000;
 
 async function ensureAuthReady() {
   const user = auth.currentUser;

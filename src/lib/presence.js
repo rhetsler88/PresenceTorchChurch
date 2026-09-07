@@ -1,23 +1,19 @@
 import {
   collection,
-  deleteDoc,
-  doc,
-  getDocs,
   onSnapshot,
   query,
-  serverTimestamp,
-  setDoc,
   where,
-  writeBatch,
 } from "firebase/firestore";
+import {
+  ref,
+  onValue,
+  onDisconnect,
+  set,
+  remove,
+  get,
+} from "firebase/database";
 import { onAuthStateChanged } from "firebase/auth";
-import { auth, db } from "@/lib/firebase";
-
-/** Heartbeat while the app is open (~1 write per 3 min per channel). */
-export const PRESENCE_HEARTBEAT_MS = 3 * 60 * 1000;
-
-/** Offline if no heartbeat within this window (slightly longer than heartbeat). */
-export const PRESENCE_STALE_MS = 3.5 * 60 * 1000;
+import { auth, db, rtdb } from "@/lib/firebase";
 
 async function ensureAuthReady() {
   const user = auth.currentUser;
@@ -34,10 +30,6 @@ function presenceDocId(userId, channelId) {
   return `${userId}_${channelId}`;
 }
 
-function presenceRef(userId, channelId) {
-  return doc(db, "presence", presenceDocId(userId, channelId));
-}
-
 function readLastActiveMs(data) {
   if (!data) return null;
   if (typeof data.last_active_ms === "number" && Number.isFinite(data.last_active_ms)) {
@@ -52,10 +44,9 @@ function readLastActiveMs(data) {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
-export function isPresenceFresh(data, nowMs = Date.now()) {
-  const ts = readLastActiveMs(data);
-  if (!ts) return false;
-  return nowMs - ts <= PRESENCE_STALE_MS;
+/** Online when synced from RTDB (Firestore doc has state online). */
+export function isPresenceFresh(data) {
+  return data?.state === "online";
 }
 
 function mapPresenceDoc(docSnap) {
@@ -70,80 +61,69 @@ function mapPresenceDoc(docSnap) {
   };
 }
 
-/** Remove legacy single-doc presence rows (`presence/{uid}`). */
-async function deleteLegacyPresenceDoc(uid) {
-  await deleteDoc(doc(db, "presence", uid)).catch(() => {});
+function rtdbChannelsRef(userId) {
+  return ref(rtdb, `presence/${userId}/channels`);
+}
+
+function rtdbChannelRef(userId, channelId) {
+  return ref(rtdb, `presence/${userId}/channels/${channelId}`);
+}
+
+async function listRtdbChannelIds(userId) {
+  const snap = await get(rtdbChannelsRef(userId)).catch(() => null);
+  if (!snap?.exists()) return [];
+  return Object.keys(snap.val() || {});
+}
+
+async function setRtdbChannelOnline(userId, channelId, displayName) {
+  const channelRef = rtdbChannelRef(userId, channelId);
+  await onDisconnect(channelRef).remove();
+  await set(channelRef, {
+    state: "online",
+    user_id: userId,
+    channel_id: channelId,
+    display_name: displayName,
+    last_changed: Date.now(),
+  });
 }
 
 /**
- * Write or refresh presence for one or more channels (Talk: one, Monitor: many).
- * Removes presence docs for channels no longer in the list.
+ * Publish channel presence via RTDB onDisconnect (Firebase-recommended pattern).
+ * A Cloud Function mirrors online rows into Firestore for channel queries.
  */
 export async function publishPresence({ channelIds = [], displayName = "" } = {}) {
   const uid = auth.currentUser?.uid;
   const uniqueChannelIds = [...new Set((channelIds || []).filter(Boolean))];
   if (!uid || !(await ensureAuthReady())) return;
 
-  await deleteLegacyPresenceDoc(uid);
-
   if (uniqueChannelIds.length === 0) {
     await clearPresence();
     return;
   }
 
-  const nowMs = Date.now();
-  const existingSnap = await getDocs(
-    query(collection(db, "presence"), where("user_id", "==", uid))
-  );
+  const existingChannelIds = await listRtdbChannelIds(uid);
   const targetSet = new Set(uniqueChannelIds);
-  const batch = writeBatch(db);
 
-  for (const channelId of uniqueChannelIds) {
-    batch.set(
-      presenceRef(uid, channelId),
-      {
-        user_id: uid,
-        channel_id: channelId,
-        display_name: displayName,
-        last_active_at: serverTimestamp(),
-        last_active_ms: nowMs,
-      },
-      { merge: true }
-    );
-  }
-
-  for (const docSnap of existingSnap.docs) {
-    const channelId = docSnap.data()?.channel_id;
-    if (channelId && !targetSet.has(channelId)) {
-      batch.delete(docSnap.ref);
-    } else if (!channelId && docSnap.id === uid) {
-      batch.delete(docSnap.ref);
+  for (const channelId of existingChannelIds) {
+    if (!targetSet.has(channelId)) {
+      await remove(rtdbChannelRef(uid, channelId)).catch(() => {});
     }
   }
 
-  await batch.commit();
+  for (const channelId of uniqueChannelIds) {
+    await setRtdbChannelOnline(uid, channelId, displayName);
+  }
 }
 
-/** Remove all presence documents for the signed-in user. */
+/** Remove all RTDB presence channels for the signed-in user. */
 export async function clearPresence() {
   const uid = auth.currentUser?.uid;
   if (!uid || !(await ensureAuthReady())) return;
-
-  const snap = await getDocs(
-    query(collection(db, "presence"), where("user_id", "==", uid))
-  );
-  const batch = writeBatch(db);
-  if (!snap.empty) {
-    for (const docSnap of snap.docs) {
-      batch.delete(docSnap.ref);
-    }
-  }
-  batch.delete(doc(db, "presence", uid));
-  await batch.commit().catch(() => {});
+  await remove(rtdbChannelsRef(uid)).catch(() => {});
 }
 
 /**
- * Realtime listener for users currently present on a channel.
+ * Realtime listener for users currently present on a channel (Firestore mirror).
  * @returns {() => void} unsubscribe
  */
 export function subscribeChannelPresence(channelId, onChange) {
@@ -175,8 +155,7 @@ export function subscribeChannelPresence(channelId, onChange) {
 /** @typedef {{ channelIds: string[], displayName?: string, enabled?: boolean }} PresenceRegistration */
 
 const registrations = new Map();
-let heartbeatTimer = null;
-let foregroundListenersInstalled = false;
+let connectedListenerInstalled = false;
 let authRetryListenerInstalled = false;
 let publishInFlight = null;
 
@@ -218,36 +197,8 @@ export async function flushPresencePublish() {
   return publishInFlight;
 }
 
-function stopHeartbeat() {
-  if (heartbeatTimer != null) {
-    clearInterval(heartbeatTimer);
-    heartbeatTimer = null;
-  }
-}
-
-function startHeartbeat() {
-  stopHeartbeat();
-  heartbeatTimer = setInterval(() => {
-    void flushPresencePublish();
-  }, PRESENCE_HEARTBEAT_MS);
-}
-
-function isAppForeground() {
-  if (typeof document === "undefined") return true;
-  return document.visibilityState === "visible";
-}
-
-function handleBackground() {
-  stopHeartbeat();
-  const { enabled, channelIds } = mergedPresencePayload();
-  if (!enabled || channelIds.length === 0) {
-    void clearPresence();
-  }
-}
-
 function handleForeground() {
   void flushPresencePublish();
-  startHeartbeat();
 }
 
 function ensureAuthRetryListener() {
@@ -256,27 +207,30 @@ function ensureAuthRetryListener() {
   onAuthStateChanged(auth, () => {
     if (registrations.size > 0) {
       void flushPresencePublish();
-      if (isAppForeground()) {
-        startHeartbeat();
-      }
     }
   });
 }
 
+function ensureRtdbConnectionListener() {
+  if (connectedListenerInstalled) return;
+  connectedListenerInstalled = true;
+
+  onValue(ref(rtdb, ".info/connected"), (snap) => {
+    if (snap.val() !== true) return;
+    void flushPresencePublish();
+  });
+}
+
 function ensureForegroundListeners() {
-  if (foregroundListenersInstalled || typeof document === "undefined") return;
-  foregroundListenersInstalled = true;
+  if (typeof document === "undefined") return;
 
   document.addEventListener("visibilitychange", () => {
-    if (document.visibilityState === "hidden") {
-      handleBackground();
-    } else {
+    if (document.visibilityState === "visible") {
       handleForeground();
     }
   });
 
   if (typeof window !== "undefined") {
-    window.addEventListener("pause", handleBackground);
     window.addEventListener("resume", handleForeground);
   }
 }
@@ -292,28 +246,20 @@ export function registerPresenceSource(id, registration) {
     displayName: registration?.displayName || "",
     enabled: registration?.enabled !== false,
   });
+  ensureRtdbConnectionListener();
   ensureForegroundListeners();
   ensureAuthRetryListener();
-  if (isAppForeground()) {
-    void flushPresencePublish();
-    startHeartbeat();
-  }
+  void flushPresencePublish();
 }
 
 export function unregisterPresenceSource(id) {
   if (!id) return;
   registrations.delete(id);
-  if (isAppForeground()) {
-    void flushPresencePublish();
-    if (registrations.size === 0) {
-      stopHeartbeat();
-    }
-  }
+  void flushPresencePublish();
 }
 
 export async function stopPresenceSession() {
   registrations.clear();
-  stopHeartbeat();
   await clearPresence();
 }
 

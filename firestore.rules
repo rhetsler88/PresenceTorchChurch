@@ -440,32 +440,14 @@ service cloud.firestore {
     }
 
     // Per-user channel presence (Talk / Monitor "users online").
+    // Writes come from the syncPresenceToFirestore Cloud Function (RTDB onDisconnect).
     match /presence/{presenceId} {
       allow read: if isSignedIn()
         && resource.data.channel_id is string
         && resource.data.channel_id.size() > 0
         && canReadChannelPresence(resource.data.channel_id);
 
-      allow create: if isSignedIn()
-        && request.resource.data.user_id == request.auth.uid
-        && request.resource.data.channel_id is string
-        && request.resource.data.channel_id.size() > 0
-        && canSendOnChannel(request.resource.data.channel_id)
-        && canUsePttWhenDailyCodeRequired()
-        && request.resource.data.keys().hasOnly(['user_id', 'channel_id', 'last_active_at', 'last_active_ms', 'display_name']);
-
-      allow update: if isSignedIn()
-        && request.resource.data.user_id == request.auth.uid
-        && resource.data.user_id == request.auth.uid
-        && request.resource.data.channel_id is string
-        && request.resource.data.channel_id.size() > 0
-        && canSendOnChannel(request.resource.data.channel_id)
-        && canUsePttWhenDailyCodeRequired()
-        && request.resource.data.diff(resource.data).affectedKeys()
-            .hasOnly(['channel_id', 'last_active_at', 'last_active_ms', 'display_name']);
-
-      allow delete: if isSignedIn()
-        && resource.data.user_id == request.auth.uid;
+      allow create, update, delete: if false;
     }
   }
 }

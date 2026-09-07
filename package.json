@@ -1,7 +1,7 @@
 {
   "name": "base44-app",
   "private": true,
-  "version": "1.0.53",
+  "version": "1.0.54",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -27,7 +27,7 @@
     "deploy:functions": "npx firebase-tools deploy --only functions --project presence-torch-church",
     "deploy:delete-account": "npx firebase-tools deploy --only functions:deleteUserAccount --project presence-torch-church",
     "deploy:admin-delete-user": "npx firebase-tools deploy --only functions:adminDeleteUser --project presence-torch-church",
-    "deploy:rules": "npx firebase-tools deploy --only firestore:rules,storage --project presence-torch-church",
+    "deploy:rules": "npx firebase-tools deploy --only firestore:rules,firestore:indexes,storage,database --project presence-torch-church",
     "cap:sync": "npm run build && npx cap sync && node scripts/register-ios-local-plugins.mjs",
     "cap:sync:android": "node scripts/sync-recaptcha-env.mjs && npm run cap:sync",
     "cap:icons": "node scripts/generate-capacitor-assets.mjs",

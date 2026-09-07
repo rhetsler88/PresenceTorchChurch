@@ -29,8 +29,8 @@ function readLastChannelId() {
 }
 
 /**
- * App-wide Discord-style presence: publishes while Talk/Monitor/listen sessions
- * are active and subscribes to per-channel online counts from Firestore.
+ * App-wide Discord-style presence: publishes via RTDB onDisconnect while Talk/Monitor
+ * listen sessions are active; online counts subscribe to the Firestore mirror.
  */
 export default function PresenceProvider({ children }) {
   const { user } = useAuth();

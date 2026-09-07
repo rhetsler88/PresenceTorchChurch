@@ -7,18 +7,19 @@ import { fileURLToPath } from "node:url";
 const root = join(dirname(fileURLToPath(import.meta.url)), "../..");
 
 describe("presence", () => {
-  it("uses a 3 minute heartbeat and 3.5 minute stale window", () => {
+  it("uses RTDB onDisconnect instead of Firestore heartbeats", () => {
     const source = readFileSync(join(root, "src/lib/presence.js"), "utf8");
-    assert.ok(source.includes("export const PRESENCE_HEARTBEAT_MS = 3 * 60 * 1000"));
-    assert.ok(source.includes("export const PRESENCE_STALE_MS = 3.5 * 60 * 1000"));
-    assert.ok(source.includes("export function isPresenceFresh"));
+    assert.ok(source.includes("onDisconnect(channelRef).remove()"));
+    assert.ok(source.includes(".info/connected"));
+    assert.ok(!source.includes("PRESENCE_HEARTBEAT_MS"));
+    assert.ok(!source.includes("setInterval"));
+    assert.ok(!source.includes("serverTimestamp()"));
   });
 
-  it("keeps background presence while passive listen registrations remain", () => {
+  it("treats only state online as present in Firestore mirror", () => {
     const source = readFileSync(join(root, "src/lib/presence.js"), "utf8");
-    assert.ok(source.includes("function handleBackground()"));
-    assert.ok(source.includes("if (!enabled || channelIds.length === 0)"));
-    assert.ok(source.includes("void clearPresence();"));
+    assert.ok(source.includes('data?.state === "online"'));
+    assert.ok(source.includes("export function isPresenceFresh"));
   });
 
   it("publishes monitor listen channels on every route", () => {
@@ -34,9 +35,23 @@ describe("presence", () => {
     assert.ok(talk.includes("includeCurrentUser: canPublishPresence"));
   });
 
-  it("allows channel readers to query presence in Firestore rules", () => {
+  it("allows channel readers to query presence and blocks client writes", () => {
     const rules = readFileSync(join(root, "firestore.rules"), "utf8");
     assert.ok(rules.includes("function canReadChannelPresence(channelId)"));
     assert.ok(rules.includes("&& canReadChannelPresence(resource.data.channel_id)"));
+    assert.ok(rules.includes("allow create, update, delete: if false"));
+  });
+
+  it("mirrors RTDB presence into Firestore via Cloud Function", () => {
+    const source = readFileSync(join(root, "functions/presenceSync.js"), "utf8");
+    assert.ok(source.includes("onValueWritten"));
+    assert.ok(source.includes("/presence/{uid}/channels/{channelId}"));
+    assert.ok(source.includes('state: "online"'));
+  });
+
+  it("exports Realtime Database from firebase client config", () => {
+    const source = readFileSync(join(root, "src/lib/firebase.js"), "utf8");
+    assert.ok(source.includes("databaseURL"));
+    assert.ok(source.includes("export const rtdb"));
   });
 });

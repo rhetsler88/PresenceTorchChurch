@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { Capacitor } from "@capacitor/core";
 import { isAgoraEnabled } from "@/lib/agora";
 import { armPttMaxTransmission, clearPttMaxTransmission } from "@/lib/pttLimits";
 import useRelayBroadcast from "./useRelayBroadcast";
@@ -74,7 +75,8 @@ export default function usePttBroadcast(options) {
       agoraEnabled,
     });
 
-    const useArchiveOnly = agoraEnabled && publishIds.length > 0;
+    const preferNativeRelayLive = Capacitor.isNativePlatform();
+    const useArchiveOnly = agoraEnabled && publishIds.length > 0 && !preferNativeRelayLive;
     const agoraReadyPromise = agoraEnabled && publishIds.length === 1
       ? agora.ensureJoined()
       : null;
@@ -106,7 +108,7 @@ export default function usePttBroadcast(options) {
       onMaxDurationRef?.current?.();
     }, { broadcastId, channelId, publishChannelIds: publishIds });
 
-    if (agoraEnabled && publishIds.length > 0) {
+    if (agoraEnabled && publishIds.length > 0 && !preferNativeRelayLive) {
       const stream = relay.getMediaStream();
       if (stream) {
         try {

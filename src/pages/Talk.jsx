@@ -115,6 +115,7 @@ export default function Talk() {
   );
   const { onlineMembers, onlineCount } = useChannelPresence(effectiveChannelId, {
     enabled: canViewPresence,
+    includeCurrentUser: canPublishPresence,
   });
   useRegisterTalkPresence(canPublishPresence ? effectiveChannelId : null);
   const canQueryFirestore = Boolean(
@@ -699,6 +700,10 @@ export default function Talk() {
 
         try {
           const { signalIds } = await claimPromise;
+          if (pttStopPendingRef.current || !isPTTPressedRef.current) {
+            await releasePttSignals(signalIds);
+            return { pendingSend: true, signalId: null };
+          }
           pttSignalRef.current = signalIds[0] ?? null;
         } catch (err) {
           console.warn("PTT signal create failed:", err);

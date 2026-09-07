@@ -27,12 +27,11 @@ describe("presence", () => {
     assert.ok(!source.includes("onMonitorRoute"));
   });
 
-  it("subscribes to Firestore presence without injecting the signed-in user", () => {
+  it("includes the signed-in talk user while publishing presence", () => {
     const hook = readFileSync(join(root, "src/hooks/useChannelPresence.js"), "utf8");
     const talk = readFileSync(join(root, "src/pages/Talk.jsx"), "utf8");
-    assert.ok(!hook.includes("includeCurrentUser"));
-    assert.ok(talk.includes("canViewPresence"));
-    assert.ok(!talk.includes("includeCurrentUser"));
+    assert.ok(hook.includes("includeCurrentUser"));
+    assert.ok(talk.includes("includeCurrentUser: canPublishPresence"));
   });
 
   it("allows channel readers to query presence in Firestore rules", () => {

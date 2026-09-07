@@ -6,7 +6,7 @@ const noopHeardRef = { current: new Set() };
 
 /**
  * Live PTT receive via Storage relay chunks.
- * When Agora is configured, live audio uses WebRTC only — relay is for recording/upload.
+ * Always enabled when listening — native apps use relay for live audio; web may also use Agora.
  */
 export default function usePttReceiver({
   channelId,
@@ -16,7 +16,7 @@ export default function usePttReceiver({
   onRemoteTalkStart,
 }) {
   const agoraEnabled = isAgoraEnabled();
-  const relayEnabled = enabled && !agoraEnabled;
+  const relayEnabled = enabled;
 
   const relay = useRelayReceiver({
     channelId: relayEnabled ? channelId : null,

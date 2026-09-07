@@ -88,14 +88,18 @@ export default function usePttBusyChannels({
       .catch(() => {});
 
     const handleEvent = (event) => {
-      if (event.data?.sender_id === userId) return;
       const channelId = event.data?.channel_id;
       if (!channelId || !watchedIds.includes(channelId)) return;
 
+      if (event.type === "delete") {
+        markIdle(channelId);
+        return;
+      }
+
+      if (event.data?.sender_id === userId) return;
+
       if (event.type === "create") {
         markBusy(channelId);
-      } else if (event.type === "delete") {
-        markIdle(channelId);
       }
     };
 

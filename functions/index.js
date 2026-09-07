@@ -1074,7 +1074,7 @@ exports.sendTextMessagePush = onDocumentCreated(
     const channelName = channelData.name || "Channel";
 
     const usersSnap = await db.collection("users").get();
-    const recipients = buildTextMessageRecipients(usersSnap, channelData, senderId);
+    const recipients = buildTextMessageRecipients(usersSnap, channelData, senderId, channelId);
     if (recipients.length === 0) return;
 
     const messaging = getMessaging();

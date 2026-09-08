@@ -16,6 +16,7 @@ describe("biometricAuth", () => {
 
     const panel = readFileSync(join(root, "src/components/auth/AuthSignInPanel.jsx"), "utf8");
     assert.ok(panel.includes("isBiometricCancelled"));
+    assert.ok(panel.includes("isStorePreview"));
     assert.ok(!panel.includes("err?.code === 10"));
   });
 

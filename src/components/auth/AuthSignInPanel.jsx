@@ -23,6 +23,7 @@ import {
   signInWithBiometric,
 } from "@/lib/biometricAuth";
 import { MIN_PASSWORD_LENGTH } from "@/lib/passwordPolicy";
+import { isStorePreview } from "@/lib/storePreview";
 
 export default function AuthSignInPanel() {
   const { signInWithOAuth, signInWithEmail, signUpWithEmail } = useAuth();
@@ -68,6 +69,14 @@ export default function AuthSignInPanel() {
   }, [signInWithEmail]);
 
   useEffect(() => {
+    if (isStorePreview()) {
+      autoBiometricAttemptedRef.current = true;
+      setBiometricAvailable(true);
+      setBiometricLabel("Fingerprint");
+      setShowBiometricSignIn(true);
+      return;
+    }
+
     if (!isBiometricPlatform()) return;
 
     (async () => {

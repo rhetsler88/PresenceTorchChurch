@@ -66,6 +66,7 @@ public class BackgroundAudioPlugin: CAPPlugin, CAPBridgedPlugin {
         AudioSessionCoordinator.retain("background")
         observeAppLifecycle()
         if UIApplication.shared.applicationState != .active {
+            AudioSessionCoordinator.refreshIfNeeded()
             startSilentLoop()
         }
         sessionActive = true
@@ -88,6 +89,7 @@ public class BackgroundAudioPlugin: CAPPlugin, CAPBridgedPlugin {
             queue: .main
         ) { [weak self] _ in
             guard let self, self.sessionActive else { return }
+            AudioSessionCoordinator.refreshIfNeeded()
             self.startSilentLoop()
         })
         lifecycleObservers.append(center.addObserver(

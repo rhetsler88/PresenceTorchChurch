@@ -49,9 +49,12 @@
 	<string>Presence Torch uses Face ID for faster sign-in.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Presence Torch uses the microphone for push-to-talk and wired headset buttons.</string>
+	<key>NSUserNotificationsUsageDescription</key>
+	<string>Presence Torch sends alerts for text messages, protection level changes, and red alerts.</string>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>audio</string>
+		<string>remote-notification</string>
 	</array>
 	<key>UILaunchStoryboardName</key>
 	<string>LaunchScreen</string>

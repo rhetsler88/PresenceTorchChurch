@@ -114,7 +114,11 @@ enum AudioSessionCoordinator {
                 case .idle:
                     break
                 case .playback:
-                    try session.setCategory(.playback, mode: .spokenAudio, options: [])
+                    try session.setCategory(
+                        .playback,
+                        mode: .spokenAudio,
+                        options: [.allowBluetooth, .allowBluetoothA2DP, .mixWithOthers, .defaultToSpeaker]
+                    )
                     try session.setActive(true)
                 case .record:
                     try session.setCategory(

@@ -103,6 +103,7 @@ public class SessionGuardPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "consumeForceLogoutOnNextStart", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "revokeGoogleSignInSession", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "clearTextMessageNotifications", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "openAppSettings", returnType: CAPPluginReturnPromise),
     ]
 
     @objc func setGoogleSignInPending(_ call: CAPPluginCall) {
@@ -180,6 +181,17 @@ public class SessionGuardPlugin: CAPPlugin, CAPBridgedPlugin {
             DispatchQueue.main.async {
                 UIApplication.shared.applicationIconBadgeNumber = 0
             }
+            call.resolve()
+        }
+    }
+
+    @objc func openAppSettings(_ call: CAPPluginCall) {
+        DispatchQueue.main.async {
+            guard let url = URL(string: UIApplication.openSettingsURLString) else {
+                call.resolve()
+                return
+            }
+            UIApplication.shared.open(url, options: [:], completionHandler: nil)
             call.resolve()
         }
     }

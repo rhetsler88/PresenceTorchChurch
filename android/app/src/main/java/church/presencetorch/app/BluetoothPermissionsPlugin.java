@@ -1,6 +1,8 @@
 package church.presencetorch.app;
 
 import android.Manifest;
+import android.app.Activity;
+import android.content.Intent;
 import android.os.Build;
 import com.getcapacitor.PermissionState;
 import com.getcapacitor.Plugin;
@@ -27,6 +29,21 @@ import com.getcapacitor.annotation.PermissionCallback;
     }
 )
 public class BluetoothPermissionsPlugin extends Plugin {
+
+    @PluginMethod
+    public void openSettings(PluginCall call) {
+        Activity activity = getActivity();
+        if (activity == null) {
+            call.resolve();
+            return;
+        }
+
+        Intent intent = new Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS);
+        intent.setData(android.net.Uri.fromParts("package", activity.getPackageName(), null));
+        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        activity.startActivity(intent);
+        call.resolve();
+    }
 
     @PluginMethod
     public void request(PluginCall call) {

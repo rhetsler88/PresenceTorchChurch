@@ -28,6 +28,7 @@ import {
 } from "@/lib/biometricAuth";
 
 import DeleteAccountDialog from "@/components/profile/DeleteAccountDialog";
+import { MIN_PASSWORD_LENGTH } from "@/lib/passwordPolicy";
 
 export default function EditProfileDialog({
   open,

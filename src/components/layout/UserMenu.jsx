@@ -20,6 +20,7 @@ export default function UserMenu() {
   const { user, logout } = useAuth();
   const bluetooth = useBluetoothPTTContext();
   const [showEditProfile, setShowEditProfile] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
   const [showAudioSettings, setShowAudioSettings] = useState(false);
 
   if (!user) return null;
@@ -31,7 +32,7 @@ export default function UserMenu() {
 
   return (
     <>
-      <DropdownMenu>
+      <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
         <DropdownMenuTrigger asChild>
           <button
             className={`fixed z-[60] flex items-center rounded-full bg-card border border-border shadow-sm hover:border-primary/40 transition-colors active:scale-95 max-w-[calc(100vw-1rem-env(safe-area-inset-left,0px)-env(safe-area-inset-right,0px))] ${
@@ -62,11 +63,21 @@ export default function UserMenu() {
             </div>
           </DropdownMenuLabel>
           <DropdownMenuSeparator />
-          <DropdownMenuItem onClick={() => setShowEditProfile(true)}>
+          <DropdownMenuItem
+            onClick={() => {
+              setMenuOpen(false);
+              setShowEditProfile(true);
+            }}
+          >
             <UserCog className="w-4 h-4" />
             Edit profile
           </DropdownMenuItem>
-          <DropdownMenuItem onClick={() => setShowAudioSettings(true)}>
+          <DropdownMenuItem
+            onClick={() => {
+              setMenuOpen(false);
+              setShowAudioSettings(true);
+            }}
+          >
             <Volume2 className="w-4 h-4" />
             Audio settings
           </DropdownMenuItem>
@@ -78,6 +89,7 @@ export default function UserMenu() {
                 onSelect={(event) => {
                   event.preventDefault();
                   if (!bluetooth.isSupported) return;
+                  bluetooth.clearError?.();
                   if (bluetooth.isConnected) {
                     bluetooth.disconnect();
                     return;
@@ -109,9 +121,34 @@ export default function UserMenu() {
                 </DropdownMenuLabel>
               )}
               {bluetooth.error && (
-                <DropdownMenuLabel className="text-xs text-destructive font-normal leading-snug whitespace-normal">
-                  {bluetooth.error}
-                </DropdownMenuLabel>
+                <div className="px-2 py-1.5 flex flex-col gap-1.5">
+                  <p className="text-xs text-destructive font-normal leading-snug whitespace-normal">
+                    {bluetooth.error}
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      className="text-xs font-medium text-primary hover:underline"
+                      onClick={() => {
+                        bluetooth.clearError?.();
+                        void bluetooth.connect();
+                      }}
+                    >
+                      Try again
+                    </button>
+                    {bluetooth.permissionDenied && (
+                      <button
+                        type="button"
+                        className="text-xs font-medium text-primary hover:underline"
+                        onClick={() => {
+                          bluetooth.openSettings?.();
+                        }}
+                      >
+                        Open Settings
+                      </button>
+                    )}
+                  </div>
+                </div>
               )}
             </>
           )}

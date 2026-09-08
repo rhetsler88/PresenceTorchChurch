@@ -1309,16 +1309,27 @@ exports.sendRedAlertPush = onDocumentUpdated("channels/{channelId}", async (even
       priority: "high",
       notification: {
         channelId: "red_alerts",
+        title: "RED ALERT",
+        body: `Code Red — ${channelName} — Secure Now`,
         sound: "default",
         defaultVibrateTimings: true,
         priority: "max",
       },
     },
     apns: {
+      headers: {
+        "apns-priority": "10",
+        "apns-push-type": "alert",
+      },
       payload: {
         aps: {
+          alert: {
+            title: "RED ALERT",
+            body: `Code Red — ${channelName} — Secure Now`,
+          },
           sound: "default",
-          contentAvailable: true,
+          "interruption-level": "time-sensitive",
+          "thread-id": `red_alert_${channelId}`,
         },
       },
     },

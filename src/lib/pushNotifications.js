@@ -18,6 +18,7 @@ import { removePushRegistration, upsertPushRegistration } from "@/lib/pushRegist
 import { beginSensitiveOperation, endSensitiveOperation } from "@/lib/sensitiveOperation";
 import { clearNativeGoogleSignInPending } from "@/lib/logoutOnClose";
 import { clearNativeTextMessageNotifications } from "@/lib/sessionGuardNative";
+import { notificationIdForChannel } from "@/lib/textMessageNotifications";
 
 const PUSH_CHANNEL_ID = "red_alerts";
 const TEXT_MESSAGE_CHANNEL_ID = "text_messages";
@@ -58,7 +59,16 @@ async function resetTextMessageUnreadCounts(uid) {
     const data = snap.data() || {};
     const patch = { text_message_unread: {} };
 
-    if (currentRegistrationKey && data.fcm_registrations?.[currentRegistrationKey]) {
+    if (data.fcm_registrations && typeof data.fcm_registrations === "object") {
+      const registrations = {};
+      for (const [key, registration] of Object.entries(data.fcm_registrations)) {
+        registrations[key] = {
+          ...registration,
+          text_message_unread: {},
+        };
+      }
+      patch.fcm_registrations = registrations;
+    } else if (currentRegistrationKey && data.fcm_registrations?.[currentRegistrationKey]) {
       patch.fcm_registrations = {
         ...data.fcm_registrations,
         [currentRegistrationKey]: {
@@ -76,6 +86,21 @@ async function resetTextMessageUnreadCounts(uid) {
     } catch {
       /* ignore */
     }
+  }
+}
+
+async function clearLocalTextMessageNotifications() {
+  if (!Capacitor.isNativePlatform()) return;
+  try {
+    const delivered = await LocalNotifications.getDeliveredNotifications();
+    const ids = (delivered?.notifications || [])
+      .filter((notification) => notification?.extra?.type === "text_message")
+      .map((notification) => ({ id: notification.id }));
+    if (ids.length > 0) {
+      await LocalNotifications.removeDeliveredNotifications({ notifications: ids });
+    }
+  } catch {
+    /* ignore */
   }
 }
 
@@ -102,6 +127,7 @@ export async function clearTextMessageNotificationsOnForeground() {
   const resolvedUid = auth.currentUser?.uid || currentUid;
   await Promise.all([
     clearNativeTextMessageNotificationsFromTray(),
+    clearLocalTextMessageNotifications(),
     clearWebTextMessageNotifications(),
     resetTextMessageUnreadCounts(resolvedUid),
     clearAppIconBadge(),
@@ -166,13 +192,37 @@ function formatTextMessageBody(count, channelName) {
   return `${normalizedCount} new ${label} in ${channelName || "Channel"}`;
 }
 
+function shouldShowNativeForegroundNotification(type) {
+  if (!Capacitor.isNativePlatform()) return true;
+  // Android FCM already posts tray notifications; foreground should be tone-only.
+  if (Capacitor.getPlatform() === "android") return false;
+  // iOS: show a local banner while the app is open.
+  return type !== "red_alert";
+}
+
+function stableNotificationId(tag, fallback = 50000) {
+  let hash = 0;
+  const value = String(tag || "notification");
+  for (let i = 0; i < value.length; i += 1) {
+    hash = (hash * 31 + value.charCodeAt(i)) >>> 0;
+  }
+  return (hash % 90000) + fallback;
+}
+
 async function showForegroundPushNotification({ title, body, tag, channelId, type, extra = {} }) {
+  if (!shouldShowNativeForegroundNotification(type)) {
+    return;
+  }
+
   if (Capacitor.isNativePlatform()) {
     try {
+      const notificationId = type === "text_message"
+        ? notificationIdForChannel(extra.channelId)
+        : stableNotificationId(tag);
       await LocalNotifications.schedule({
         notifications: [
           {
-            id: Math.floor(Math.random() * 100000),
+            id: notificationId,
             title,
             body,
             channelId,
@@ -196,9 +246,12 @@ async function showForegroundPushNotification({ title, body, tag, channelId, typ
   }
 }
 
-/** Foreground only — FCM/system tray handles visible notifications in background. */
+/** Foreground only on web/iOS — Android FCM/system tray handles visible notifications in background. */
 function handleTextMessagePayload(data = {}) {
   playTextMessageTone();
+  if (Capacitor.isNativePlatform() && Capacitor.getPlatform() === "android") {
+    return;
+  }
   const channelName = data.channelName || data.channel_name || "Channel";
   const count = data.unreadCount || data.unread_count || "1";
   const channelId = data.channelId || data.channel_id || "channel";
@@ -352,6 +405,7 @@ async function initNativePush(uid, userProfile) {
       /* ignore */
     }
     await registerNativeFcm(perm);
+    void clearTextMessageNotificationsOnForeground();
   } catch (err) {
     console.error("Native push init failed:", err);
   } finally {
@@ -450,7 +504,6 @@ export async function initPushNotifications(uid, userProfile = null) {
   }
   initialized = true;
   installTextMessageNotificationLifecycle();
-  void clearTextMessageNotificationsOnForeground();
 
   if (Capacitor.isNativePlatform()) {
     await registerNativePushListeners(uid);

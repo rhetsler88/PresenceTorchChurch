@@ -32,7 +32,7 @@ function formatTextMessageBody(channelName) {
   return `New text message in ${channelName || "Channel"}`;
 }
 
-function notificationIdForChannel(channelId) {
+export function notificationIdForChannel(channelId) {
   let hash = 0;
   const value = String(channelId || "channel");
   for (let i = 0; i < value.length; i += 1) {
@@ -130,6 +130,13 @@ export function maybeNotifyIncomingTextMessage(
 
   const resolvedChannelName = channelName || event.data?.channel_name || "Channel";
   const channelId = event.data?.channel_id;
+
+  if (Capacitor.isNativePlatform()) {
+    if (isAppInForeground()) {
+      playTextMessageTone();
+    }
+    return;
+  }
 
   if (isAppInForeground()) {
     playTextMessageTone();

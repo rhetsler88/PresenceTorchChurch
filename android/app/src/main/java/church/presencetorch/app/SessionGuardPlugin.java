@@ -3,6 +3,7 @@ package church.presencetorch.app;
 import android.app.Activity;
 import android.content.Context;
 import android.content.Intent;
+import android.content.Intent;
 import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginMethod;
@@ -92,6 +93,21 @@ public class SessionGuardPlugin extends Plugin {
     @PluginMethod
     public void clearTextMessageNotifications(PluginCall call) {
         TextMessageNotificationHelper.clearDelivered(getContext());
+        call.resolve();
+    }
+
+    @PluginMethod
+    public void openAppSettings(PluginCall call) {
+        Activity activity = getActivity();
+        if (activity == null) {
+            call.resolve();
+            return;
+        }
+
+        Intent intent = new Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS);
+        intent.setData(android.net.Uri.fromParts("package", activity.getPackageName(), null));
+        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        activity.startActivity(intent);
         call.resolve();
     }
 }

@@ -1,6 +1,6 @@
 import { useState, useRef, useCallback, useEffect } from "react";
 import { Capacitor } from "@capacitor/core";
-import { ensureBluetoothPermissions } from "@/lib/bluetoothPermissions";
+import { ensureBluetoothPermissions, openAppSettings } from "@/lib/bluetoothPermissions";
 import {
   BLE_OPTIONAL_SERVICES,
   BLE_SCAN_SERVICES,
@@ -110,11 +110,33 @@ async function subscribeNativeBleNotifications(deviceId, onValueChanged) {
   return subscribed;
 }
 
+function formatBleError(err) {
+  const message = err?.message || "Failed to connect";
+  const normalized = message.toLowerCase();
+
+  if (err?.code === "BLUETOOTH_PERMISSION_DENIED" || normalized.includes("permission")) {
+    return {
+      message: "Bluetooth permission was denied. Open Settings to allow it, then tap Pair BLE button again.",
+      permissionDenied: true,
+    };
+  }
+
+  if (normalized.includes("cancel") || normalized.includes("cancelled")) {
+    return {
+      message: "Pairing cancelled. Tap Pair BLE button to try again.",
+      permissionDenied: false,
+    };
+  }
+
+  return { message, permissionDenied: false };
+}
+
 export default function useBluetoothPTT({ onPress, onRelease }) {
   const [isConnected, setIsConnected] = useState(false);
   const [deviceName, setDeviceName] = useState(null);
   const [isConnecting, setIsConnecting] = useState(false);
   const [error, setError] = useState(null);
+  const [permissionDenied, setPermissionDenied] = useState(false);
   const deviceRef = useRef(null);
   const nativeDeviceIdRef = useRef(null);
   const nativeSubscriptionsRef = useRef([]);
@@ -222,6 +244,7 @@ export default function useBluetoothPTT({ onPress, onRelease }) {
     if (!isSupported) return;
     setIsConnecting(true);
     setError(null);
+    setPermissionDenied(false);
     try {
       if (hasWebBluetooth() && !Capacitor.isNativePlatform()) {
         await connectWeb();
@@ -229,11 +252,22 @@ export default function useBluetoothPTT({ onPress, onRelease }) {
         await connectNative();
       }
     } catch (err) {
-      setError(err.message || "Failed to connect");
+      const formatted = formatBleError(err);
+      setError(formatted.message);
+      setPermissionDenied(formatted.permissionDenied);
     } finally {
       setIsConnecting(false);
     }
   }, [connectNative, connectWeb, isSupported]);
+
+  const clearError = useCallback(() => {
+    setError(null);
+    setPermissionDenied(false);
+  }, []);
+
+  const openSettings = useCallback(() => {
+    void openAppSettings();
+  }, []);
 
   const disconnect = useCallback(async () => {
     if (nativeDeviceIdRef.current) {
@@ -263,6 +297,7 @@ export default function useBluetoothPTT({ onPress, onRelease }) {
     setIsConnected(false);
     setDeviceName(null);
     setError(null);
+    setPermissionDenied(false);
     pressStateRef.current = false;
   }, []);
 
@@ -272,5 +307,16 @@ export default function useBluetoothPTT({ onPress, onRelease }) {
     };
   }, [disconnect]);
 
-  return { isSupported, isConnected, isConnecting, deviceName, error, connect, disconnect };
+  return {
+    isSupported,
+    isConnected,
+    isConnecting,
+    deviceName,
+    error,
+    permissionDenied,
+    connect,
+    disconnect,
+    clearError,
+    openSettings,
+  };
 }

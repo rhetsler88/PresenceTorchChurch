@@ -13,6 +13,7 @@ describe("textMessageNotifications", () => {
     assert.ok(source.includes("export async function showTextMessageTrayNotification"));
     assert.ok(source.includes("if (isAppInForeground())"));
     assert.ok(source.includes("playTextMessageTone()"));
+    assert.ok(source.includes("Capacitor.isNativePlatform()"));
     assert.ok(source.includes("showTextMessageTrayNotification"));
   });
 

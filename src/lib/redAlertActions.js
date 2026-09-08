@@ -4,6 +4,7 @@ import { LocalNotifications } from "@capacitor/local-notifications";
 import { playRedAlert, stopRedAlertVibration } from "@/lib/pttTones";
 
 const RED_ALERT_CHANNEL_ID = "red_alerts";
+const RED_ALERT_NOTIFICATION_ID = 91001;
 const ALERT_DEBOUNCE_MS = 8000;
 let lastAlertAt = 0;
 let hapticIntervalId = null;
@@ -59,7 +60,7 @@ async function showNotification(channelName) {
       await LocalNotifications.schedule({
         notifications: [
           {
-            id: Math.floor(Math.random() * 100000),
+            id: RED_ALERT_NOTIFICATION_ID,
             title,
             body,
             channelId: RED_ALERT_CHANNEL_ID,

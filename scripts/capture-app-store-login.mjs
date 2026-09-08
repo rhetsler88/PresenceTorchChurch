@@ -22,6 +22,7 @@ const DEVICES = [
   { name: "iphone-6.9-inch-1320x2868", cssWidth: 440, cssHeight: 956, scale: 3, width: 1320, height: 2868 },
   { name: "iphone-6.9-inch-1290x2796", cssWidth: 430, cssHeight: 932, scale: 3, width: 1290, height: 2796 },
   { name: "iphone-6.5-inch-1284x2778", cssWidth: 428, cssHeight: 926, scale: 3, width: 1284, height: 2778 },
+  { name: "iphone-6.5-inch-1242x2688", cssWidth: 414, cssHeight: 896, scale: 3, width: 1242, height: 2688 },
   { name: "iphone-5.5-inch-1242x2208", cssWidth: 414, cssHeight: 736, scale: 3, width: 1242, height: 2208 },
   { name: "ipad-13-inch-2064x2752", cssWidth: 1032, cssHeight: 1376, scale: 2, width: 2064, height: 2752 },
 ];

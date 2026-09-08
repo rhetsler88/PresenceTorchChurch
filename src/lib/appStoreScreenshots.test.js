@@ -17,24 +17,29 @@ const REQUIRED = [
   { dir: "ipad-13-inch-2064x2752", width: 2064, height: 2752 },
 ];
 
-describe("App Store Connect sign-in screenshots", () => {
+const FRAMES = ["01-signin.png", "02-talk.png"];
+
+describe("App Store Connect screenshots", () => {
   for (const spec of REQUIRED) {
-    it(`${spec.dir} is an opaque PNG at ${spec.width}x${spec.height}`, async () => {
-      const file = join(shotRoot, spec.dir, "01-signin.png");
-      const meta = await sharp(file).metadata();
-      assert.equal(meta.format, "png");
-      assert.equal(meta.width, spec.width);
-      assert.equal(meta.height, spec.height);
-      assert.equal(meta.hasAlpha, false);
-      assert.equal(meta.channels, 3);
-      const bytes = statSync(file).size;
-      assert.ok(bytes > 50_000, "screenshot looks empty");
-      assert.ok(bytes < 8 * 1024 * 1024, "App Store Connect max is 8MB");
-    });
+    for (const frame of FRAMES) {
+      it(`${spec.dir}/${frame} is an opaque PNG at ${spec.width}x${spec.height}`, async () => {
+        const file = join(shotRoot, spec.dir, frame);
+        const meta = await sharp(file).metadata();
+        assert.equal(meta.format, "png");
+        assert.equal(meta.width, spec.width);
+        assert.equal(meta.height, spec.height);
+        assert.equal(meta.hasAlpha, false);
+        assert.equal(meta.channels, 3);
+        const bytes = statSync(file).size;
+        assert.ok(bytes > 50_000, "screenshot looks empty");
+        assert.ok(bytes < 8 * 1024 * 1024, "App Store Connect max is 8MB");
+      });
+    }
   }
 
-  it("keeps a source frame for regeneration", () => {
+  it("keeps source frames for regeneration", () => {
     const names = readdirSync(shotRoot);
     assert.ok(names.includes("source-signin.png"));
+    assert.ok(names.includes("source-talk.png"));
   });
 });

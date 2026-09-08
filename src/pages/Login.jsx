@@ -2,6 +2,7 @@ import React from "react";
 import { Link } from "react-router-dom";
 import AuthSignInPanel from "@/components/auth/AuthSignInPanel";
 import PwaInstallPrompt from "@/components/pwa/PwaInstallPrompt";
+import { isStorePreview } from "@/lib/storePreview";
 
 export default function Login() {
   return (
@@ -25,7 +26,7 @@ export default function Login() {
         </div>
 
         <div className="shrink-0">
-          <PwaInstallPrompt />
+          {!isStorePreview() && <PwaInstallPrompt />}
         </div>
 
         <p className="text-center text-[11px] sm:text-xs text-muted-foreground shrink-0 pb-1">

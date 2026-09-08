@@ -10,6 +10,7 @@ export default [
       "android/**",
       "ios/**",
       "dist/**",
+      "dev-dist/**",
       "admin/dist/**",
       "node_modules/**",
     ],

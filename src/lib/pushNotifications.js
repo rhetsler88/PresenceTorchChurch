@@ -67,20 +67,20 @@ async function resetTextMessageUnreadCounts(uid) {
     const data = snap.data() || {};
     const patch = { text_message_unread: {} };
 
-    if (data.fcm_registrations && typeof data.fcm_registrations === "object") {
-      const registrations = {};
-      for (const [key, registration] of Object.entries(data.fcm_registrations)) {
-        registrations[key] = {
-          ...registration,
-          text_message_unread: {},
-        };
-      }
-      patch.fcm_registrations = registrations;
-    } else if (currentRegistrationKey && data.fcm_registrations?.[currentRegistrationKey]) {
+    let registrationKey = currentRegistrationKey;
+    if (!registrationKey && Capacitor.isNativePlatform()) {
+      const deviceId = await getOrCreateDeviceId();
+      registrationKey = getPushRegistrationKey("native", deviceId);
+    } else if (!registrationKey && !Capacitor.isNativePlatform()) {
+      const deviceId = await getOrCreateDeviceId();
+      registrationKey = getPushRegistrationKey(getWebPushSurface(), deviceId);
+    }
+
+    if (registrationKey && data.fcm_registrations?.[registrationKey]) {
       patch.fcm_registrations = {
         ...data.fcm_registrations,
-        [currentRegistrationKey]: {
-          ...data.fcm_registrations[currentRegistrationKey],
+        [registrationKey]: {
+          ...data.fcm_registrations[registrationKey],
           text_message_unread: {},
         },
       };
@@ -160,6 +160,7 @@ function installTextMessageNotificationLifecycle() {
       handleOpen();
     });
     window.addEventListener("focus", handleOpen);
+    handleOpen();
     return;
   }
 
@@ -536,6 +537,7 @@ export async function initPushNotifications(uid, userProfile = null) {
     } else if (Capacitor.isNativePlatform()) {
       void PushNotifications.register().catch(() => {});
     }
+    void clearTextMessageNotificationsOnForeground();
     return;
   }
   initialized = true;
@@ -543,6 +545,7 @@ export async function initPushNotifications(uid, userProfile = null) {
 
   if (Capacitor.isNativePlatform()) {
     await registerNativePushListeners(uid);
+    void clearTextMessageNotificationsOnForeground();
     scheduleNativePushInit(uid, userProfile);
     return;
   }

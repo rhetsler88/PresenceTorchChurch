@@ -3,7 +3,6 @@ package church.presencetorch.app;
 import android.app.Activity;
 import android.content.Context;
 import android.content.Intent;
-import android.content.Intent;
 import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginMethod;

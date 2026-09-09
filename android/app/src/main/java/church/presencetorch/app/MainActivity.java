@@ -25,6 +25,7 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(NativeVoiceProcessingPlugin.class);
         super.onCreate(savedInstanceState);
         activeInstance = this;
+        TextMessageNotificationHelper.ensureChannel(this);
         if (getBridge() != null && getBridge().getWebView() != null) {
             getBridge().getWebView().post(this::enableWebViewForRecaptcha);
         }
@@ -38,7 +39,14 @@ public class MainActivity extends BridgeActivity {
     }
 
     @Override
+    protected void onStart() {
+        super.onStart();
+        activeInstance = this;
+    }
+
+    @Override
     public void onPause() {
+        dispatchWebLifecycleEvent("pause");
         if (!isFinishing() && SessionPrefs.shouldAllowSwipeAwayLogout(this)) {
             SessionPrefs.markSessionBackgrounded(this);
             long deadline = SessionPrefs.getIdleLogoutDeadlineMs(this);
@@ -54,6 +62,7 @@ public class MainActivity extends BridgeActivity {
         super.onResume();
         BackgroundLogoutScheduler.cancel(this);
         SessionPrefs.clearSessionBackgrounded(this);
+        TextMessageNotificationHelper.clearDelivered(this);
         reinforceBackgroundListenNotification();
         refreshWebViewAfterResume();
     }
@@ -110,22 +119,27 @@ public class MainActivity extends BridgeActivity {
                 ((android.view.View) webView.getParent()).invalidate();
             }
             getWindow().getDecorView().requestLayout();
-            webView.evaluateJavascript(
-                "(function(){"
-                    + "try {"
-                    + "window.dispatchEvent(new Event('resize'));"
-                    + "window.dispatchEvent(new Event('resume'));"
-                    + "if (document.documentElement) {"
-                    + "document.documentElement.style.transform='translateZ(0)';"
-                    + "requestAnimationFrame(function(){"
-                    + "document.documentElement.style.transform='';"
-                    + "});"
-                    + "}"
-                    + "} catch (e) {}"
-                    + "})();",
-                null
-            );
+            dispatchWebLifecycleEvent("resume");
         });
+    }
+
+    private void dispatchWebLifecycleEvent(String eventName) {
+        WebView webView = getBridge() != null ? getBridge().getWebView() : null;
+        if (webView == null) {
+            return;
+        }
+
+        webView.evaluateJavascript(
+            "(function(){"
+                + "try {"
+                + "window.dispatchEvent(new Event('" + eventName + "'));"
+                + ( "resume".equals(eventName)
+                    ? "window.dispatchEvent(new Event('resize'));"
+                    : "" )
+                + "} catch (e) {}"
+                + "})();",
+            null
+        );
     }
 
     private void runImmediateLogoutOnWebView() {

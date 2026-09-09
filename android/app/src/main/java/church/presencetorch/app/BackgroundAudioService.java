@@ -448,7 +448,11 @@ public class BackgroundAudioService extends Service {
         super.onDestroy();
     }
 
-    /** True when the launcher task for MainActivity still exists in recents. */
+    /**
+     * True when the UI task is likely still in Recents.
+     * Fail open when {@link ActivityManager#getAppTasks()} is empty — that API often
+     * returns nothing from a Service even while the Recents card still exists.
+     */
     private boolean isMainActivityTaskAlive() {
         if (MainActivity.isUiAlive()) {
             return true;
@@ -459,7 +463,11 @@ public class BackgroundAudioService extends Service {
             return true;
         }
         try {
-            for (ActivityManager.AppTask task : manager.getAppTasks()) {
+            java.util.List<ActivityManager.AppTask> tasks = manager.getAppTasks();
+            if (tasks == null || tasks.isEmpty()) {
+                return true;
+            }
+            for (ActivityManager.AppTask task : tasks) {
                 ActivityManager.RecentTaskInfo info = task.getTaskInfo();
                 if (info == null || info.baseIntent == null || info.baseIntent.getComponent() == null) {
                     continue;
@@ -471,7 +479,7 @@ public class BackgroundAudioService extends Service {
         } catch (Exception ignored) {
             return true;
         }
-        return false;
+        return true;
     }
 
     @Override

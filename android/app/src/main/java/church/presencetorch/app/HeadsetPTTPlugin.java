@@ -185,14 +185,16 @@ public class HeadsetPTTPlugin extends Plugin {
                 | PlaybackStateCompat.ACTION_PLAY_PAUSE
                 | PlaybackStateCompat.ACTION_STOP;
 
-        int state = transmitting
-            ? PlaybackStateCompat.STATE_PLAYING
-            : PlaybackStateCompat.STATE_PAUSED;
-
+        // Stay "paused" so Android does not reroute Agora playback to the loudspeaker when PTT
+        // is held (STATE_PLAYING makes the app look like active media playback).
         mediaSession.setPlaybackState(
             new PlaybackStateCompat.Builder()
                 .setActions(actions)
-                .setState(state, PlaybackStateCompat.PLAYBACK_POSITION_UNKNOWN, transmitting ? 1.0f : 0.0f)
+                .setState(
+                    PlaybackStateCompat.STATE_PAUSED,
+                    PlaybackStateCompat.PLAYBACK_POSITION_UNKNOWN,
+                    0.0f
+                )
                 .build()
         );
     }

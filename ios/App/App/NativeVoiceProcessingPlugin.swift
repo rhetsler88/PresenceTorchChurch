@@ -13,6 +13,7 @@ public class NativeVoiceProcessingPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "releaseListen", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "refresh", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "isSupported", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "hasEarpieceConnected", returnType: CAPPluginReturnPromise),
     ]
 
     private var sessionActive = false
@@ -71,5 +72,13 @@ public class NativeVoiceProcessingPlugin: CAPPlugin, CAPBridgedPlugin {
 
     @objc func isSupported(_ call: CAPPluginCall) {
         call.resolve(["supported": true])
+    }
+
+    @objc func hasEarpieceConnected(_ call: CAPPluginCall) {
+        DispatchQueue.main.async {
+            call.resolve([
+                "connected": AudioSessionCoordinator.isEarpieceOrHeadsetConnected(),
+            ])
+        }
     }
 }

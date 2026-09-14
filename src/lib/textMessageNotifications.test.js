@@ -7,14 +7,15 @@ import { fileURLToPath } from "node:url";
 const root = join(dirname(fileURLToPath(import.meta.url)), "../..");
 
 describe("textMessageNotifications", () => {
-  it("shows tray notifications in background instead of only playing a tone", () => {
+  it("shows foreground alerts with unread count instead of only playing a tone", () => {
     const source = readFileSync(join(root, "src/lib/textMessageNotifications.js"), "utf8");
     assert.ok(source.includes("export function maybeNotifyIncomingTextMessage"));
+    assert.ok(source.includes("export async function showForegroundTextMessageAlert"));
     assert.ok(source.includes("export async function showTextMessageTrayNotification"));
+    assert.ok(source.includes("formatTextMessageBody"));
     assert.ok(source.includes("if (isAppInForeground())"));
-    assert.ok(source.includes("playTextMessageTone()"));
-    assert.ok(source.includes("Capacitor.isNativePlatform()"));
-    assert.ok(source.includes("showTextMessageTrayNotification"));
+    assert.ok(source.includes("toast.info"));
+    assert.ok(source.includes("showForegroundTextMessageAlert"));
   });
 
   it("routes passive listen providers through background-aware text notifications", () => {

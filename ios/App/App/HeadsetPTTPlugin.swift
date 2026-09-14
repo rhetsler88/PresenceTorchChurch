@@ -46,7 +46,8 @@ public class HeadsetPTTPlugin: CAPPlugin, CAPBridgedPlugin {
 
         var nowPlayingInfo = [String: Any]()
         nowPlayingInfo[MPMediaItemPropertyTitle] = "Presence Torch PTT"
-        nowPlayingInfo[MPNowPlayingInfoPropertyPlaybackRate] = 1.0
+        // Rate 0 — remote commands only; do not look like active media (avoids route steal).
+        nowPlayingInfo[MPNowPlayingInfoPropertyPlaybackRate] = 0.0
         nowPlayingInfo[MPNowPlayingInfoPropertyElapsedPlaybackTime] = 0.0
         MPNowPlayingInfoCenter.default().nowPlayingInfo = nowPlayingInfo
     }

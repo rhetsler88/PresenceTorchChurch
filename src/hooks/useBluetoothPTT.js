@@ -8,6 +8,7 @@ import {
   isStandardServiceToSkip,
   parseBleButtonState,
 } from "@/lib/blePttConstants";
+import { refreshNativeAgoraAudio } from "@/lib/nativeVoiceProcessing";
 
 function hasWebBluetooth() {
   return typeof navigator !== "undefined" && !!navigator.bluetooth;
@@ -208,6 +209,8 @@ export default function useBluetoothPTT({ onPress, onRelease }) {
     deviceRef.current = device;
     setDeviceName(device.name || "BLE PTT Button");
     setIsConnected(true);
+    // BLE GATT is separate from earbud HFP/A2DP — re-assert listen route on earbuds.
+    await refreshNativeAgoraAudio();
   }, [handleDisconnected, handleValueChanged]);
 
   const connectWeb = useCallback(async () => {
@@ -299,6 +302,7 @@ export default function useBluetoothPTT({ onPress, onRelease }) {
     setError(null);
     setPermissionDenied(false);
     pressStateRef.current = false;
+    await refreshNativeAgoraAudio();
   }, []);
 
   useEffect(() => {

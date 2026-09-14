@@ -18,7 +18,12 @@ import { removePushRegistration, upsertPushRegistration } from "@/lib/pushRegist
 import { beginSensitiveOperation, endSensitiveOperation } from "@/lib/sensitiveOperation";
 import { clearNativeGoogleSignInPending } from "@/lib/logoutOnClose";
 import { clearNativeTextMessageNotifications } from "@/lib/sessionGuardNative";
-import { notificationIdForChannel } from "@/lib/textMessageNotifications";
+import {
+  formatTextMessageBody,
+  notificationIdForChannel,
+  resetForegroundTextMessageUnreadCounts,
+  showForegroundTextMessageAlert,
+} from "@/lib/textMessageNotifications";
 
 const PUSH_CHANNEL_ID = "red_alerts";
 const TEXT_MESSAGE_CHANNEL_ID = "text_messages";
@@ -133,6 +138,7 @@ export async function clearTextMessageNotificationsOnForeground() {
     }
   }
   const resolvedUid = auth.currentUser?.uid || currentUid;
+  resetForegroundTextMessageUnreadCounts();
   await Promise.all([
     clearNativeTextMessageNotificationsFromTray(),
     clearLocalTextMessageNotifications(),
@@ -201,16 +207,10 @@ async function removeSessionRegistration(uid, registrationKey) {
   }
 }
 
-function formatTextMessageBody(count, channelName) {
-  const safeCount = Number.parseInt(String(count || "1"), 10);
-  const normalizedCount = Number.isFinite(safeCount) && safeCount > 0 ? safeCount : 1;
-  const label = normalizedCount === 1 ? "text message" : "text messages";
-  return `${normalizedCount} new ${label} in ${channelName || "Channel"}`;
-}
-
 function shouldShowNativeForegroundNotification(type) {
   if (!Capacitor.isNativePlatform()) return true;
-  // Android FCM already posts tray notifications; foreground should be tone-only.
+  // Text messages use showForegroundTextMessageAlert (toast + local notification).
+  if (type === "text_message") return false;
   if (Capacitor.getPlatform() === "android") return false;
   // iOS: show a local banner while the app is open.
   return type !== "red_alert";
@@ -283,15 +283,17 @@ export function notifyTextMessageInBackground({
   });
 }
 
-/** Foreground only on web/iOS — Android FCM/system tray handles visible notifications in background. */
+/** Foreground: on-screen alert with unread count from FCM data payload. */
 function handleTextMessagePayload(data = {}) {
-  playTextMessageTone();
-  if (Capacitor.isNativePlatform() && Capacitor.getPlatform() === "android") {
-    return;
-  }
   const channelName = data.channelName || data.channel_name || "Channel";
   const count = data.unreadCount || data.unread_count || "1";
   const channelId = data.channelId || data.channel_id || "channel";
+
+  if (isAppInForeground()) {
+    void showForegroundTextMessageAlert({ channelId, channelName, count });
+    return;
+  }
+
   const tag = data.notificationTag || `text_message_${channelId}`;
   void showForegroundPushNotification({
     title: data.title || "Presence Torch",

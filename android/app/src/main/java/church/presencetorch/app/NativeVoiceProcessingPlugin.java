@@ -1,9 +1,11 @@
 package church.presencetorch.app;
 
 import android.content.Context;
+import android.media.AudioDeviceInfo;
 import android.media.AudioManager;
 import android.media.audiofx.AcousticEchoCanceler;
 import android.media.audiofx.NoiseSuppressor;
+import android.os.Build;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
@@ -82,6 +84,19 @@ public class NativeVoiceProcessingPlugin extends Plugin {
         call.resolve(ret);
     }
 
+    /** Wired headset or Bluetooth audio output (not BLE GATT PTT buttons). */
+    @PluginMethod
+    public void hasEarpieceConnected(PluginCall call) {
+        AudioManager audioManager = getAudioManager();
+        if (audioManager == null) {
+            call.reject("AudioManager unavailable");
+            return;
+        }
+        JSObject ret = new JSObject();
+        ret.put("connected", hasExternalAudioOutput(audioManager));
+        call.resolve(ret);
+    }
+
     private boolean applyCommunicationMode(boolean nextVoice, boolean nextListen) {
         AudioManager audioManager = getAudioManager();
         if (audioManager == null) {
@@ -93,10 +108,57 @@ public class NativeVoiceProcessingPlugin extends Plugin {
         }
 
         audioManager.setMode(AudioManager.MODE_IN_COMMUNICATION);
-        audioManager.setSpeakerphoneOn(true);
+        applyPreferredOutputRoute(audioManager, nextVoice);
         voiceActive = nextVoice;
         listenActive = nextListen;
         return true;
+    }
+
+    /**
+     * Keep earbuds / BT headsets on A2DP or HFP for listen + mic. Only fall back to the
+     * loudspeaker when no wired or Bluetooth audio output is connected (BLE PTT buttons are
+     * GATT-only and must not replace the communication device).
+     */
+    private void applyPreferredOutputRoute(AudioManager audioManager, boolean voiceCaptureActive) {
+        if (hasExternalAudioOutput(audioManager)) {
+            audioManager.setSpeakerphoneOn(false);
+            return;
+        }
+        audioManager.setSpeakerphoneOn(voiceCaptureActive);
+    }
+
+    private boolean hasExternalAudioOutput(AudioManager audioManager) {
+        if (audioManager.isWiredHeadsetOn()) {
+            return true;
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            AudioDeviceInfo[] outputs = audioManager.getDevices(AudioManager.GET_DEVICES_OUTPUTS);
+            for (AudioDeviceInfo device : outputs) {
+                switch (device.getType()) {
+                    case AudioDeviceInfo.TYPE_WIRED_HEADSET:
+                    case AudioDeviceInfo.TYPE_WIRED_HEADPHONES:
+                    case AudioDeviceInfo.TYPE_BLUETOOTH_A2DP:
+                    case AudioDeviceInfo.TYPE_BLUETOOTH_SCO:
+                    case AudioDeviceInfo.TYPE_USB_HEADSET:
+                    case AudioDeviceInfo.TYPE_USB_DEVICE:
+                    case AudioDeviceInfo.TYPE_HEARING_AID:
+                        return true;
+                    default:
+                        break;
+                }
+            }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                for (AudioDeviceInfo device : outputs) {
+                    int type = device.getType();
+                    if (type == AudioDeviceInfo.TYPE_BLE_HEADSET
+                        || type == AudioDeviceInfo.TYPE_BLE_SPEAKER) {
+                        return true;
+                    }
+                }
+            }
+            return false;
+        }
+        return audioManager.isBluetoothA2dpOn() || audioManager.isBluetoothScoOn();
     }
 
     private void restoreIfIdle() {

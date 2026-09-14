@@ -12,6 +12,7 @@ import GlobalPTTBridge from "@/components/ptt/GlobalPTTBridge";
 import RedAlertBanner from "@/components/ptt/RedAlertBanner";
 import PasswordRotationReminder from "@/components/auth/PasswordRotationReminder";
 import GooglePasswordSetupPrompt from "@/components/auth/GooglePasswordSetupPrompt";
+import EarpieceWarningAfterDailyGate from "@/components/dailycode/EarpieceWarningAfterDailyGate";
 import useRedAlert from "@/hooks/useRedAlert";
 import { getLastAppRoute, saveLastAppRoute } from "@/lib/lastAppRoute";
 import { pttSurfaceFromPath, saveLastPttSurface } from "@/lib/lastPttSurface";
@@ -91,6 +92,7 @@ export default function AppLayout() {
       <RedAlertBanner channelName={alertChannel} onDismiss={dismissAlert} />
       <PasswordRotationReminder />
       <GooglePasswordSetupPrompt />
+      <EarpieceWarningAfterDailyGate />
       <UserMenu />
       <div
         className="flex-1 w-full min-w-0 overflow-x-hidden overflow-y-auto [scrollbar-gutter:stable]"

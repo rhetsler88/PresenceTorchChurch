@@ -35,7 +35,7 @@ enum AudioSessionCoordinator {
             object: nil,
             queue: .main
         ) { _ in
-            routeToSpeakerIfRecording()
+            refreshIfNeeded()
         }
         NotificationCenter.default.addObserver(
             forName: AVAudioSession.interruptionNotification,
@@ -71,9 +71,20 @@ enum AudioSessionCoordinator {
         applyIfModeChanged(next)
     }
 
-    /// Speaker override only — never `setCategory` (unsafe during WebRTC).
+    /// Route tweaks only — never `setCategory` (unsafe during WebRTC).
     static func refreshIfNeeded() {
-        routeToSpeakerIfRecording()
+        lock.lock()
+        let mode = currentMode
+        lock.unlock()
+        let session = AVAudioSession.sharedInstance()
+        switch mode {
+        case .record:
+            routeToSpeaker(session)
+        case .playback:
+            preferExternalOutputIfAvailable(session)
+        case .idle:
+            break
+        }
     }
 
     private static func desiredMode(_ set: Set<String>) -> SessionMode {
@@ -117,14 +128,15 @@ enum AudioSessionCoordinator {
                     try session.setCategory(
                         .playback,
                         mode: .spokenAudio,
-                        options: [.allowBluetooth, .allowBluetoothA2DP, .mixWithOthers, .defaultToSpeaker]
+                        options: [.allowBluetooth, .allowBluetoothA2DP, .mixWithOthers]
                     )
                     try session.setActive(true)
+                    preferExternalOutputIfAvailable(session)
                 case .record:
                     try session.setCategory(
                         .playAndRecord,
                         mode: .videoChat,
-                        options: [.defaultToSpeaker, .allowBluetoothHFP, .allowBluetoothA2DP]
+                        options: [.allowBluetoothHFP, .allowBluetoothA2DP]
                     )
                     try session.setActive(true)
                     routeToSpeaker(session)
@@ -156,14 +168,39 @@ enum AudioSessionCoordinator {
         routeToSpeaker(AVAudioSession.sharedInstance())
     }
 
-    private static func routeToSpeaker(_ session: AVAudioSession) {
-        let bluetoothTypes: Set<AVAudioSession.Port> = [
+    /// Wired/BT outputs (including earbuds). BLE PTT buttons are not audio ports here.
+    static func isEarpieceOrHeadsetConnected() -> Bool {
+        hasExternalAudioOutput(AVAudioSession.sharedInstance())
+    }
+
+    private static func hasExternalAudioOutput(_ session: AVAudioSession) -> Bool {
+        let externalPorts: Set<AVAudioSession.Port> = [
             .bluetoothHFP,
             .bluetoothA2DP,
             .bluetoothLE,
+            .headphones,
+            .headsetMic,
+            .usbAudio,
+            .airPlay,
+            .carAudio,
         ]
-        let usingBluetooth = session.currentRoute.outputs.contains { bluetoothTypes.contains($0.portType) }
-        guard !usingBluetooth else { return }
+        return session.currentRoute.outputs.contains { externalPorts.contains($0.portType) }
+    }
+
+    private static func preferExternalOutputIfAvailable(_ session: AVAudioSession) {
+        guard hasExternalAudioOutput(session) else { return }
+        do {
+            try session.overrideOutputAudioPort(.none)
+        } catch {
+            CAPLog.print("AudioSessionCoordinator external route error:", error.localizedDescription)
+        }
+    }
+
+    private static func routeToSpeaker(_ session: AVAudioSession) {
+        if hasExternalAudioOutput(session) {
+            preferExternalOutputIfAvailable(session)
+            return
+        }
         do {
             try session.overrideOutputAudioPort(.speaker)
         } catch {

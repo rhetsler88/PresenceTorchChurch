@@ -9,9 +9,8 @@
  * fit inside the target and padded with the app background, so no UI is cropped.
  *
  * Usage:
- *   node scripts/export-app-store-screenshots.mjs            # every raster frame
+ *   node scripts/export-app-store-screenshots.mjs            # every frame
  *   node scripts/export-app-store-screenshots.mjs talk       # one frame
- *   node scripts/export-app-store-screenshots.mjs signin     # opt in to the live-captured frame
  */
 import { mkdir } from "fs/promises";
 import { dirname, join } from "path";
@@ -26,8 +25,7 @@ const outRoot = join(root, "assets", "app-store-screenshots");
 const BACKGROUND = { r: 8, g: 12, b: 22, alpha: 1 };
 
 const FRAMES = {
-  // Regenerated at native resolution by `npm run capture:app-store-login`.
-  signin: { source: "source-signin.png", out: "01-signin.png", liveCapture: true },
+  signin: { source: "source-signin.png", out: "01-signin.png" },
   talk: { source: "source-talk.png", out: "02-talk.png" },
 };
 
@@ -78,9 +76,7 @@ for (const name of requested) {
     throw new Error(`Unknown frame "${name}". Available: ${Object.keys(FRAMES).join(", ")}`);
   }
 }
-const names = requested.length
-  ? requested
-  : Object.keys(FRAMES).filter((name) => !FRAMES[name].liveCapture);
+const names = requested.length ? requested : Object.keys(FRAMES);
 
 await mkdir(outRoot, { recursive: true });
 for (const name of names) {

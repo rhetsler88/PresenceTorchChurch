@@ -30,17 +30,21 @@ The iPad set is required because `TARGETED_DEVICE_FAMILY` is `1,2`.
 
 ## Regenerating
 
+`source-signin.png` and `source-talk.png` are device screenshots. Replace either
+one and re-export every size from it:
+
 ```bash
-npm run export:app-store-screenshots                             # raster frames (Talk)
-APP_URL=http://127.0.0.1:5173 npm run capture:app-store-login    # native-resolution sign-in
+npm run export:app-store-screenshots           # both frames
+npm run export:app-store-screenshots talk      # just one
 ```
 
-The capture script renders `/login?storePreview=1`, which shows the Fingerprint
-controls and hides the PWA install prompt so the frame matches native iOS.
+Frames whose aspect ratio does not match a target are fit inside it and padded
+with the page background `#080c16` rather than cropped, so no UI is lost.
 
-`source-signin.png` and `source-talk.png` are the full-resolution originals the
-export script scales from. Frames whose aspect ratio does not match a target are
-fit inside it and padded with the page background `#080c16` rather than cropped.
+When no device is available, `npm run capture:app-store-login` renders
+`/login?storePreview=1` in headless Chrome at each size instead. That path
+overwrites `01-signin.png` with a browser render, which has no iOS status bar,
+so prefer a device screenshot for the shipped listing.
 
 `src/lib/appStoreScreenshots.test.js` asserts the exact pixel size, PNG format,
 and absence of alpha for every file here.

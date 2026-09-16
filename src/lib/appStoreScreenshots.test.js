@@ -16,9 +16,10 @@ const REQUIRED = [
   { dir: "iphone-6.5-inch-1242x2688", width: 1242, height: 2688 },
   { dir: "iphone-5.5-inch-1242x2208", width: 1242, height: 2208 },
   { dir: "ipad-13-inch-2064x2752", width: 2064, height: 2752 },
+  { dir: "ipad-13-inch-2048x2732", width: 2048, height: 2732 },
 ];
 
-const FRAMES = ["01-signin.png", "02-talk.png"];
+const FRAMES = ["01-signin.png", "02-daily-code.png", "03-talk.png"];
 
 describe("App Store Connect screenshots", () => {
   for (const spec of REQUIRED) {
@@ -41,6 +42,7 @@ describe("App Store Connect screenshots", () => {
   it("keeps source frames for regeneration", () => {
     const names = readdirSync(shotRoot);
     assert.ok(names.includes("source-signin.png"));
+    assert.ok(names.includes("source-daily-code.png"));
     assert.ok(names.includes("source-talk.png"));
   });
 });

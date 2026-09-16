@@ -24,9 +24,11 @@ const outRoot = join(root, "assets", "app-store-screenshots");
 /** Sign-in and Talk share this page background, so padding is seamless. */
 const BACKGROUND = { r: 8, g: 12, b: 22, alpha: 1 };
 
+/** Ordered to follow the sign-in flow a reviewer sees. */
 const FRAMES = {
   signin: { source: "source-signin.png", out: "01-signin.png" },
-  talk: { source: "source-talk.png", out: "02-talk.png" },
+  "daily-code": { source: "source-daily-code.png", out: "02-daily-code.png" },
+  talk: { source: "source-talk.png", out: "03-talk.png" },
 };
 
 const SIZES = [
@@ -36,6 +38,7 @@ const SIZES = [
   { name: "iphone-6.5-inch-1242x2688", width: 1242, height: 2688 },
   { name: "iphone-5.5-inch-1242x2208", width: 1242, height: 2208 },
   { name: "ipad-13-inch-2064x2752", width: 2064, height: 2752 },
+  { name: "ipad-13-inch-2048x2732", width: 2048, height: 2732 },
 ];
 
 /** Crop only when the frame is within 1% of the target ratio; otherwise pad. */

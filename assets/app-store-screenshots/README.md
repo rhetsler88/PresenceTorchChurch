@@ -1,9 +1,12 @@
 # App Store Connect screenshots
 
-Every folder holds the same two portrait frames at one accepted size:
+Every folder holds the same three portrait frames at one accepted size, ordered
+to follow the flow a reviewer walks through:
 
 - `01-signin.png` — sign-in screen
-- `02-talk.png` — Talk channel with protection level, voice messages, and hold-to-talk
+- `02-daily-code.png` — verse of the day and daily access code gate
+- `03-talk.png` — Talk channel with protection level, voice and text messages,
+  and hold-to-talk
 
 All files are PNG, 8-bit RGB, no alpha channel. App Store Connect rejects
 transparency and any size not listed below.
@@ -21,12 +24,15 @@ into, so match the folder to the slot heading on the page.
 | 6.5" Display (alternate) | `iphone-6.5-inch-1242x2688` | 1242 × 2688 |
 | 5.5" Display | `iphone-5.5-inch-1242x2208` | 1242 × 2208 |
 | iPad 13" Display | `ipad-13-inch-2064x2752` | 2064 × 2752 |
+| iPad 13" Display (alternate) | `ipad-13-inch-2048x2732` | 2048 × 2732 |
 
-The 6.5" slot accepts either 1284 × 2778 or 1242 × 2688; upload one folder, not
-both. `iphone-5.5-inch-1242x2208` is a different slot from
+Where a slot lists two folders, either is accepted; upload one, not both.
+`iphone-5.5-inch-1242x2208` is a different slot from
 `iphone-6.5-inch-1242x2688` despite the shared 1242 width.
 
-The iPad set is required because `TARGETED_DEVICE_FAMILY` is `1,2`.
+The iPad set is required because `TARGETED_DEVICE_FAMILY` is `1,2`. Only
+portrait is exported: iPhone is portrait-locked in `Info.plist`, and the source
+frames are phone captures, so a landscape canvas would be mostly padding.
 
 ## Regenerating
 

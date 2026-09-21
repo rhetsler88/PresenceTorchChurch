@@ -1,9 +1,11 @@
 /**
- * Export App Store Connect screenshots from source PNG frames.
+ * Export App Store Connect screenshots as JPEG from source PNG frames.
  *
  * Apple rejects images with alpha and off-spec pixel sizes. The required
  * iPhone size is the 6.9" class (1320×2868, 1290×2796, or 1260×2736). iPad 13"
  * is required because this binary targets iPhone and iPad.
+ *
+ * Sources stay PNG so every re-export starts from a lossless master.
  *
  * Frames whose aspect ratio differs from a target (5.5" iPhone, 13" iPad) are
  * fit inside the target and padded with the app background, so no UI is cropped.
@@ -17,18 +19,17 @@ import { dirname, join } from "path";
 import { fileURLToPath } from "url";
 import sharp from "sharp";
 
+import { BACKGROUND, JPEG_OPTIONS, verifyUploadable } from "./lib/appStoreImage.mjs";
+
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = join(__dirname, "..");
 const outRoot = join(root, "assets", "app-store-screenshots");
 
-/** Sign-in and Talk share this page background, so padding is seamless. */
-const BACKGROUND = { r: 8, g: 12, b: 22, alpha: 1 };
-
 /** Ordered to follow the sign-in flow a reviewer sees. */
 const FRAMES = {
-  signin: { source: "source-signin.png", out: "01-signin.png" },
-  "daily-code": { source: "source-daily-code.png", out: "02-daily-code.png" },
-  talk: { source: "source-talk.png", out: "03-talk.png" },
+  signin: { source: "source-signin.png", out: "01-signin.jpg" },
+  "daily-code": { source: "source-daily-code.png", out: "02-daily-code.jpg" },
+  talk: { source: "source-talk.png", out: "03-talk.jpg" },
 };
 
 const SIZES = [
@@ -59,17 +60,15 @@ async function exportSize(source, sourceRatio, frame, size) {
       background: BACKGROUND,
       kernel: "lanczos3",
     })
-    .removeAlpha()
-    .png({ compressionLevel: 9, adaptiveFiltering: true })
+    .toColourspace("srgb")
+    .jpeg(JPEG_OPTIONS)
     .toFile(dest);
 
-  const meta = await sharp(dest).metadata();
-  if (meta.width !== size.width || meta.height !== size.height) {
-    throw new Error(`${size.name}: expected ${size.width}x${size.height}, got ${meta.width}x${meta.height}`);
-  }
-  if (meta.channels !== 3 || meta.hasAlpha) {
-    throw new Error(`${size.name}: App Store Connect rejects alpha; got channels=${meta.channels}`);
-  }
+  const meta = await verifyUploadable(dest, {
+    width: size.width,
+    height: size.height,
+    label: `${size.name}/${frame.out}`,
+  });
   console.log(`  ${size.name}/${frame.out}  ${meta.width}x${meta.height}  ${meta.channels}ch`);
 }
 

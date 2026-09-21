@@ -11,12 +11,13 @@ import { fileURLToPath } from "url";
 import { spawn } from "child_process";
 import sharp from "sharp";
 
+import { BACKGROUND, JPEG_OPTIONS, verifyUploadable } from "./lib/appStoreImage.mjs";
+
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = join(__dirname, "..");
 const outRoot = join(root, "assets", "app-store-screenshots");
 const APP_URL = (process.env.APP_URL || "http://127.0.0.1:5173").replace(/\/$/, "");
 const CHROME = process.env.CHROME_PATH || "google-chrome-stable";
-const BACKGROUND = { r: 8, g: 12, b: 22 };
 
 const DEVICES = [
   { name: "iphone-6.9-inch-1320x2868", cssWidth: 440, cssHeight: 956, scale: 3, width: 1320, height: 2868 },
@@ -25,6 +26,7 @@ const DEVICES = [
   { name: "iphone-6.5-inch-1242x2688", cssWidth: 414, cssHeight: 896, scale: 3, width: 1242, height: 2688 },
   { name: "iphone-5.5-inch-1242x2208", cssWidth: 414, cssHeight: 736, scale: 3, width: 1242, height: 2208 },
   { name: "ipad-13-inch-2064x2752", cssWidth: 1032, cssHeight: 1376, scale: 2, width: 2064, height: 2752 },
+  { name: "ipad-13-inch-2048x2732", cssWidth: 1024, cssHeight: 1366, scale: 2, width: 2048, height: 2732 },
 ];
 
 function runChrome(args) {
@@ -62,7 +64,7 @@ async function captureDevice(tmpDir, device) {
 
   const dir = join(outRoot, device.name);
   await mkdir(dir, { recursive: true });
-  const dest = join(dir, "01-signin.png");
+  const dest = join(dir, "01-signin.jpg");
   await sharp(rawPath)
     .flatten({ background: BACKGROUND })
     .resize(device.width, device.height, {
@@ -70,18 +72,16 @@ async function captureDevice(tmpDir, device) {
       position: "center",
       kernel: "lanczos3",
     })
-    .removeAlpha()
-    .png({ compressionLevel: 9, adaptiveFiltering: true })
+    .toColourspace("srgb")
+    .jpeg(JPEG_OPTIONS)
     .toFile(dest);
 
-  const meta = await sharp(dest).metadata();
-  if (meta.width !== device.width || meta.height !== device.height) {
-    throw new Error(`${device.name}: expected ${device.width}x${device.height}, got ${meta.width}x${meta.height}`);
-  }
-  if (meta.hasAlpha || meta.channels !== 3) {
-    throw new Error(`${device.name}: App Store Connect rejects alpha`);
-  }
-  console.log(`  captured ${device.name}/01-signin.png  ${meta.width}x${meta.height}`);
+  const meta = await verifyUploadable(dest, {
+    width: device.width,
+    height: device.height,
+    label: `${device.name}/01-signin.jpg`,
+  });
+  console.log(`  captured ${device.name}/01-signin.jpg  ${meta.width}x${meta.height}`);
 }
 
 const tmpDir = await mkdtemp(join(tmpdir(), "app-store-login-"));

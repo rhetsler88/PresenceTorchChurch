@@ -8,7 +8,7 @@ import sharp from "sharp";
 const root = join(dirname(fileURLToPath(import.meta.url)), "../..");
 const shotRoot = join(root, "assets", "app-store-screenshots");
 
-/** Official App Store Connect portrait sizes we ship for this sign-in frame. */
+/** Official App Store Connect portrait sizes we ship these frames at. */
 const REQUIRED = [
   { dir: "iphone-6.9-inch-1320x2868", width: 1320, height: 2868 },
   { dir: "iphone-6.9-inch-1290x2796", width: 1290, height: 2796 },
@@ -19,19 +19,20 @@ const REQUIRED = [
   { dir: "ipad-13-inch-2048x2732", width: 2048, height: 2732 },
 ];
 
-const FRAMES = ["01-signin.png", "02-daily-code.png", "03-talk.png"];
+const FRAMES = ["01-signin.jpg", "02-daily-code.jpg", "03-talk.jpg"];
 
 describe("App Store Connect screenshots", () => {
   for (const spec of REQUIRED) {
     for (const frame of FRAMES) {
-      it(`${spec.dir}/${frame} is an opaque PNG at ${spec.width}x${spec.height}`, async () => {
+      it(`${spec.dir}/${frame} is an opaque sRGB JPEG at ${spec.width}x${spec.height}`, async () => {
         const file = join(shotRoot, spec.dir, frame);
         const meta = await sharp(file).metadata();
-        assert.equal(meta.format, "png");
+        assert.equal(meta.format, "jpeg");
         assert.equal(meta.width, spec.width);
         assert.equal(meta.height, spec.height);
         assert.equal(meta.hasAlpha, false);
         assert.equal(meta.channels, 3);
+        assert.equal(meta.space, "srgb");
         const bytes = statSync(file).size;
         assert.ok(bytes > 50_000, "screenshot looks empty");
         assert.ok(bytes < 8 * 1024 * 1024, "App Store Connect max is 8MB");
@@ -44,5 +45,11 @@ describe("App Store Connect screenshots", () => {
     assert.ok(names.includes("source-signin.png"));
     assert.ok(names.includes("source-daily-code.png"));
     assert.ok(names.includes("source-talk.png"));
+  });
+
+  it("ships no leftovers from an earlier export format", () => {
+    for (const spec of REQUIRED) {
+      assert.deepEqual(readdirSync(join(shotRoot, spec.dir)).sort(), FRAMES);
+    }
   });
 });

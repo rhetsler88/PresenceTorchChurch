@@ -3,13 +3,15 @@
 Every folder holds the same three portrait frames at one accepted size, ordered
 to follow the flow a reviewer walks through:
 
-- `01-signin.png` — sign-in screen
-- `02-daily-code.png` — verse of the day and daily access code gate
-- `03-talk.png` — Talk channel with protection level, voice and text messages,
+- `01-signin.jpg` — sign-in screen
+- `02-daily-code.jpg` — verse of the day and daily access code gate
+- `03-talk.jpg` — Talk channel with protection level, voice and text messages,
   and hold-to-talk
 
-All files are PNG, 8-bit RGB, no alpha channel. App Store Connect rejects
-transparency and any size not listed below.
+All files are JPEG, sRGB, 3 channels, no alpha. App Store Connect takes JPG or
+PNG and rejects transparency, a non-RGB color space, and any size not listed
+below. They are encoded at quality 92 with 4:4:4 chroma so the small UI text
+stays crisp.
 
 ## Which folder goes in which slot
 
@@ -36,11 +38,12 @@ frames are phone captures, so a landscape canvas would be mostly padding.
 
 ## Regenerating
 
-`source-signin.png` and `source-talk.png` are device screenshots. Replace either
-one and re-export every size from it:
+`source-signin.png`, `source-daily-code.png`, and `source-talk.png` are device
+screenshots. They stay PNG so each re-export starts from a lossless master
+rather than recompressing a JPEG. Replace any one and re-export every size:
 
 ```bash
-npm run export:app-store-screenshots           # both frames
+npm run export:app-store-screenshots           # all frames
 npm run export:app-store-screenshots talk      # just one
 ```
 
@@ -49,8 +52,8 @@ with the page background `#080c16` rather than cropped, so no UI is lost.
 
 When no device is available, `npm run capture:app-store-login` renders
 `/login?storePreview=1` in headless Chrome at each size instead. That path
-overwrites `01-signin.png` with a browser render, which has no iOS status bar,
+overwrites `01-signin.jpg` with a browser render, which has no iOS status bar,
 so prefer a device screenshot for the shipped listing.
 
-`src/lib/appStoreScreenshots.test.js` asserts the exact pixel size, PNG format,
-and absence of alpha for every file here.
+`src/lib/appStoreScreenshots.test.js` asserts the exact pixel size, JPEG format,
+sRGB space, and absence of alpha for every file here.

@@ -37,7 +37,8 @@ export function findUploadProblems({ format, width, height, channels, hasAlpha, 
     problems.push(`format is ${format}, but App Store Connect takes only JPG or PNG`);
   }
   if (!findSlot(width, height)) {
-    problems.push(`${width}x${height} is not an accepted slot size`);
+    const accepted = SLOTS.map((slot) => `${slot.width}x${slot.height}`).join(", ");
+    problems.push(`${width}x${height} is not an accepted slot size; Apple takes ${accepted}`);
   }
   if (hasAlpha || channels === 4) {
     problems.push("has an alpha channel, which Apple rejects; flatten it onto a solid background");

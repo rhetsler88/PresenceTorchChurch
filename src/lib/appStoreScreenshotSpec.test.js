@@ -50,9 +50,11 @@ describe("findUploadProblems", () => {
     assert.match(problem, /only JPG or PNG/);
   });
 
-  it("rejects an off-spec size", () => {
+  it("rejects an off-spec size and names the sizes Apple does take", () => {
     const [problem] = findUploadProblems(uploadable({ width: 1179, height: 2556 }));
     assert.match(problem, /1179x2556 is not an accepted slot size/);
+    assert.match(problem, /1320x2868/);
+    assert.match(problem, /1242x2208/);
   });
 
   it("rejects transparency, whether flagged or implied by a fourth channel", () => {

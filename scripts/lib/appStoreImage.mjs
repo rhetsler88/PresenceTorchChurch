@@ -32,6 +32,15 @@ export function writeUploadableJpeg(pipeline, dest) {
   return pipeline.toColourspace("srgb").withIccProfile("srgb").jpeg(JPEG_OPTIONS).toFile(dest);
 }
 
+/** Opaque 8-bit RGB PNG — App Store Connect rejects alpha on screenshots. */
+export function writeUploadablePng(pipeline, dest) {
+  return pipeline
+    .toColourspace("srgb")
+    .removeAlpha()
+    .png({ compressionLevel: 9, adaptiveFiltering: true })
+    .toFile(dest);
+}
+
 /** Throws unless the written file is exactly what App Store Connect accepts. */
 export async function verifyUploadable(file, { width, height, label }) {
   const meta = await sharp(file).metadata();

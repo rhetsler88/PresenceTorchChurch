@@ -26,7 +26,9 @@ import { findUploadProblems, SLOTS } from "../src/lib/appStoreScreenshotSpec.js"
 import { createClient, createToken, displayTypeFor, EDITABLE_STATES, md5 } from "./lib/appStoreConnect.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const shotRoot = join(__dirname, "..", "assets", "app-store-screenshots");
+const root = join(__dirname, "..");
+/** Default JPEG set; for iPad PNG use ASC_SCREENSHOT_DIR=assets/app-store-ipad-png */
+const shotRoot = join(root, process.env.ASC_SCREENSHOT_DIR ?? "assets/app-store-screenshots");
 
 const args = process.argv.slice(2);
 const dryRun = args.includes("--dry-run");
@@ -60,6 +62,7 @@ async function readFrames(slot) {
   const dir = join(shotRoot, slot.dir);
   const frames = [];
   for (const name of readdirSync(dir).sort()) {
+    if (!/\.(png|jpe?g)$/i.test(name)) continue;
     const file = join(dir, name);
     const buffer = readFileSync(file);
     const meta = await sharp(buffer).metadata();

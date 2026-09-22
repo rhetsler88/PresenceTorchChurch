@@ -8,10 +8,27 @@ to follow the flow a reviewer walks through:
 - `03-talk.jpg` — Talk channel with protection level, voice and text messages,
   and hold-to-talk
 
-All files are JPEG, sRGB, 3 channels, no alpha. App Store Connect takes JPG or
-PNG and rejects transparency, a non-RGB color space, and any size not listed
-below. They are encoded at quality 92 with 4:4:4 chroma so the small UI text
-stays crisp.
+All files are baseline JPEG with an embedded sRGB profile, 3 channels, no
+alpha. App Store Connect takes JPG or PNG and rejects transparency, a non-RGB
+color space, and any size not listed below. They are encoded at quality 92 with
+4:4:4 chroma so the small UI text stays crisp.
+
+## If an upload will not stick
+
+Check the exact file you are about to drag into the browser, which is not
+always the file that was exported here — anything re-saved out of a preview,
+a chat, or an image viewer is usually a different size or format:
+
+```bash
+npm run check:app-store-screenshots -- ~/Downloads/01-signin.jpg
+```
+
+It names the slot each file belongs in, or every reason Apple would refuse it.
+If files pass that check and still vanish from the upload box, the cause is on
+the App Store Connect side rather than in the image: the version has to be in
+an editable state (Prepare for Submission, Rejected, or Developer Rejected),
+the pixel size has to match the slot heading you dropped it under, and the
+page needs a Save before the thumbnails persist.
 
 ## Which folder goes in which slot
 
@@ -55,5 +72,7 @@ When no device is available, `npm run capture:app-store-login` renders
 overwrites `01-signin.jpg` with a browser render, which has no iOS status bar,
 so prefer a device screenshot for the shipped listing.
 
-`src/lib/appStoreScreenshots.test.js` asserts the exact pixel size, JPEG format,
-sRGB space, and absence of alpha for every file here.
+`src/lib/appStoreScreenshotSpec.js` holds the accepted sizes and the rejection
+rules, shared by both generators, the validator, and the tests.
+`src/lib/appStoreScreenshots.test.js` runs those rules against every file here
+and asserts its exact pixel size.

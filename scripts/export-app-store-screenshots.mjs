@@ -19,7 +19,8 @@ import { dirname, join } from "path";
 import { fileURLToPath } from "url";
 import sharp from "sharp";
 
-import { BACKGROUND, JPEG_OPTIONS, verifyUploadable } from "./lib/appStoreImage.mjs";
+import { SLOTS } from "../src/lib/appStoreScreenshotSpec.js";
+import { BACKGROUND, verifyUploadable, writeUploadableJpeg } from "./lib/appStoreImage.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = join(__dirname, "..");
@@ -32,15 +33,7 @@ const FRAMES = {
   talk: { source: "source-talk.png", out: "03-talk.jpg" },
 };
 
-const SIZES = [
-  { name: "iphone-6.9-inch-1320x2868", width: 1320, height: 2868 },
-  { name: "iphone-6.9-inch-1290x2796", width: 1290, height: 2796 },
-  { name: "iphone-6.5-inch-1284x2778", width: 1284, height: 2778 },
-  { name: "iphone-6.5-inch-1242x2688", width: 1242, height: 2688 },
-  { name: "iphone-5.5-inch-1242x2208", width: 1242, height: 2208 },
-  { name: "ipad-13-inch-2064x2752", width: 2064, height: 2752 },
-  { name: "ipad-13-inch-2048x2732", width: 2048, height: 2732 },
-];
+const SIZES = SLOTS.map(({ dir, width, height }) => ({ name: dir, width, height }));
 
 /** Crop only when the frame is within 1% of the target ratio; otherwise pad. */
 function resizeFit(sourceRatio, { width, height }) {
@@ -52,17 +45,17 @@ async function exportSize(source, sourceRatio, frame, size) {
   const dir = join(outRoot, size.name);
   await mkdir(dir, { recursive: true });
   const dest = join(dir, frame.out);
-  await sharp(source)
-    .flatten({ background: BACKGROUND })
-    .resize(size.width, size.height, {
-      fit: resizeFit(sourceRatio, size),
-      position: "center",
-      background: BACKGROUND,
-      kernel: "lanczos3",
-    })
-    .toColourspace("srgb")
-    .jpeg(JPEG_OPTIONS)
-    .toFile(dest);
+  await writeUploadableJpeg(
+    sharp(source)
+      .flatten({ background: BACKGROUND })
+      .resize(size.width, size.height, {
+        fit: resizeFit(sourceRatio, size),
+        position: "center",
+        background: BACKGROUND,
+        kernel: "lanczos3",
+      }),
+    dest,
+  );
 
   const meta = await verifyUploadable(dest, {
     width: size.width,

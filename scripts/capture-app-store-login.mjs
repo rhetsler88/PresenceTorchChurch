@@ -11,7 +11,7 @@ import { fileURLToPath } from "url";
 import { spawn } from "child_process";
 import sharp from "sharp";
 
-import { BACKGROUND, JPEG_OPTIONS, verifyUploadable } from "./lib/appStoreImage.mjs";
+import { BACKGROUND, verifyUploadable, writeUploadableJpeg } from "./lib/appStoreImage.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = join(__dirname, "..");
@@ -65,16 +65,16 @@ async function captureDevice(tmpDir, device) {
   const dir = join(outRoot, device.name);
   await mkdir(dir, { recursive: true });
   const dest = join(dir, "01-signin.jpg");
-  await sharp(rawPath)
-    .flatten({ background: BACKGROUND })
-    .resize(device.width, device.height, {
-      fit: "cover",
-      position: "center",
-      kernel: "lanczos3",
-    })
-    .toColourspace("srgb")
-    .jpeg(JPEG_OPTIONS)
-    .toFile(dest);
+  await writeUploadableJpeg(
+    sharp(rawPath)
+      .flatten({ background: BACKGROUND })
+      .resize(device.width, device.height, {
+        fit: "cover",
+        position: "center",
+        kernel: "lanczos3",
+      }),
+    dest,
+  );
 
   const meta = await verifyUploadable(dest, {
     width: device.width,

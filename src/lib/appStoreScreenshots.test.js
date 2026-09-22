@@ -5,37 +5,26 @@ import { describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
 import sharp from "sharp";
 
+import { findUploadProblems, FRAME_FILES as FRAMES, SLOTS as REQUIRED } from "./appStoreScreenshotSpec.js";
+
 const root = join(dirname(fileURLToPath(import.meta.url)), "../..");
 const shotRoot = join(root, "assets", "app-store-screenshots");
-
-/** Official App Store Connect portrait sizes we ship these frames at. */
-const REQUIRED = [
-  { dir: "iphone-6.9-inch-1320x2868", width: 1320, height: 2868 },
-  { dir: "iphone-6.9-inch-1290x2796", width: 1290, height: 2796 },
-  { dir: "iphone-6.5-inch-1284x2778", width: 1284, height: 2778 },
-  { dir: "iphone-6.5-inch-1242x2688", width: 1242, height: 2688 },
-  { dir: "iphone-5.5-inch-1242x2208", width: 1242, height: 2208 },
-  { dir: "ipad-13-inch-2064x2752", width: 2064, height: 2752 },
-  { dir: "ipad-13-inch-2048x2732", width: 2048, height: 2732 },
-];
-
-const FRAMES = ["01-signin.jpg", "02-daily-code.jpg", "03-talk.jpg"];
 
 describe("App Store Connect screenshots", () => {
   for (const spec of REQUIRED) {
     for (const frame of FRAMES) {
-      it(`${spec.dir}/${frame} is an opaque sRGB JPEG at ${spec.width}x${spec.height}`, async () => {
+      it(`${spec.dir}/${frame} uploads to the ${spec.label} slot`, async () => {
         const file = join(shotRoot, spec.dir, frame);
         const meta = await sharp(file).metadata();
+        const bytes = statSync(file).size;
+
+        assert.deepEqual(findUploadProblems({ ...meta, bytes }), []);
         assert.equal(meta.format, "jpeg");
         assert.equal(meta.width, spec.width);
         assert.equal(meta.height, spec.height);
-        assert.equal(meta.hasAlpha, false);
         assert.equal(meta.channels, 3);
-        assert.equal(meta.space, "srgb");
-        const bytes = statSync(file).size;
+        assert.equal(meta.isProgressive, false);
         assert.ok(bytes > 50_000, "screenshot looks empty");
-        assert.ok(bytes < 8 * 1024 * 1024, "App Store Connect max is 8MB");
       });
     }
   }

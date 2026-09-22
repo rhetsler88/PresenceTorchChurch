@@ -30,6 +30,27 @@ an editable state (Prepare for Submission, Rejected, or Developer Rejected),
 the pixel size has to match the slot heading you dropped it under, and the
 page needs a Save before the thumbnails persist.
 
+## Uploading without the browser
+
+When the web uploader keeps dropping files, upload through Apple's API
+instead, which reports the objection the browser swallows. Create a key under
+Users and Access > Integrations > App Store Connect API with the App Manager
+role, download the `.p8` once, then:
+
+```bash
+export ASC_KEY_ID=XXXXXXXXXX
+export ASC_ISSUER_ID=aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee
+export ASC_PRIVATE_KEY_PATH=~/Downloads/AuthKey_XXXXXXXXXX.p8
+
+npm run upload:app-store-screenshots -- --dry-run
+npm run upload:app-store-screenshots -- --only=iphone-6.5-inch-1284x2778
+```
+
+`--dry-run` changes nothing and prints the app, every version with its state,
+and the screenshot sets that already exist, which is usually enough to show
+why the browser was refusing. `--replace` clears a set before uploading, and
+`--locale` defaults to `en-US`.
+
 ## Which folder goes in which slot
 
 App Store Connect validates the pixel size against the slot you drop files

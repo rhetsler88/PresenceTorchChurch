@@ -19,6 +19,7 @@
     "capture:screenshots": "node scripts/capture-screenshots.mjs",
     "export:app-store-screenshots": "node scripts/export-app-store-screenshots.mjs",
     "export:app-store-signin-png": "node scripts/export-app-store-signin-png.mjs",
+    "export:app-store-ipad-png": "node scripts/export-app-store-ipad-png.mjs",
     "capture:app-store-login": "node scripts/capture-app-store-login.mjs",
     "check:app-store-screenshots": "node scripts/check-app-store-screenshots.mjs",
     "upload:app-store-screenshots": "node scripts/upload-app-store-screenshots.mjs",

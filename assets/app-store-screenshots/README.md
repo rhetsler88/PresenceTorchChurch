@@ -1,12 +1,15 @@
 # App Store Connect screenshots
 
-Every folder holds the same three portrait frames at one accepted size, ordered
+Each iPhone folder holds three portrait frames at one accepted size, ordered
 to follow the flow a reviewer walks through:
 
 - `01-signin.jpg` — sign-in screen
 - `02-daily-code.jpg` — verse of the day and daily access code gate
 - `03-talk.jpg` — Talk channel with protection level, voice and text messages,
   and hold-to-talk
+
+The iPad folders hold `01-signin.jpg` only, rendered at an iPad viewport. See
+[iPad frames](#ipad-frames) for why, and for how to add the other two.
 
 All files are baseline JPEG with an embedded sRGB profile, 3 channels, no
 alpha. App Store Connect takes JPG or PNG and rejects transparency, a non-RGB
@@ -74,6 +77,33 @@ The iPad set is required because `TARGETED_DEVICE_FAMILY` is `1,2`. Only
 portrait is exported: iPhone is portrait-locked in `Info.plist`, and the source
 frames are phone captures, so a landscape canvas would be mostly padding.
 
+## iPad frames
+
+An iPad slot is only fed by a capture taken at an iPad viewport. Scaling a
+phone screenshot onto a 3:4 canvas leaves an iPhone status bar and keyboard
+bar stranded in the middle of a wide screen, which reads as the wrong device
+to anyone looking at the listing.
+
+`source-ipad-signin.png` is a real iPad-width render of the sign-in screen,
+which is the one screen that draws before authentication:
+
+```bash
+npm run dev
+npm run capture:app-store-login -- --ipad
+npm run export:app-store-screenshots signin
+```
+
+The daily code gate and Talk both sit behind a signed-in account, so they
+cannot be rendered headlessly. To add them, run the app on an iPad simulator
+in Xcode (iPad Pro 13-inch), sign in, and press Cmd+S on each screen; the
+files land on the Desktop at 2064 × 2752. Drop them in as
+`source-ipad-daily-code.png` and `source-ipad-talk.png`, add their names to
+`sources.ipad` in `scripts/export-app-store-screenshots.mjs`, add the frames
+to `IPAD_FRAMES` in `src/lib/appStoreScreenshotSpec.js`, then re-export.
+
+Apple requires at least one screenshot per device size, so the single iPad
+frame is enough to submit with.
+
 ## Regenerating
 
 `source-signin.png`, `source-daily-code.png`, and `source-talk.png` are device
@@ -88,10 +118,9 @@ npm run export:app-store-screenshots talk      # just one
 Frames whose aspect ratio does not match a target are fit inside it and padded
 with the page background `#080c16` rather than cropped, so no UI is lost.
 
-When no device is available, `npm run capture:app-store-login` renders
-`/login?storePreview=1` in headless Chrome at each size instead. That path
-overwrites `01-signin.jpg` with a browser render, which has no iOS status bar,
-so prefer a device screenshot for the shipped listing.
+`npm run capture:app-store-login -- --phone` overwrites `source-signin.png`
+with a headless browser render. That render has no iOS status bar, so prefer
+the device screenshot for the iPhone listing.
 
 `src/lib/appStoreScreenshotSpec.js` holds the accepted sizes and the rejection
 rules, shared by both generators, the validator, and the tests.

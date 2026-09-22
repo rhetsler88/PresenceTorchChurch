@@ -5,14 +5,14 @@ import { describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
 import sharp from "sharp";
 
-import { findUploadProblems, FRAME_FILES as FRAMES, SLOTS as REQUIRED } from "./appStoreScreenshotSpec.js";
+import { findUploadProblems, SLOTS as REQUIRED } from "./appStoreScreenshotSpec.js";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "../..");
 const shotRoot = join(root, "assets", "app-store-screenshots");
 
 describe("App Store Connect screenshots", () => {
   for (const spec of REQUIRED) {
-    for (const frame of FRAMES) {
+    for (const frame of spec.frames) {
       it(`${spec.dir}/${frame} uploads to the ${spec.label} slot`, async () => {
         const file = join(shotRoot, spec.dir, frame);
         const meta = await sharp(file).metadata();
@@ -36,9 +36,15 @@ describe("App Store Connect screenshots", () => {
     assert.ok(names.includes("source-talk.png"));
   });
 
-  it("ships no leftovers from an earlier export format", () => {
+  it("captures the iPad sign-in frame at an iPad viewport, not from a phone", async () => {
+    const meta = await sharp(join(shotRoot, "source-ipad-signin.png")).metadata();
+    assert.ok(meta.width >= 2048, `iPad master is only ${meta.width}px wide`);
+    assert.ok(meta.width / meta.height > 0.7, "an iPad master should be near 3:4, not phone-shaped");
+  });
+
+  it("ships no leftovers from an earlier export or form factor", () => {
     for (const spec of REQUIRED) {
-      assert.deepEqual(readdirSync(join(shotRoot, spec.dir)).sort(), FRAMES);
+      assert.deepEqual(readdirSync(join(shotRoot, spec.dir)).sort(), [...spec.frames].sort());
     }
   });
 });

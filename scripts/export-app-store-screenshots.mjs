@@ -7,13 +7,16 @@
  *
  * Sources stay PNG so every re-export starts from a lossless master.
  *
- * Frames whose aspect ratio differs from a target (5.5" iPhone, 13" iPad) are
- * fit inside the target and padded with the app background, so no UI is cropped.
+ * Each slot is fed by a source captured at its own form factor: an iPad slot
+ * takes an iPad capture, never a phone one scaled up. Frames whose aspect
+ * ratio differs from a target are fit inside it and padded with the app
+ * background, so no UI is cropped.
  *
  * Usage:
  *   node scripts/export-app-store-screenshots.mjs            # every frame
  *   node scripts/export-app-store-screenshots.mjs talk       # one frame
  */
+import { existsSync } from "fs";
 import { mkdir } from "fs/promises";
 import { dirname, join } from "path";
 import { fileURLToPath } from "url";
@@ -28,12 +31,19 @@ const outRoot = join(root, "assets", "app-store-screenshots");
 
 /** Ordered to follow the sign-in flow a reviewer sees. */
 const FRAMES = {
-  signin: { source: "source-signin.png", out: "01-signin.jpg" },
-  "daily-code": { source: "source-daily-code.png", out: "02-daily-code.jpg" },
-  talk: { source: "source-talk.png", out: "03-talk.jpg" },
+  signin: {
+    out: "01-signin.jpg",
+    sources: { phone: "source-signin.png", ipad: "source-ipad-signin.png" },
+  },
+  "daily-code": {
+    out: "02-daily-code.jpg",
+    sources: { phone: "source-daily-code.png" },
+  },
+  talk: {
+    out: "03-talk.jpg",
+    sources: { phone: "source-talk.png" },
+  },
 };
-
-const SIZES = SLOTS.map(({ dir, width, height }) => ({ name: dir, width, height }));
 
 /** Crop only when the frame is within 1% of the target ratio; otherwise pad. */
 function resizeFit(sourceRatio, { width, height }) {
@@ -41,7 +51,8 @@ function resizeFit(sourceRatio, { width, height }) {
   return Math.abs(sourceRatio - targetRatio) / targetRatio <= 0.01 ? "cover" : "contain";
 }
 
-async function exportSize(source, sourceRatio, frame, size) {
+async function exportSize(source, sourceRatio, frame, slot) {
+  const size = { name: slot.dir, width: slot.width, height: slot.height };
   const dir = join(outRoot, size.name);
   await mkdir(dir, { recursive: true });
   const dest = join(dir, frame.out);
@@ -76,11 +87,20 @@ const names = requested.length ? requested : Object.keys(FRAMES);
 await mkdir(outRoot, { recursive: true });
 for (const name of names) {
   const frame = FRAMES[name];
-  const source = join(outRoot, frame.source);
-  const meta = await sharp(source).metadata();
-  console.log(`Exporting ${name} from ${frame.source} (${meta.width}x${meta.height})`);
-  for (const size of SIZES) {
-    await exportSize(source, meta.width / meta.height, frame, size);
+  console.log(`Exporting ${name}`);
+
+  for (const slot of SLOTS) {
+    if (!slot.frames.includes(frame.out)) continue;
+
+    const sourceName = frame.sources[slot.formFactor];
+    if (!sourceName || !existsSync(join(outRoot, sourceName))) {
+      console.log(`  skipping ${slot.dir}: no ${slot.formFactor} capture for this frame`);
+      continue;
+    }
+
+    const source = join(outRoot, sourceName);
+    const meta = await sharp(source).metadata();
+    await exportSize(source, meta.width / meta.height, frame, slot);
   }
 }
 console.log("Done.");

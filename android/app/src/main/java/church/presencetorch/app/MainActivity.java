@@ -23,6 +23,7 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(SessionGuardPlugin.class);
         registerPlugin(MicrophonePermissionsPlugin.class);
         registerPlugin(NativeVoiceProcessingPlugin.class);
+        registerPlugin(PttTonesPlugin.class);
         super.onCreate(savedInstanceState);
         activeInstance = this;
         TextMessageNotificationHelper.ensureChannel(this);

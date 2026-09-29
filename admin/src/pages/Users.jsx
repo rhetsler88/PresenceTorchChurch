@@ -39,7 +39,10 @@ import {
   filterChannelsByOrganization,
   matchesOrganization,
   getRoleLabel,
+  getAssignableRolesForActor,
+  canAssignRoleToUser,
 } from "@/lib/userUtils";
+import { formatLastLoginLabel, formatLastLoginTitle } from "@/lib/lastLogin";
 import {
   getChannelsFromMembershipLists,
   getChannelsFromProfile,
@@ -84,6 +87,13 @@ export default function Users() {
 
   const saveMutation = useMutation({
     mutationFn: () => {
+      if (
+        editing &&
+        form.role !== (editing.role || "user") &&
+        !canAssignRoleToUser(currentUser, editing, form.role, channels)
+      ) {
+        return Promise.reject(new Error("permission-denied"));
+      }
       const updates = {
         ...form,
         full_name: [form.first_name, form.last_name].filter(Boolean).join(" "),
@@ -216,6 +226,7 @@ export default function Users() {
   };
 
   const canEditRole = isPlatformAdmin(currentUser);
+  const assignableRoles = getAssignableRolesForActor(currentUser);
 
   const getUserChannelInfo = (user) => {
     const approved = getChannelsFromMembershipLists(user, channels);
@@ -291,13 +302,14 @@ export default function Users() {
         </div>
       ) : (
         <div className="bg-card border border-border rounded-xl overflow-x-auto">
-          <table className="w-full text-sm min-w-[860px]">
+          <table className="w-full text-sm min-w-[960px]">
             <thead>
               <tr className="border-b border-border text-left text-muted-foreground">
                 <th className="px-4 py-3 font-medium">Name</th>
                 <th className="px-4 py-3 font-medium">Email</th>
                 <th className="px-4 py-3 font-medium">Organization</th>
                 <th className="px-4 py-3 font-medium">Role</th>
+                <th className="px-4 py-3 font-medium">Last login</th>
                 <th className="px-4 py-3 font-medium">Channels</th>
                 <th className="px-4 py-3 font-medium">Onboarded</th>
                 <th className="px-4 py-3 font-medium" />
@@ -321,6 +333,12 @@ export default function Users() {
                     <span className="px-2 py-0.5 rounded-md bg-primary/10 text-primary text-xs font-semibold">
                       {getRoleLabel(u.role)}
                     </span>
+                  </td>
+                  <td
+                    className="px-4 py-3 text-muted-foreground whitespace-nowrap"
+                    title={formatLastLoginTitle(u)}
+                  >
+                    {formatLastLoginLabel(u)}
                   </td>
                   <td className="px-4 py-3">
                     {approved.length === 0 ? (
@@ -451,7 +469,7 @@ export default function Users() {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {ROLES.map((role) => (
+                  {assignableRoles.map((role) => (
                     <SelectItem key={role} value={role}>
                       {getRoleLabel(role)}
                     </SelectItem>

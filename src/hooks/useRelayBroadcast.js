@@ -6,6 +6,8 @@ import { ensureMicrophonePermission } from "@/lib/microphonePermissions";
 import { forceStopBackgroundAudio, resumeBackgroundAudioIfNeeded } from "@/lib/backgroundAudio";
 import { beginSensitiveOperation, endSensitiveOperation } from "@/lib/sensitiveOperation";
 import { destroyMicDenoise, openMicSession } from "@/lib/micDenoise";
+import { logVoiceMessageFailure } from "@/lib/voiceMessageLogging";
+import { extensionForRecordingMime } from "@/lib/recordingMime";
 
 const CHUNK_MS = 1000;
 
@@ -313,6 +315,10 @@ export default function useRelayBroadcast({ channelId, userId, userName }) {
         startRecorderTiming(fullRecorderRef.current, chunkIntervalRef);
       }
       startTimeRef.current = Date.now();
+      const startedRecorder = relayRecorderRef.current || fullRecorderRef.current;
+      if (startedRecorder?.mimeType) {
+        mimeRef.current = startedRecorder.mimeType;
+      }
     } catch (err) {
       console.error("MediaRecorder.start failed:", err);
       activeRef.current = false;
@@ -429,25 +435,43 @@ export default function useRelayBroadcast({ channelId, userId, userName }) {
       fullChunksRef.current = [];
       initSegmentRef.current = null;
 
+      const recordingMime = fullBlob?.type || mimeRef.current;
+
       if (!fullBlob || fullBlob.size === 0) {
         console.error("Recording produced no audio data", {
           duration,
           channelId: paramsRef.current.channelId,
-          mime: mimeRef.current,
+          mime: recordingMime,
         });
-        return null;
+        const { channelId, userId, userName } = paramsRef.current;
+        await logVoiceMessageFailure({
+          source: "relay",
+          stage: "empty-recording",
+          error: Object.assign(new Error("Recording produced no audio data"), {
+            code: "app/empty-recording",
+          }),
+          channelId,
+          broadcastId,
+          durationSeconds: duration,
+          user: userId ? { id: userId, email: null, role: null } : null,
+          extra: { mime: recordingMime, user_name: userName || null },
+        });
+        throw Object.assign(new Error("Recording produced no audio data"), {
+          code: "app/empty-recording",
+          logged: true,
+        });
       }
 
       try {
-        const ext = mimeRef.current.includes("mp4") ? "mp4" : "webm";
-        const file = new File([fullBlob], `message.${ext}`, { type: mimeRef.current });
+        const ext = extensionForRecordingMime(recordingMime);
+        const file = new File([fullBlob], `message.${ext}`, { type: recordingMime });
         const { file_url, file_uri } = await uploadPrivateAudio(
           file,
           `${paramsRef.current.channelId}/messages/${broadcastId}.${ext}`
         );
         return {
-          file_url: file_uri || file_url,
-          file_uri: file_uri || file_url,
+          file_url,
+          file_uri,
           duration,
           broadcast_id: broadcastId,
         };

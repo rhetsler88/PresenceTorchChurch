@@ -35,6 +35,12 @@ function isChannelLeadForChannel(userData, channelId, channelData) {
   return channelOrgMatchesUser(userData.organization, channelData.organization);
 }
 
+function isLeadOrDirectorInOrg(userData, channelData) {
+  const role = userData.role;
+  if (role !== "lead" && role !== "director") return false;
+  return channelOrgMatchesUser(userData.organization, channelData.organization);
+}
+
 function isMonitorForChannel(userData, channelData) {
   if (userData.role !== "monitor" && userData.is_monitor !== true) return false;
   return channelOrgMatchesUser(userData.organization, channelData.organization);
@@ -49,7 +55,7 @@ function isOrgAdminForChannel(userData, channelData) {
 function receivesChannelTextMessage(userData, channelData, channelId) {
   if (userData.role === "super_admin") return true;
   if (isOrgAdminForChannel(userData, channelData)) return true;
-  if (isChannelLeadForChannel(userData, channelId, channelData)) return true;
+  if (isLeadOrDirectorInOrg(userData, channelData)) return true;
   if (isMonitorForChannel(userData, channelData)) return true;
   if (isChannelTalkMember(userData, channelData, channelId)) return true;
   if (isChannelNotificationMember(userData, channelData)) return true;

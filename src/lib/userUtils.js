@@ -169,10 +169,55 @@ export function isChannelLead(user) {
   return isLead(user) || isDirector(user);
 }
 
-/** Roles a director may assign to members of their channels. */
+/** Roles a team lead (director) may assign — channel members on their team only. */
 export const DIRECTOR_ASSIGNABLE_ROLES = ["user", "monitor", "lead", "director"];
 
-/** Platform admins and directors may assign roles (directors: channel members only). */
+/** Org admins may assign admin; not super_admin. */
+export const ORG_ADMIN_ASSIGNABLE_ROLES = ["user", "monitor", "lead", "director", "admin"];
+
+export const SUPER_ADMIN_ASSIGNABLE_ROLES = [
+  "user",
+  "monitor",
+  "lead",
+  "director",
+  "admin",
+  "super_admin",
+];
+
+export function isAdminLevelRole(role) {
+  return role === "admin" || role === "super_admin";
+}
+
+/** Role keys the signed-in user may assign (UI + client guard). */
+export function getAssignableRolesForActor(actor) {
+  if (isSuperAdmin(actor)) return SUPER_ADMIN_ASSIGNABLE_ROLES;
+  if (isPlatformAdmin(actor)) return ORG_ADMIN_ASSIGNABLE_ROLES;
+  if (isDirector(actor)) return DIRECTOR_ASSIGNABLE_ROLES;
+  return [];
+}
+
+/** Team leads: members of managed channels only. Admins: same org. Admin level requires an admin actor. */
+export function canAssignRoleToUser(actor, targetUser, newRole, channels = []) {
+  if (!actor?.id || !targetUser?.id || actor.id === targetUser.id) return false;
+  if (!getAssignableRolesForActor(actor).includes(newRole)) return false;
+
+  if (isDirector(actor) && !isPlatformAdmin(actor)) {
+    if (isAdminLevelRole(targetUser.role)) return false;
+    return filterUsersInManagedChannels(actor, [targetUser], channels).length > 0;
+  }
+
+  if (isPlatformAdmin(actor)) {
+    if (!isSuperAdmin(actor)) {
+      if (newRole === "super_admin") return false;
+      if (isSuperAdmin(targetUser)) return false;
+    }
+    return filterUsersByOrganization(actor, [targetUser]).length > 0;
+  }
+
+  return false;
+}
+
+/** Platform admins and team leads may assign roles (coordinators approve members only). */
 export function canManageRoles(user) {
   return isPlatformAdmin(user) || isDirector(user);
 }
@@ -187,6 +232,16 @@ export function canCreateChannel(user) {
   return isPlatformAdmin(user);
 }
 
+/** Org-wide Monitor / Talk / PTT for coordinators and team leads (ignores directed_channels). */
+function isLeadOrDirectorInOrg(user, channel) {
+  if (!user || !channel) return false;
+  if (user.role !== "lead" && user.role !== "director") return false;
+  const org = user.organization?.trim();
+  if (!org) return true;
+  return !channel.organization || matchesOrganization(org, channel.organization);
+}
+
+/** Assigned channels — member approvals and channel admin on assigned channels only. */
 function isChannelLeadForChannel(user, channel) {
   if (!user || !channel) return false;
   if (user.role !== "lead" && user.role !== "director") return false;
@@ -194,7 +249,7 @@ function isChannelLeadForChannel(user, channel) {
   if (directed.length > 0) return directed.includes(channel.id);
   const org = user.organization?.trim();
   if (!org) return true;
-  return !channel.organization || channel.organization === org;
+  return !channel.organization || matchesOrganization(org, channel.organization);
 }
 
 /** Rename/color on channels assigned to a lead or director (admins: any org channel). */
@@ -221,6 +276,29 @@ function isMonitorForChannel(user, channel) {
   return !channel.organization || channel.organization === org;
 }
 
+export function isDedicatedMonitorUser(user) {
+  return user?.role === "monitor" || user?.is_monitor === true;
+}
+
+/** Admin-configured monitor restrictions (listen + broadcast). */
+export function getMonitorBroadcastExcludedChannelIds(user) {
+  const ids = user?.broadcast_excluded_channels;
+  if (!Array.isArray(ids) || ids.length === 0) return new Set();
+  return new Set(ids.filter(Boolean));
+}
+
+export function isMonitorBroadcastExcluded(user, channelId) {
+  if (!isDedicatedMonitorUser(user) || !channelId) return false;
+  return getMonitorBroadcastExcludedChannelIds(user).has(channelId);
+}
+
+function applyMonitorBroadcastExclusions(user, channels) {
+  if (!isDedicatedMonitorUser(user)) return channels;
+  const excluded = getMonitorBroadcastExcludedChannelIds(user);
+  if (excluded.size === 0) return channels;
+  return channels.filter((channel) => channel?.id && !excluded.has(channel.id));
+}
+
 function isOrgAdminForChannel(user, channel) {
   if (!user || !channel || !isOrgAdmin(user)) return false;
   const org = user.organization?.trim();
@@ -235,7 +313,7 @@ export function canReadVoiceMessageForChannel(user, channel) {
   if (isChannelTalkMember(user, channel)) return true;
   if (isChannelNotificationMember(user, channel)) return true;
   if (isOrgAdminForChannel(user, channel)) return true;
-  if (isChannelLeadForChannel(user, channel)) return true;
+  if (isLeadOrDirectorInOrg(user, channel)) return true;
   if (isMonitorForChannel(user, channel)) return true;
   return false;
 }
@@ -247,7 +325,7 @@ export function canAccessChannelAlertsForChannel(user, channel) {
   if (isChannelNotificationMember(user, channel)) return true;
   if (isChannelTalkMember(user, channel)) return true;
   if (isOrgAdminForChannel(user, channel)) return true;
-  if (isChannelLeadForChannel(user, channel)) return true;
+  if (isLeadOrDirectorInOrg(user, channel)) return true;
   if (isMonitorForChannel(user, channel)) return true;
   return false;
 }
@@ -255,11 +333,12 @@ export function canAccessChannelAlertsForChannel(user, channel) {
 /** Matches Firestore canSendOnChannel — PTT claim, voice message create, relay chunks. */
 export function canSendOnChannelForChannel(user, channel) {
   if (!user || !channel) return false;
+  if (isMonitorBroadcastExcluded(user, channel.id)) return false;
   if (isPlatformAdmin(user)) return true;
   if ((user.member_of_channels || []).includes(channel.id)) return true;
   if (isChannelTalkMember(user, channel)) return true;
   if (isOrgAdminForChannel(user, channel)) return true;
-  if (isChannelLeadForChannel(user, channel)) return true;
+  if (isLeadOrDirectorInOrg(user, channel)) return true;
   if (isMonitorForChannel(user, channel)) return true;
   return false;
 }
@@ -270,7 +349,7 @@ export function canAccessChannel(user, channel) {
   if (isOrgAdmin(user)) {
     return isOrgAdminForChannel(user, channel);
   }
-  if (isChannelLeadForChannel(user, channel)) return true;
+  if (isLeadOrDirectorInOrg(user, channel)) return true;
   if (isMonitorForChannel(user, channel)) return true;
   return isChannelTalkMember(user, channel);
 }
@@ -365,11 +444,9 @@ export function getReadableVoiceChannels(user, channels) {
   }
 
   if (isChannelLead(user)) {
-    const directed = user.directed_channels || [];
-    const scoped = directed.length > 0
-      ? channels.filter((c) => directed.includes(c.id))
-      : filterChannelsByOrganization(user, channels);
-    return scoped.filter((c) => canReadVoiceMessageForChannel(user, c));
+    return filterChannelsByOrganization(user, channels).filter((c) =>
+      canReadVoiceMessageForChannel(user, c)
+    );
   }
 
   if (user.role === "monitor" || user.is_monitor === true) {
@@ -390,10 +467,7 @@ export function getMonitorChannels(user, channels) {
   if (isSuperAdmin(user)) {
     scoped = channels;
   } else if (isChannelLead(user)) {
-    const directed = user.directed_channels || [];
-    scoped = directed.length > 0
-      ? channels.filter((c) => directed.includes(c.id))
-      : filterChannelsByOrganization(user, channels);
+    scoped = filterChannelsByOrganization(user, channels);
   } else if (user.role === "monitor" || user.is_monitor === true) {
     scoped = filterChannelsByOrganization(user, channels);
   } else if (isOrgAdmin(user)) {
@@ -402,6 +476,17 @@ export function getMonitorChannels(user, channels) {
     scoped = channels.filter((channel) => isChannelTalkMember(user, channel));
   }
 
+  // Dedicated monitors: all org channels except admin exclusions (default = full access).
+  if (isDedicatedMonitorUser(user)) {
+    return applyMonitorBroadcastExclusions(
+      user,
+      scoped.filter((channel) => isMonitorForChannel(user, channel))
+    );
+  }
+
   // Never query voiceMessages / relay for channels Firestore will reject.
-  return scoped.filter((channel) => canAccessChannelAlertsForChannel(user, channel));
+  return applyMonitorBroadcastExclusions(
+    user,
+    scoped.filter((channel) => canAccessChannelAlertsForChannel(user, channel))
+  );
 }

@@ -6,7 +6,10 @@ export default function DirectorControls({ user, channels, onToggleChannel }) {
   return (
     <div className="mt-2 pl-[52px]">
       <p className="text-[10px] text-muted-foreground mb-1.5 font-semibold uppercase tracking-wide">
-        Assigned Channels
+        Assigned channels (member approvals)
+      </p>
+      <p className="text-[10px] text-muted-foreground/80 mb-1.5">
+        Controls which channels this coordinator can approve or reject — not Monitor listen or PTT scope.
       </p>
       <div className="flex flex-wrap gap-1.5">
         {channels.map(ch => {

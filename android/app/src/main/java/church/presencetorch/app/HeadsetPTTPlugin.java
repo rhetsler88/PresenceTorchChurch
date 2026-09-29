@@ -4,6 +4,8 @@ import android.content.Context;
 import android.media.AudioManager;
 import android.support.v4.media.session.MediaSessionCompat;
 import android.support.v4.media.session.PlaybackStateCompat;
+import android.os.Handler;
+import android.os.Looper;
 import android.view.KeyEvent;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
@@ -25,6 +27,9 @@ public class HeadsetPTTPlugin extends Plugin {
     private int lastDownKeyCode = -1;
     private long lastUpEventTime = -1;
     private int lastUpKeyCode = -1;
+    private final Handler mainHandler = new Handler(Looper.getMainLooper());
+    private Runnable holdWatchdog;
+    private static final long MAX_HOLD_MS = 35000;
 
     @Override
     public void load() {
@@ -208,10 +213,29 @@ public class HeadsetPTTPlugin extends Plugin {
     }
 
     private void notifyPttDown() {
+        armHoldWatchdog();
         notifyListeners("pttDown", new JSObject());
     }
 
     private void notifyPttUp() {
+        cancelHoldWatchdog();
         notifyListeners("pttUp", new JSObject());
+    }
+
+    private void armHoldWatchdog() {
+        cancelHoldWatchdog();
+        holdWatchdog = () -> {
+            if (listening) {
+                notifyPttUp();
+            }
+        };
+        mainHandler.postDelayed(holdWatchdog, MAX_HOLD_MS);
+    }
+
+    private void cancelHoldWatchdog() {
+        if (holdWatchdog != null) {
+            mainHandler.removeCallbacks(holdWatchdog);
+            holdWatchdog = null;
+        }
     }
 }

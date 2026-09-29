@@ -14,6 +14,8 @@ public class HeadsetPTTPlugin: CAPPlugin, CAPBridgedPlugin {
 
     private var isListening = false
     private var pttHeld = false
+    private var holdWatchdog: DispatchWorkItem?
+    private static let maxHoldSeconds: TimeInterval = 35
 
     @objc func startListening(_ call: CAPPluginCall) {
         DispatchQueue.main.async {
@@ -111,13 +113,30 @@ public class HeadsetPTTPlugin: CAPPlugin, CAPBridgedPlugin {
     private func handlePress() {
         guard isListening else { return }
         pttHeld = true
+        armHoldWatchdog()
         notifyListeners("pttDown", data: [:])
     }
 
     private func handleRelease() {
         guard isListening else { return }
         pttHeld = false
+        cancelHoldWatchdog()
         notifyListeners("pttUp", data: [:])
+    }
+
+    private func armHoldWatchdog() {
+        cancelHoldWatchdog()
+        let work = DispatchWorkItem { [weak self] in
+            guard let self, self.pttHeld else { return }
+            self.handleRelease()
+        }
+        holdWatchdog = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.maxHoldSeconds, execute: work)
+    }
+
+    private func cancelHoldWatchdog() {
+        holdWatchdog?.cancel()
+        holdWatchdog = nil
     }
 
     private func handleMomentaryPress() {

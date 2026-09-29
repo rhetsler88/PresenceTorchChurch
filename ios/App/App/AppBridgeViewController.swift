@@ -9,5 +9,7 @@ class AppBridgeViewController: CAPBridgeViewController {
         bridge?.registerPluginInstance(HeadsetPTTPlugin())
         bridge?.registerPluginInstance(BackgroundAudioPlugin())
         bridge?.registerPluginInstance(NativeVoiceProcessingPlugin())
+        bridge?.registerPluginInstance(PttTonesPlugin())
+        bridge?.registerPluginInstance(BlePttCentralPlugin())
     }
 }

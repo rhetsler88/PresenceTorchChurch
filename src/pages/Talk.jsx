@@ -22,9 +22,15 @@ import {
 import { useRegisterPagePTTHandlers } from "@/components/ptt/PTTHandlerProvider";
 import { playClearTone, playBusyTone, unlockAudioForPTT } from "@/lib/pttTones";
 import { logVoiceMessageFailure } from "@/lib/voiceMessageLogging";
-import { cleanupStalePTTSignals, claimPttChannels, releasePttSignals } from "@/lib/pttSignals";
+import {
+  cleanupStalePTTSignals,
+  claimPttChannels,
+  discardPttRecording,
+  releasePttSignals,
+} from "@/lib/pttSignals";
 import { pttDebugLog } from "@/lib/pttDebugLog";
 import { playAudioUrl, stopAudio } from "@/lib/audioPlayer";
+import { formatAudioPlaybackToast } from "@/lib/secureAudio";
 import { needsTranscription, requestTranscription } from "@/lib/transcription";
 import { deviceDayKey } from "@/lib/deviceDate";
 import {
@@ -441,55 +447,78 @@ export default function Talk() {
         });
       }
 
-      await ensureFirestoreMembership();
-
-      const result = await stopRecording();
-
-      if (!result) {
-        throw Object.assign(new Error("Recording produced no audio or upload failed"), {
-          code: "app/recording-failed",
-        });
-      }
-      const { file_url, duration, broadcast_id } = result;
-
-      const now = new Date();
-      let msg;
+      let recordingFinalized = false;
       try {
-        msg = await api.entities.VoiceMessage.create({
-          channel_id: channelId,
-          sender_id: resolvedUser.id,
-          sender_name: getDisplayName(resolvedUser),
-          sender_email: resolvedUser.email || "",
-          audio_url: file_url,
-          duration_seconds: Math.round(duration * 10) / 10,
-          is_transcribed: false,
-          device_time: now.toLocaleTimeString('en-US', {
-            hour: 'numeric', minute: '2-digit', hour12: true
-          }),
-          device_date: deviceDayKey(now),
-          broadcast_id,
-        });
+        await ensureFirestoreMembership();
+
+        const result = await stopRecording();
+        recordingFinalized = true;
+
+        if (!result) {
+          throw Object.assign(new Error("Recording produced no audio or upload failed"), {
+            code: "app/recording-failed",
+          });
+        }
+        const { file_url, duration, broadcast_id } = result;
+
+        const now = new Date();
+        let msg;
+        try {
+          msg = await api.entities.VoiceMessage.create({
+            channel_id: channelId,
+            sender_id: resolvedUser.id,
+            sender_name: getDisplayName(resolvedUser),
+            sender_email: resolvedUser.email || "",
+            audio_url: file_url,
+            duration_seconds: Math.round(duration * 10) / 10,
+            is_transcribed: false,
+            device_time: now.toLocaleTimeString('en-US', {
+              hour: 'numeric', minute: '2-digit', hour12: true
+            }),
+            device_date: deviceDayKey(now),
+            broadcast_id,
+          });
+        } catch (err) {
+          err.logged = true;
+          void logVoiceMessageFailure({
+            source: "talk",
+            stage: "create",
+            error: err,
+            channelId,
+            broadcastId: broadcast_id,
+            durationSeconds: duration,
+            user: resolvedUser,
+            extra: { audio_url: file_url },
+          });
+          throw err;
+        }
+
+        // Clean up relay chunks (best-effort; only admins can delete in rules)
+        if (broadcast_id) {
+          api.entities.AudioChunk.deleteMany({ broadcast_id }).catch(() => {});
+        }
+
+        return msg;
       } catch (err) {
-        err.logged = true;
-        void logVoiceMessageFailure({
-          source: "talk",
-          stage: "create",
-          error: err,
-          channelId,
-          broadcastId: broadcast_id,
-          durationSeconds: duration,
-          user: resolvedUser,
-          extra: { audio_url: file_url },
-        });
+        if (!recordingFinalized) {
+          err.logged = true;
+          void logVoiceMessageFailure({
+            source: "talk",
+            stage: "membership-sync",
+            error: err,
+            channelId,
+            user: resolvedUser,
+          });
+          await discardPttRecording(stopRecording, {
+            source: "talk",
+            channelId,
+            user: resolvedUser,
+            reason: "Talk send failed before recorder stop (membership or pre-stop error)",
+          });
+          void stopLiveTransmit();
+        }
         throw err;
       }
-
-      // Clean up relay chunks (best-effort; only admins can delete in rules)
-      if (broadcast_id) {
-        api.entities.AudioChunk.deleteMany({ broadcast_id }).catch(() => {});
-      }
-
-      return msg;
     },
     onSuccess: (msg) => {
       if (!msg) return;
@@ -615,7 +644,12 @@ export default function Talk() {
 
     // Mic may be live before pttRecordingActiveRef is set (race during start).
     void stopLiveTransmit();
-    void stopRecording().catch(() => {});
+    void discardPttRecording(stopRecording, {
+      source: "talk",
+      channelId: pttSessionChannelIdRef.current || effectiveChannelId,
+      user: pttSessionUserRef.current || user,
+      reason: "PTT released before recording was committed",
+    });
     pttSessionChannelIdRef.current = null;
     pttSessionUserRef.current = null;
   }, [sendMutation, effectiveChannelId, user, stopLiveTransmit, stopRecording]);
@@ -650,7 +684,7 @@ export default function Talk() {
     recordSessionInteraction();
     unlockAudioForPTT();
     const broadcastId = crypto.randomUUID();
-    playClearTone(broadcastId);
+    const clearToneDone = playClearTone(broadcastId);
 
     pttSessionChannelIdRef.current = effectiveChannelId;
     pttSessionUserRef.current = user;
@@ -662,7 +696,6 @@ export default function Talk() {
     pttDebugLog("ptt.press", { surface: "talk", channelId: effectiveChannelId, broadcastId });
 
     const startSequence = (async () => {
-      let signalId = null;
       pttDebugLog("ptt.sequence.start", { surface: "talk", broadcastId, channelId: effectiveChannelId });
       try {
         void cleanupStalePTTSignals({
@@ -670,63 +703,66 @@ export default function Talk() {
           excludeSenderId: user.id,
         }).catch(() => {});
 
-        // Fire PTT claim first — listeners must hear clear tone before mic/Agora setup.
-        const claimPromise = claimPttChannels({
+        void ensureFirestoreMembership().catch((syncErr) => {
+          console.warn("PTT access sync failed:", syncErr);
+        });
+
+        if (pttStopPendingRef.current) {
+          return { aborted: true };
+        }
+
+        pttDebugLog("ptt.claim.sent", { surface: "talk", broadcastId, channelIds: [effectiveChannelId] });
+        const claimResult = await claimPttChannels({
           channelIds: [effectiveChannelId],
           senderId: user.id,
           senderName: getDisplayName(user),
           broadcastId,
           primaryChannelId: effectiveChannelId,
         });
-        pttDebugLog("ptt.claim.sent", { surface: "talk", broadcastId, channelIds: [effectiveChannelId] });
 
-        void ensureFirestoreMembership().catch((syncErr) => {
-          console.warn("PTT access sync failed:", syncErr);
-        });
+        if (!claimResult.won) {
+          return { channelBusy: true, holder: claimResult.holder };
+        }
 
+        if (pttStopPendingRef.current) {
+          await releasePttSignals(claimResult.signalIds);
+          return { aborted: true };
+        }
+
+        pttSignalRef.current = claimResult.signalIds[0] ?? null;
+
+        await clearToneDone;
         const started = await startRecording({ broadcastId });
 
         if (pttStopPendingRef.current) {
           if (started) {
             pttRecordingActiveRef.current = true;
-            return { pendingSend: true, signalId: null };
+            return { pendingSend: true };
           }
-          try {
-            const { signalIds } = await claimPromise;
-            await releasePttSignals(signalIds);
-          } catch {
-            // claim may still be in flight
-          }
+          await releasePttSignals(claimResult.signalIds);
+          pttSignalRef.current = null;
+          await discardPttRecording(stopRecording, {
+            source: "talk",
+            channelId: effectiveChannelId,
+            user,
+            reason: "PTT released during startup before mic was ready",
+          });
           return { aborted: true };
         }
 
         if (!started) {
-          try {
-            const { signalIds } = await claimPromise;
-            await releasePttSignals(signalIds);
-          } catch {
-            // claim may still be in flight
-          }
+          await releasePttSignals(claimResult.signalIds);
+          pttSignalRef.current = null;
+          await discardPttRecording(stopRecording, {
+            source: "talk",
+            channelId: effectiveChannelId,
+            user,
+            reason: "Microphone unavailable after channel claim",
+          });
           return { micDenied: true };
         }
 
         pttRecordingActiveRef.current = true;
-
-        try {
-          const { signalIds } = await claimPromise;
-          if (pttStopPendingRef.current || !isPTTPressedRef.current) {
-            await releasePttSignals(signalIds);
-            return { pendingSend: true, signalId: null };
-          }
-          pttSignalRef.current = signalIds[0] ?? null;
-        } catch (err) {
-          console.warn("PTT signal create failed:", err);
-        }
-
-        if (pttStopPendingRef.current) {
-          return { pendingSend: true, signalId: null };
-        }
-
         return { ok: true };
       } catch (e) {
         return { startFailed: true, error: e };
@@ -755,28 +791,34 @@ export default function Talk() {
       return;
     }
 
-    if (result.startFailed) {
-      console.error("PTT start failed:", result.error);
-      await stopRecording().catch(() => {});
+    if (result.channelBusy) {
+      isPTTPressedRef.current = false;
       setIsPTTPressed(false);
-      toast.error("Could not start transmission");
+      playBusyTone();
+      toast.error("Channel busy");
       return;
     }
 
-    if (result.claimFailed) {
-      console.error("PTT signal create failed:", result.error);
-      await releasePttSignals(result.signalId ? [result.signalId] : []);
-      releasePttSignal(result.signalId);
-      await stopRecording().catch(() => {});
+    if (result.startFailed) {
+      console.error("PTT start failed:", result.error);
+      await releasePttSignals(pttSignalRef.current ? [pttSignalRef.current] : []);
+      releasePttSignal(pttSignalRef.current);
+      await discardPttRecording(stopRecording, {
+        source: "talk",
+        channelId: effectiveChannelId,
+        user,
+        reason: "PTT startup failed after claim",
+      });
       setIsPTTPressed(false);
-      if (!cancelled) {
-        toast.error("Could not claim channel — try again");
-      }
+      toast.error(
+        result.error?.code === "permission-denied"
+          ? "Permission denied — cannot claim this channel"
+          : "Could not start transmission"
+      );
       return;
     }
 
     if (result.micDenied) {
-      await stopRecording().catch(() => {});
       setIsPTTPressed(false);
       toast.error("Microphone access denied — check browser permissions");
       return;
@@ -817,7 +859,12 @@ export default function Talk() {
     if (pttRecordingActiveRef.current) {
       finishPttStop();
     } else {
-      void stopRecording().catch(() => {});
+      void discardPttRecording(stopRecording, {
+        source: "talk",
+        channelId: effectiveChannelId,
+        user,
+        reason: "Maximum transmission time reached before recording was active",
+      });
     }
   };
 
@@ -850,6 +897,18 @@ export default function Talk() {
       setPlayingId(null);
       setIsReceiving(false);
     }, 30000);
+    let playErrorReported = false;
+    const reportPlayError = (err) => {
+      if (playErrorReported) return;
+      playErrorReported = true;
+      if (receivingTimeoutRef.current) {
+        clearTimeout(receivingTimeoutRef.current);
+        receivingTimeoutRef.current = null;
+      }
+      setPlayingId(null);
+      setIsReceiving(false);
+      toast.error(formatAudioPlaybackToast(err));
+    };
     playAudioUrl(msg.audio_url, {
       speakerUserId: msg.created_by_id,
       onEnded: () => {
@@ -857,18 +916,8 @@ export default function Talk() {
         setPlayingId(null);
         setIsReceiving(false);
       },
-      onError: () => {
-        if (receivingTimeoutRef.current) { clearTimeout(receivingTimeoutRef.current); receivingTimeoutRef.current = null; }
-        setPlayingId(null);
-        setIsReceiving(false);
-        toast.error("Could not play audio");
-      },
-    }).catch(() => {
-      if (receivingTimeoutRef.current) { clearTimeout(receivingTimeoutRef.current); receivingTimeoutRef.current = null; }
-      setPlayingId(null);
-      setIsReceiving(false);
-      toast.error("Could not play audio");
-    });
+      onError: reportPlayError,
+    }).catch(reportPlayError);
   };
 
   if (myChannels.length === 0) {

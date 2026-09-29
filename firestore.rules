@@ -143,6 +143,12 @@ service cloud.firestore {
         );
     }
 
+    function isLeadOrDirectorInOrgChannel(channelId) {
+      return (isLead() || isDirector())
+        && channelExistsPath(channelId)
+        && channelOrgMatchesUser(channelId);
+    }
+
     function channelOrganization(channelId) {
       return channelDoc(channelId).data.get('organization', '');
     }
@@ -160,13 +166,26 @@ service cloud.firestore {
         && channelOrgMatchesUser(channelId);
     }
 
+    function monitorBroadcastExcludedChannelIds() {
+      let ids = userDoc().data.get('broadcast_excluded_channels', []);
+      return ids is list ? ids : [];
+    }
+
+    function isMonitorBroadcastExcluded(channelId) {
+      return isMonitor()
+        && monitorBroadcastExcludedChannelIds().hasAny([channelId]);
+    }
+
     // PTT / voice create — members plus roles that can monitor/respond on a channel.
     function canSendOnChannel(channelId) {
+      if (isMonitorBroadcastExcluded(channelId)) {
+        return false;
+      }
       return isElevatedFromToken()
         || isPlatformAdmin()
         || isChannelTalkMember(channelId)
         || isOrgAdminForChannel(channelId)
-        || isChannelLeadForChannel(channelId)
+        || isLeadOrDirectorInOrgChannel(channelId)
         || isMonitorForChannel(channelId);
     }
 
@@ -257,9 +276,67 @@ service cloud.firestore {
       return request.resource.data.diff(resource.data).affectedKeys().hasOnly(['protection_level']);
     }
 
-    // Admin tab: role changes, staff alerts, directed_channels, broadcast_excluded_channels.
-    function canManageUsers() {
-      return isPlatformAdmin() || isPlatformAdminFromToken() || isDirector() || isAdminOrDirectorFromToken();
+    function targetMemberChannelIds() {
+      let ids = resource.data.get('member_of_channels', []);
+      return ids is list ? ids : [];
+    }
+
+    function targetUserOrganization() {
+      return resource.data.get('organization', '');
+    }
+
+    function userOrgMatchesTargetUser() {
+      return !userHasOrganizationConstraint()
+        || targetUserOrganization().size() == 0
+        || targetUserOrganization() == userOrganization();
+    }
+
+    function isAdminLevelRoleValue(r) {
+      return r == 'admin' || r == 'super_admin';
+    }
+
+    function directorTeamLeadRoleValue(r) {
+      return r == 'user' || r == 'monitor' || r == 'lead' || r == 'director';
+    }
+
+    // Team lead: target shares a managed channel (directed list or any org channel membership).
+    function directorCanManageTargetUser() {
+      return isDirector()
+        && userOrgMatchesTargetUser()
+        && (
+          (userDirectedChannels().size() > 0 && userDirectedChannels().hasAny(targetMemberChannelIds()))
+          || (userDirectedChannels().size() == 0 && targetMemberChannelIds().size() > 0)
+        );
+    }
+
+    function roleFieldChanged() {
+      return request.resource.data.diff(resource.data).affectedKeys().hasAny(['role']);
+    }
+
+    function platformAdminRoleChangeValid() {
+      let next = request.resource.data.get('role', 'user');
+      let prev = resource.data.get('role', 'user');
+      if (isSuperAdmin() || tokenRole() == 'super_admin') return true;
+      if (next == 'super_admin') return false;
+      if (prev == 'super_admin') return false;
+      return true;
+    }
+
+    function directorRoleOnlyUpdateValid() {
+      return roleFieldChanged()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['role'])
+        && directorTeamLeadRoleValue(request.resource.data.get('role', 'user'))
+        && !isAdminLevelRoleValue(resource.data.get('role', 'user'))
+        && directorCanManageTargetUser();
+    }
+
+    function platformAdminUserUpdate() {
+      return (isPlatformAdmin() || isPlatformAdminFromToken())
+        && (!roleFieldChanged() || platformAdminRoleChangeValid());
+    }
+
+    function directorUserUpdate() {
+      return (isDirector() || tokenRole() == 'director') && directorRoleOnlyUpdateValid();
     }
 
     // Admin tab: approve/reject channel join requests.
@@ -302,7 +379,8 @@ service cloud.firestore {
         && request.resource.data.get('onboarded', false) == false;
 
       allow update: if isSignedIn() && (
-        canManageUsers()
+        platformAdminUserUpdate()
+        || directorUserUpdate()
         || (
           request.auth.uid == userId
           && !request.resource.data.diff(resource.data)

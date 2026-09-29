@@ -9,6 +9,8 @@ import {
   parseBleButtonState,
 } from "@/lib/blePttConstants";
 import { refreshNativeAgoraAudio } from "@/lib/nativeVoiceProcessing";
+import { startNativeBlePttCentral } from "@/lib/nativeBlePttCentral";
+import { armPttMaxTransmission, clearPttMaxTransmission } from "@/lib/pttLimits";
 
 function hasWebBluetooth() {
   return typeof navigator !== "undefined" && !!navigator.bluetooth;
@@ -143,6 +145,8 @@ export default function useBluetoothPTT({ onPress, onRelease }) {
   const nativeSubscriptionsRef = useRef([]);
   const webCharacteristicsRef = useRef([]);
   const pressStateRef = useRef(false);
+  const maxTransmissionRef = useRef(null);
+  const nativeCentralStopRef = useRef(null);
   const callbacksRef = useRef({ onPress, onRelease });
   const bleInitializedRef = useRef(false);
 
@@ -158,9 +162,15 @@ export default function useBluetoothPTT({ onPress, onRelease }) {
 
     if (isPressed && !pressStateRef.current) {
       pressStateRef.current = true;
+      armPttMaxTransmission(maxTransmissionRef, () => {
+        pressStateRef.current = false;
+        clearPttMaxTransmission(maxTransmissionRef);
+        callbacksRef.current.onRelease?.();
+      }, { source: "ble-ptt" });
       callbacksRef.current.onPress?.();
     } else if (!isPressed && pressStateRef.current) {
       pressStateRef.current = false;
+      clearPttMaxTransmission(maxTransmissionRef);
       callbacksRef.current.onRelease?.();
     }
   }, []);
@@ -169,6 +179,9 @@ export default function useBluetoothPTT({ onPress, onRelease }) {
     setIsConnected(false);
     setDeviceName(null);
     pressStateRef.current = false;
+    clearPttMaxTransmission(maxTransmissionRef);
+    void nativeCentralStopRef.current?.();
+    nativeCentralStopRef.current = null;
     nativeDeviceIdRef.current = null;
     nativeSubscriptionsRef.current = [];
     webCharacteristicsRef.current = [];
@@ -209,6 +222,17 @@ export default function useBluetoothPTT({ onPress, onRelease }) {
     deviceRef.current = device;
     setDeviceName(device.name || "BLE PTT Button");
     setIsConnected(true);
+
+    if (Capacitor.getPlatform() === "ios" && subscriptions[0]) {
+      nativeCentralStopRef.current = await startNativeBlePttCentral({
+        peripheralId: device.deviceId,
+        serviceUuid: subscriptions[0].serviceUuid,
+        characteristicUuid: subscriptions[0].characteristicUuid,
+        onDown: () => handleValueChanged({ target: { value: new Uint8Array([0x01]) } }),
+        onUp: () => handleValueChanged({ target: { value: new Uint8Array([0x00]) } }),
+      });
+    }
+
     // BLE GATT is separate from earbud HFP/A2DP — re-assert listen route on earbuds.
     await refreshNativeAgoraAudio();
   }, [handleDisconnected, handleValueChanged]);

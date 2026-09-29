@@ -143,10 +143,26 @@ service firebase.storage {
         );
     }
 
+    function isLeadOrDirectorInOrgChannel(channelId) {
+      return (isLead() || isDirector())
+        && channelExists(channelId)
+        && channelOrgMatchesUser(channelId);
+    }
+
     function isMonitorForChannel(channelId) {
       return isMonitor()
         && channelExists(channelId)
         && channelOrgMatchesUser(channelId);
+    }
+
+    function monitorBroadcastExcludedChannelIds() {
+      let ids = userDoc().data.get('broadcast_excluded_channels', []);
+      return ids is list ? ids : [];
+    }
+
+    function isMonitorBroadcastExcluded(channelId) {
+      return isMonitor()
+        && monitorBroadcastExcludedChannelIds().hasAny([channelId]);
     }
 
     function isOrgAdminForChannel(channelId) {
@@ -157,15 +173,21 @@ service firebase.storage {
 
     // Match Firestore canSendOnChannel — PTT upload + voice message storage.
     function canSendOnChannel(channelId) {
+      if (isMonitorBroadcastExcluded(channelId)) {
+        return false;
+      }
       return isElevatedFromToken()
         || isPlatformAdmin()
         || isChannelTalkMember(channelId)
         || isOrgAdminForChannel(channelId)
-        || isChannelLeadForChannel(channelId)
+        || isLeadOrDirectorInOrgChannel(channelId)
         || isMonitorForChannel(channelId);
     }
 
     function canAccessChannelAudio(channelId) {
+      if (isMonitorBroadcastExcluded(channelId)) {
+        return false;
+      }
       // Anyone who can transmit can also read/play (incl. getDownloadURL right after upload).
       return canSendOnChannel(channelId) || canViewAllVoiceMessages();
     }

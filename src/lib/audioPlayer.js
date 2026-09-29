@@ -1,4 +1,4 @@
-import { resolveAudioUrl } from "@/lib/secureAudio";
+import { resolveAudioUrl, toAudioResolveError } from "@/lib/secureAudio";
 import {
   getUserListenVolumeRatio,
   PTT_SETTINGS_CHANGED,
@@ -68,7 +68,12 @@ if (typeof window !== "undefined") {
  */
 async function playFullAudioViaElement(url, { onEnded, onError, speakerUserId } = {}) {
   const resolved = await resolveAudioUrl(url);
-  if (!resolved) throw new Error("Could not resolve audio URL");
+  if (!resolved) {
+    throw toAudioResolveError(
+      { code: "audio/missing-url", message: "Could not resolve audio URL" },
+      "audio/missing-url"
+    );
+  }
 
   stopAudio();
 
@@ -144,7 +149,12 @@ export function stopAudio() {
  */
 export async function playRelayAudioTail(url, startSeconds = 0, { onEnded, onError, speakerUserId } = {}) {
   const resolved = await resolveAudioUrl(url);
-  if (!resolved) throw new Error("Could not resolve audio URL");
+  if (!resolved) {
+    throw toAudioResolveError(
+      { code: "audio/missing-url", message: "Could not resolve audio URL" },
+      "audio/missing-url"
+    );
+  }
 
   stopRelayAudio();
 

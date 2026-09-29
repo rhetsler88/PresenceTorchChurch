@@ -27,15 +27,21 @@ export default function BluetoothPTTControl({
   }
 
   return (
-    <Button
-      variant="outline"
-      size="sm"
-      onClick={onConnect}
-      disabled={isConnecting}
-      className="gap-1.5 h-8"
-    >
-      <Bluetooth className="w-3.5 h-3.5" />
-      <span className="text-xs">{isConnecting ? "Pairing..." : "Pair Button"}</span>
-    </Button>
+    <div className="flex flex-col items-end gap-1">
+      <Button
+        variant="outline"
+        size="sm"
+        onClick={onConnect}
+        disabled={isConnecting}
+        className="gap-1.5 h-8"
+      >
+        <Bluetooth className="w-3.5 h-3.5" />
+        <span className="text-xs">{isConnecting ? "Pairing..." : "Pair Button"}</span>
+      </Button>
+      <p className="text-[10px] leading-snug text-muted-foreground max-w-[220px] text-right">
+        iPhone: open the app and start channel monitoring before using a Bluetooth PTT button with the
+        screen off — iOS cannot cold-start the app from the button alone.
+      </p>
+    </div>
   );
 }

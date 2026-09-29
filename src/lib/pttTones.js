@@ -1,4 +1,11 @@
+import { Capacitor, registerPlugin } from "@capacitor/core";
 import { pttDebugLog } from "./pttDebugLog.js";
+
+const PttTones = registerPlugin("PttTones");
+
+function isNativePttTonesAvailable() {
+  return Capacitor.isNativePlatform() && Capacitor.isPluginAvailable("PttTones");
+}
 
 let audioContext = null;
 let isUnlocked = false;
@@ -60,33 +67,80 @@ function getContext() {
   return audioContext;
 }
 
-async function playTone(frequency, duration, delay = 0, volume = 0.3, type = "square") {
+/** Wall-clock length of the clear-tone sequence (second beep ends at 180 ms + 120 ms). */
+export const CLEAR_TONE_SEQUENCE_MS = 300;
+
+function playTone(frequency, duration, delay = 0, volume = 0.3, type = "square") {
   unlockAudioForPTT();
   const ctx = getContext();
-  if (ctx.state === "suspended") {
-    try {
-      await ctx.resume();
-    } catch {
-      return;
-    }
-  }
-  const now = ctx.currentTime + delay;
-  const oscillator = ctx.createOscillator();
-  const gainNode = ctx.createGain();
-  oscillator.connect(gainNode);
-  gainNode.connect(ctx.destination);
-  oscillator.frequency.value = frequency;
-  oscillator.type = type;
-  gainNode.gain.setValueAtTime(0, now);
-  gainNode.gain.linearRampToValueAtTime(volume, now + 0.01);
-  gainNode.gain.linearRampToValueAtTime(0, now + duration);
-  oscillator.start(now);
-  oscillator.stop(now + duration);
+  const endMs = Math.ceil((delay + duration) * 1000) + 20;
+
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      resolve();
+    };
+
+    const run = async () => {
+      if (ctx.state === "suspended") {
+        try {
+          await ctx.resume();
+        } catch {
+          finish();
+          return;
+        }
+      }
+      if (ctx.state === "suspended") {
+        finish();
+        return;
+      }
+
+      const now = ctx.currentTime + delay;
+      const oscillator = ctx.createOscillator();
+      const gainNode = ctx.createGain();
+      oscillator.connect(gainNode);
+      gainNode.connect(ctx.destination);
+      oscillator.frequency.value = frequency;
+      oscillator.type = type;
+      gainNode.gain.setValueAtTime(0, now);
+      gainNode.gain.linearRampToValueAtTime(volume, now + 0.01);
+      gainNode.gain.linearRampToValueAtTime(0, now + duration);
+      oscillator.onended = finish;
+      oscillator.start(now);
+      oscillator.stop(now + duration);
+    };
+
+    void run();
+    setTimeout(finish, endMs);
+  });
 }
 
 // Two short beeps — you have the clear to talk / someone is keying up
+/** @returns {Promise<void>} Resolves when both beeps finish (~300 ms). */
 export function playClearTone(broadcastId) {
-  void playClearToneNow(broadcastId);
+  return playClearToneNow(broadcastId);
+}
+
+async function playNativeClearTone() {
+  if (!isNativePttTonesAvailable()) return false;
+  try {
+    await PttTones.playClearTone();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function playNativeBusyTone() {
+  if (!isNativePttTonesAvailable()) return false;
+  try {
+    await PttTones.playBusyTone();
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 async function playClearToneNow(broadcastId) {
@@ -128,14 +182,26 @@ async function playClearToneNow(broadcastId) {
     }
   }
   lastClearToneAt = playedAt;
-  pttDebugLog("clearTone.play", { broadcastId: broadcastId ?? null });
-  void playTone(800, 0.12, 0);
-  void playTone(800, 0.12, 0.18);
+  pttDebugLog("clearTone.play", { broadcastId: broadcastId ?? null, native: isNativePttTonesAvailable() });
+  if (await playNativeClearTone()) {
+    return;
+  }
+  await Promise.all([
+    playTone(800, 0.12, 0),
+    playTone(800, 0.12, 0.18),
+  ]);
 }
 
 // One long low tone — someone is already talking
 export function playBusyTone() {
-  void playTone(300, 0.6, 0);
+  void playBusyToneNow();
+}
+
+async function playBusyToneNow() {
+  if (await playNativeBusyTone()) {
+    return;
+  }
+  await playTone(300, 0.6, 0);
 }
 
 let lastTextMessageToneAt = 0;

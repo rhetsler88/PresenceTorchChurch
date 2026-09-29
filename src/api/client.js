@@ -207,6 +207,7 @@ function docToObject(docSnap) {
     id: docSnap.id,
     ...data,
     created_date: toIsoDate(data.created_date),
+    last_login_at: toIsoDate(data.last_login_at),
   };
 }
 

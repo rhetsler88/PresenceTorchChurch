@@ -17,7 +17,12 @@ import useChannels from "@/hooks/useChannels";
 import { ensurePttAccess, invalidatePttAccess } from "@/lib/pttAccessCache";
 import { playBusyTone, playClearTone, unlockAudioForPTT } from "@/lib/pttTones";
 import { logVoiceMessageFailure } from "@/lib/voiceMessageLogging";
-import { claimPttChannels, cleanupStalePTTSignals, releasePttSignals } from "@/lib/pttSignals";
+import {
+  claimPttChannels,
+  cleanupStalePTTSignals,
+  discardPttRecording,
+  releasePttSignals,
+} from "@/lib/pttSignals";
 import { deviceDayKey } from "@/lib/deviceDate";
 import { toast } from "@/lib/toast";
 import { recordSessionInteraction } from "@/lib/logoutOnClose";
@@ -248,8 +253,14 @@ export default function useGlobalPTT() {
     }
 
     void stopLiveTransmit();
-    void stopRecording().catch(() => {});
-  }, [monitorMode, sendMutation, stopLiveTransmit, stopRecording]);
+    void discardPttRecording(stopRecording, {
+      source: monitorMode ? "global-monitor" : "global-talk",
+      channelId: primaryChannelId,
+      channelIds: monitorMode ? monitorTargetIds : undefined,
+      user,
+      reason: "PTT released before recording was committed",
+    });
+  }, [monitorMode, sendMutation, stopLiveTransmit, stopRecording, primaryChannelId, monitorTargetIds, user]);
 
   const isChannelBusy = useCallback(
     () => isAnyChannelBusy(busyWatchIds),
@@ -282,7 +293,7 @@ export default function useGlobalPTT() {
     recordSessionInteraction();
     unlockAudioForPTT();
     const broadcastId = crypto.randomUUID();
-    playClearTone(broadcastId);
+    const clearToneDone = playClearTone(broadcastId);
 
     isPTTPressedRef.current = true;
     pttStopPendingRef.current = false;
@@ -318,19 +329,45 @@ export default function useGlobalPTT() {
           excludeSenderId: user.id,
         }).catch(() => {});
 
-        const claimPromise = claimPttChannels({
-          channelIds: targetIds,
-          senderId: user.id,
-          senderName: getDisplayName(user),
-          broadcastId,
-          primaryChannelId: targetIds[0],
-        });
+        if (pttStopPendingRef.current) {
+          return { aborted: true };
+        }
+
         pttDebugLog("ptt.claim.sent", {
           surface: monitorMode ? "global-monitor" : "global-talk",
           broadcastId,
           channelIds: targetIds,
         });
 
+        const claimResult = await claimPttChannels({
+          channelIds: targetIds,
+          senderId: user.id,
+          senderName: getDisplayName(user),
+          broadcastId,
+          primaryChannelId: targetIds[0],
+        });
+
+        if (!claimResult.won) {
+          return { channelBusy: true, holder: claimResult.holder };
+        }
+
+        if (pttStopPendingRef.current) {
+          await releasePttSignals(claimResult.signalIds);
+          if (monitorMode) {
+            pttSignalRefs.current = [];
+          } else {
+            pttSignalRef.current = null;
+          }
+          return { aborted: true };
+        }
+
+        if (monitorMode) {
+          pttSignalRefs.current = claimResult.signalIds;
+        } else {
+          pttSignalRef.current = claimResult.signalIds[0] ?? null;
+        }
+
+        await clearToneDone;
         const started = await startRecording({
           broadcastId,
           publishChannelIds: monitorMode ? targetIds : undefined,
@@ -341,36 +378,40 @@ export default function useGlobalPTT() {
             pttRecordingActiveRef.current = true;
             return { pendingSend: true };
           }
+          await releasePttSignals(claimResult.signalIds);
+          if (monitorMode) {
+            pttSignalRefs.current = [];
+          } else {
+            pttSignalRef.current = null;
+          }
+          await discardPttRecording(stopRecording, {
+            source: monitorMode ? "global-monitor" : "global-talk",
+            channelId: targetIds[0],
+            channelIds: monitorMode ? targetIds : undefined,
+            user,
+            reason: "PTT released during startup before mic was ready",
+          });
           return { aborted: true };
         }
 
         if (!started) {
+          await releasePttSignals(claimResult.signalIds);
           if (monitorMode) {
-            try {
-              const { signalIds } = await claimPromise;
-              await releasePttSignals(signalIds);
-            } catch {
-              /* claim may still be in flight */
-            }
+            pttSignalRefs.current = [];
+          } else {
+            pttSignalRef.current = null;
           }
+          await discardPttRecording(stopRecording, {
+            source: monitorMode ? "global-monitor" : "global-talk",
+            channelId: targetIds[0],
+            channelIds: monitorMode ? targetIds : undefined,
+            user,
+            reason: "Microphone unavailable after channel claim",
+          });
           return { micDenied: true };
         }
 
         pttRecordingActiveRef.current = true;
-
-        if (monitorMode) {
-          try {
-            const { signalIds } = await claimPromise;
-            pttSignalRefs.current = signalIds;
-          } catch {
-            pttSignalRefs.current = [];
-          }
-        } else {
-          claimPromise.then(({ signalIds }) => {
-            pttSignalRef.current = signalIds[0] ?? null;
-          }).catch(() => {});
-        }
-
         return { ok: true };
       } catch (error) {
         return { startFailed: true, error };
@@ -397,19 +438,37 @@ export default function useGlobalPTT() {
       return;
     }
 
-    if (result.startFailed || result.micDenied) {
-      await stopRecording().catch(() => {});
+    if (result.channelBusy) {
+      isPTTPressedRef.current = false;
+      playBusyTone();
+      toast.error("Channel busy");
+      return;
+    }
+
+    if (result.startFailed) {
       if (monitorMode) {
-        await releasePttSignals(pttSignalRefs.current).catch(() => {});
+        await releasePttSignals([...pttSignalRefs.current]).catch(() => {});
         pttSignalRefs.current = [];
       } else if (pttSignalRef.current) {
         await releasePttSignals([pttSignalRef.current]).catch(() => {});
         pttSignalRef.current = null;
       }
+      await discardPttRecording(stopRecording, {
+        source: monitorMode ? "global-monitor" : "global-talk",
+        channelId: targetIds[0],
+        channelIds: monitorMode ? targetIds : undefined,
+        user,
+        reason: "PTT startup failed after claim",
+      });
       isPTTPressedRef.current = false;
-      if (result.micDenied) {
-        toast.error("Microphone access denied");
-      }
+      toast.error("Could not start transmission");
+      return;
+    }
+
+    if (result.micDenied) {
+      isPTTPressedRef.current = false;
+      toast.error("Microphone access denied");
+      return;
     }
   }, [
     primaryChannelId,
@@ -442,7 +501,13 @@ export default function useGlobalPTT() {
     if (pttRecordingActiveRef.current) {
       finishPttStop();
     } else {
-      void stopRecording().catch(() => {});
+      void discardPttRecording(stopRecording, {
+        source: monitorMode ? "global-monitor" : "global-talk",
+        channelId: primaryChannelId,
+        channelIds: monitorMode ? monitorTargetIds : undefined,
+        user,
+        reason: "Maximum transmission time reached before recording was active",
+      });
     }
   };
 

@@ -13,9 +13,15 @@ import { playClearTone, playBusyTone, ensureAudioReady, unlockAudioForPTT } from
 import { logVoiceMessageFailure } from "@/lib/voiceMessageLogging";
 import { markBroadcastHeard, hasHeardBroadcast } from "@/lib/heardBroadcasts";
 import { auth } from "@/lib/firebase";
-import { cleanupStalePTTSignals, claimPttChannels, releasePttSignals } from "@/lib/pttSignals";
+import {
+  cleanupStalePTTSignals,
+  claimPttChannels,
+  discardPttRecording,
+  releasePttSignals,
+} from "@/lib/pttSignals";
 import { pttDebugLog } from "@/lib/pttDebugLog";
 import { playAudioUrl, stopAudio } from "@/lib/audioPlayer";
+import { formatAudioPlaybackToast } from "@/lib/secureAudio";
 import { needsTranscription, requestTranscription } from "@/lib/transcription";
 import usePttBroadcast from "../hooks/usePttBroadcast";
 import useChannels from "@/hooks/useChannels";
@@ -357,15 +363,12 @@ export default function Monitor() {
     }
   }, [sendableMonitorChannels, targetChannelId]);
 
-  // Default broadcast selection: saved choice, then admin exclusions, then all sendable
+  // Default broadcast selection: saved choice, then all sendable (exclusions removed upstream)
   useEffect(() => {
     if (sendableChannelIds.length === 0) {
       setSelectedBroadcastIds([]);
       return;
     }
-    const excluded = new Set(user?.broadcast_excluded_channels || []);
-    const defaults = sendableChannelIds.filter((id) => !excluded.has(id));
-    const fallback = defaults.length > 0 ? defaults : sendableChannelIds;
 
     setSelectedBroadcastIds((prev) => {
       const validPrev = prev.filter((id) => sendableChannelIds.includes(id));
@@ -377,9 +380,9 @@ export default function Monitor() {
         if (validStored.length > 0) return validStored;
       }
 
-      return fallback;
+      return sendableChannelIds;
     });
-  }, [sendableChannelIds, user?.broadcast_excluded_channels]);
+  }, [sendableChannelIds]);
 
   useEffect(() => {
     localStorage.setItem(MONITOR_BROADCAST_MODE_KEY, broadcastMode);
@@ -622,6 +625,15 @@ export default function Monitor() {
     setPlayingId(msg.id);
     setPlayingChannel(msg.channel_id);
     void transcribeOnReplay(msg);
+    let playErrorReported = false;
+    const reportPlayError = (err) => {
+      if (playErrorReported) return;
+      playErrorReported = true;
+      setPlayingId(null);
+      setPlayingChannel(null);
+      isPlayingRef.current = false;
+      toast.error(formatAudioPlaybackToast(err));
+    };
     playAudioUrl(msg.audio_url, {
       speakerUserId: msg.created_by_id,
       onEnded: () => {
@@ -629,18 +641,8 @@ export default function Monitor() {
         setPlayingChannel(null);
         isPlayingRef.current = false;
       },
-      onError: () => {
-        setPlayingId(null);
-        setPlayingChannel(null);
-        isPlayingRef.current = false;
-        toast.error("Could not play audio");
-      },
-    }).catch(() => {
-      setPlayingId(null);
-      setPlayingChannel(null);
-      isPlayingRef.current = false;
-      toast.error("Could not play audio");
-    });
+      onError: reportPlayError,
+    }).catch(reportPlayError);
   };
 
   // Set protection level (synced to Talk page in real-time)
@@ -812,8 +814,16 @@ export default function Monitor() {
     }
 
     void stopLiveTransmit();
-    void stopRecording().catch(() => {});
-  }, [sendMutation, stopLiveTransmit, stopRecording]);
+    void discardPttRecording(stopRecording, {
+      source: "monitor",
+      channelId: targetChannelIdRef.current,
+      channelIds: broadcastModeRef.current === "multi"
+        ? selectedBroadcastIdsRef.current
+        : [targetChannelIdRef.current].filter(Boolean),
+      user,
+      reason: "PTT released before recording was committed",
+    });
+  }, [sendMutation, stopLiveTransmit, stopRecording, user]);
 
   const handlePTTStart = useCallback(async () => {
     if (isPTTPressed || !user?.id || pttStartInFlightRef.current || pttRecordingActiveRef.current) return;
@@ -833,7 +843,7 @@ export default function Monitor() {
     recordSessionInteraction();
     unlockAudioForPTT();
     const broadcastId = crypto.randomUUID();
-    playClearTone(broadcastId);
+    const clearToneDone = playClearTone(broadcastId);
 
     isPTTPressedRef.current = true;
     setIsPTTPressed(true);
@@ -859,15 +869,36 @@ export default function Monitor() {
           excludeSenderId: user.id,
         }).catch(() => {});
 
-        const claimPromise = claimPttChannels({
+        if (pttStopPendingRef.current) {
+          return { aborted: true };
+        }
+
+        pttDebugLog("ptt.claim.sent", { surface: "monitor", broadcastId, channelIds: targetIds });
+        const claimResult = await claimPttChannels({
           channelIds: targetIds,
           senderId: user.id,
           senderName: getDisplayName(user),
           broadcastId,
           primaryChannelId,
         });
-        pttDebugLog("ptt.claim.sent", { surface: "monitor", broadcastId, channelIds: targetIds });
 
+        if (!claimResult.won) {
+          return {
+            channelBusy: true,
+            holder: claimResult.holder,
+            busyChannelId: claimResult.channelId,
+          };
+        }
+
+        if (pttStopPendingRef.current) {
+          await releasePttSignals(claimResult.signalIds);
+          pttSignalRefs.current = [];
+          return { aborted: true };
+        }
+
+        pttSignalRefs.current = claimResult.signalIds;
+
+        await clearToneDone;
         const started = await startRecording({ broadcastId, publishChannelIds: targetIds });
 
         if (pttStopPendingRef.current) {
@@ -875,36 +906,33 @@ export default function Monitor() {
             pttRecordingActiveRef.current = true;
             return { pendingSend: true };
           }
+          await releasePttSignals(claimResult.signalIds);
+          pttSignalRefs.current = [];
+          await discardPttRecording(stopRecording, {
+            source: "monitor",
+            channelId: primaryChannelId,
+            channelIds: targetIds,
+            user,
+            reason: "PTT released during startup before mic was ready",
+          });
           return { aborted: true };
         }
 
         if (!started) {
-          try {
-            const { signalIds } = await claimPromise;
-            await releasePttSignals(signalIds);
-          } catch {
-            // claim may still be in flight
-          }
+          await releasePttSignals(claimResult.signalIds);
+          pttSignalRefs.current = [];
+          await discardPttRecording(stopRecording, {
+            source: "monitor",
+            channelId: primaryChannelId,
+            channelIds: targetIds,
+            user,
+            reason: "Microphone unavailable after channel claim",
+          });
           return { micDenied: true };
         }
 
         pttRecordingActiveRef.current = true;
         markBroadcastHeard(broadcastId, heardBroadcastsRef, pttHeardRef);
-
-        let signalIds = [];
-        try {
-          ({ signalIds } = await claimPromise);
-          pttSignalRefs.current = signalIds;
-        } catch (err) {
-          console.error("PTT signal create failed:", err);
-          await releasePttSignals(pttSignalRefs.current);
-          pttSignalRefs.current = [];
-          return { claimFailed: true, error: err };
-        }
-
-        if (pttStopPendingRef.current) {
-          return { pendingSend: true };
-        }
 
         return { ok: true };
       } catch (e) {
@@ -934,24 +962,27 @@ export default function Monitor() {
       return;
     }
 
-    if (result.startFailed) {
-      console.error("PTT start failed:", result.error);
-      await stopRecording().catch(() => {});
+    if (result.channelBusy) {
+      isPTTPressedRef.current = false;
       setIsPTTPressed(false);
-      toast.error("Could not start broadcast");
+      playBusyTone();
+      toast.error("Channel busy");
       return;
     }
 
-    if (result.claimFailed) {
-      await releasePttSignals(pttSignalRefs.current);
+    if (result.startFailed) {
+      console.error("PTT start failed:", result.error);
+      await releasePttSignals([...pttSignalRefs.current]);
       pttSignalRefs.current = [];
-      await stopRecording().catch(() => {});
+      await discardPttRecording(stopRecording, {
+        source: "monitor",
+        channelId: targetChannelIdRef.current,
+        channelIds: targetIds,
+        user,
+        reason: "PTT startup failed after claim",
+      });
       setIsPTTPressed(false);
-      toast.error(
-        result.error?.code === "permission-denied"
-          ? "Permission denied — cannot respond on one or more channels"
-          : "Could not claim channel — try again"
-      );
+      toast.error("Could not start broadcast");
       return;
     }
 
@@ -992,7 +1023,15 @@ export default function Monitor() {
     if (pttRecordingActiveRef.current) {
       finishPttStop();
     } else {
-      void stopRecording().catch(() => {});
+      void discardPttRecording(stopRecording, {
+        source: "monitor",
+        channelId: targetChannelIdRef.current,
+        channelIds: broadcastModeRef.current === "multi"
+          ? selectedBroadcastIdsRef.current
+          : [targetChannelIdRef.current].filter(Boolean),
+        user,
+        reason: "Maximum transmission time reached before recording was active",
+      });
     }
   };
 

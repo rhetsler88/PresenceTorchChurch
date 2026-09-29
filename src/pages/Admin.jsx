@@ -15,6 +15,8 @@ import {
   isLead,
   canManageRoles,
   DIRECTOR_ASSIGNABLE_ROLES,
+  canAssignRoleToUser,
+  getAssignableRolesForActor,
   filterUsersByOrganization,
   filterChannelsByOrganization,
   filterUsersInManagedChannels,
@@ -53,7 +55,14 @@ export default function Admin() {
   const { data: channels = [] } = useChannels();
 
   const changeRoleMutation = useMutation({
-    mutationFn: (/** @type {{ user: any, role: any }} */ { user, role }) => api.entities.User.update(user.id, { role }),
+    mutationFn: (/** @type {{ user: any, role: any }} */ { user, role }) => {
+      if (!canAssignRoleToUser(currentUser, user, role, channels)) {
+        const err = new Error("permission-denied");
+        err.code = "permission-denied";
+        return Promise.reject(err);
+      }
+      return api.entities.User.update(user.id, { role });
+    },
     onSuccess: (_, { user, role }) => {
       queryClient.invalidateQueries({ queryKey: ["users"] });
       toast.success(`${[user.first_name, user.last_name].filter(Boolean).join(" ") || user.full_name || "User"} is now ${ROLE_CONFIG[role].label}`);
@@ -215,7 +224,9 @@ export default function Admin() {
   const admins = orgUsers.filter(u => u.role === "admin" || u.role === "super_admin");
   const regularUsers = orgUsers.filter(u => !u.role || u.role === "user");
 
-  const rowProps = (u, { assignableRoles, showMonitorToggle = true, showChannelAssignment = true } = {}) => ({
+  const assignableRolesForActor = getAssignableRolesForActor(currentUser);
+
+  const rowProps = (u, { assignableRoles = assignableRolesForActor, showMonitorToggle = true, showChannelAssignment = true } = {}) => ({
     key: u.id,
     user: u,
     currentUser,

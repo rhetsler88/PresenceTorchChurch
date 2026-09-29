@@ -13,6 +13,8 @@ const LOCAL_IOS_PLUGINS = [
   "HeadsetPTTPlugin",
   "BackgroundAudioPlugin",
   "NativeVoiceProcessingPlugin",
+  "PttTonesPlugin",
+  "BlePttCentralPlugin",
 ];
 
 const config = JSON.parse(readFileSync(configPath, "utf8"));

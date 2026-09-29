@@ -26,15 +26,12 @@ export function resolveMonitorTargetChannelIds({
   const broadcastMode = readStoredBroadcastMode();
   if (broadcastMode === "multi") {
     const stored = readStoredBroadcastSelection();
-    const excluded = new Set(user?.broadcast_excluded_channels || []);
-    const defaults = sendableChannelIds.filter((id) => !excluded.has(id));
-    const fallback = defaults.length > 0 ? defaults : sendableChannelIds;
 
     if (stored) {
       const validStored = stored.filter((id) => sendableChannelIds.includes(id));
       if (validStored.length > 0) return validStored;
     }
-    return fallback;
+    return sendableChannelIds;
   }
 
   const lastId = localStorage.getItem("lastChannelId");

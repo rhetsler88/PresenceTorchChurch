@@ -19,6 +19,7 @@ import {
   syncNativeIdleLogoutDeadline,
 } from "@/lib/sessionGuardNative";
 import { isSensitiveOperationActive, resetSensitiveOperation } from "@/lib/sensitiveOperation";
+import { persistLastLoginAt } from "@/lib/lastLogin";
 
 export const IMMEDIATE_LOGOUT_EVENT = "ptc-immediate-logout";
 
@@ -139,6 +140,7 @@ export function recordLoginTime() {
   recordSessionInteraction();
   syncNativeActiveSession(true);
   void syncNativeGoogleSignInPending(false).catch(() => {});
+  persistLastLoginAt();
 }
 
 export function clearLoginTime() {

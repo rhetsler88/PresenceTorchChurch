@@ -5,6 +5,7 @@ import {
   startNativeHeadsetPTT,
   setNativeHeadsetTransmitting,
 } from "@/lib/headsetPTT";
+import { armPttMaxTransmission, clearPttMaxTransmission } from "@/lib/pttLimits";
 
 /** Keys commonly sent by HID / media-style Bluetooth PTT buttons. */
 const PTT_KEY_CODES = new Set([
@@ -35,6 +36,7 @@ export default function useWiredPTT({ onPress, onRelease }) {
 
   const pressedRef = useRef(false);
   const releaseTimerRef = useRef(null);
+  const maxTransmissionRef = useRef(null);
   const mediaKeyDownSeenRef = useRef(false);
   const callbacksRef = useRef({ onPress, onRelease });
 
@@ -49,22 +51,24 @@ export default function useWiredPTT({ onPress, onRelease }) {
     }
   }, []);
 
-  const handlePress = useCallback(() => {
-    if (pressedRef.current) return;
-    pressedRef.current = true;
-    clearReleaseTimer();
-    void setNativeHeadsetTransmitting(true);
-    callbacksRef.current.onPress?.();
-  }, [clearReleaseTimer]);
-
   const handleRelease = useCallback(() => {
     if (!pressedRef.current) return;
+    clearPttMaxTransmission(maxTransmissionRef);
     releaseTimerRef.current = setTimeout(() => {
       pressedRef.current = false;
       void setNativeHeadsetTransmitting(false);
       callbacksRef.current.onRelease?.();
     }, 150);
   }, []);
+
+  const handlePress = useCallback(() => {
+    if (pressedRef.current) return;
+    pressedRef.current = true;
+    clearReleaseTimer();
+    void setNativeHeadsetTransmitting(true);
+    armPttMaxTransmission(maxTransmissionRef, handleRelease, { source: "wired-ptt" });
+    callbacksRef.current.onPress?.();
+  }, [clearReleaseTimer, handleRelease]);
 
   const handleHoldMediaDown = useCallback(() => {
     mediaKeyDownSeenRef.current = true;
@@ -181,6 +185,7 @@ export default function useWiredPTT({ onPress, onRelease }) {
   useEffect(() => {
     return () => {
       clearReleaseTimer();
+      clearPttMaxTransmission(maxTransmissionRef);
       if (pressedRef.current) {
         pressedRef.current = false;
         void setNativeHeadsetTransmitting(false);

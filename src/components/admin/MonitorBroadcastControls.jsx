@@ -6,10 +6,11 @@ export default function MonitorBroadcastControls({ user, channels, onToggleChann
   return (
     <div className="mt-2 pl-[52px]">
       <p className="text-[10px] text-muted-foreground mb-0.5 font-semibold uppercase tracking-wide">
-        Default Broadcast Exclusions
+        Monitor access exclusions
       </p>
       <p className="text-[10px] text-muted-foreground/80 mb-1.5">
-        Excluded channels start unchecked — monitors can still include them per broadcast
+        Monitors can listen and broadcast on all channels by default. Excluded channels are
+        blocked for live listen and PTT.
       </p>
       <div className="flex flex-wrap gap-1.5">
         {channels.map(ch => {

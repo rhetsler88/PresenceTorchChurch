@@ -37,6 +37,8 @@
 		"SessionGuardPlugin",
 		"HeadsetPTTPlugin",
 		"BackgroundAudioPlugin",
-		"NativeVoiceProcessingPlugin"
+		"NativeVoiceProcessingPlugin",
+		"PttTonesPlugin",
+		"BlePttCentralPlugin"
 	]
 }

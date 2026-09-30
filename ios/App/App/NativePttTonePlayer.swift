@@ -30,9 +30,9 @@ final class NativePttTonePlayer {
             do {
                 try self.ensureEngineRunning()
                 let buffer = self.makeSineBuffer(frequency: frequency, duration: duration)
-                player.scheduleBuffer(buffer, at: nil, options: []) {}
-                if !player.isPlaying {
-                    player.play()
+                self.player.scheduleBuffer(buffer, at: nil, options: []) {}
+                if !self.player.isPlaying {
+                    self.player.play()
                 }
                 DispatchQueue.main.asyncAfter(deadline: .now() + duration + 0.02) {
                     completion?()

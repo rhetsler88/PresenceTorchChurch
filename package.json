@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "vite build",
     "postinstall": "patch-package",
-    "test": "node --test src/lib/blePttConstants.test.js src/lib/monitorRecentMessages.test.js src/lib/pttLimits.test.js src/lib/pttClearToneDedup.test.js src/lib/flipScreen.test.js src/lib/pttAccessCache.test.js src/lib/userUtils.test.js src/lib/iosSignInConfig.test.js src/lib/biometricAuth.test.js src/lib/presence.test.js src/lib/textMessageNotifications.test.js src/lib/recordingMime.test.js src/lib/pttSignals.test.js src/lib/livePtt.test.js src/lib/agoraRemote.test.js src/lib/earpieceWarning.test.js src/lib/monitorChannelAccess.test.js src/lib/roleAssignment.test.js",
+    "test": "node --test src/lib/blePttConstants.test.js src/lib/monitorRecentMessages.test.js src/lib/pttLimits.test.js src/lib/pttClearToneDedup.test.js src/lib/flipScreen.test.js src/lib/pttAccessCache.test.js src/lib/userUtils.test.js src/lib/iosSignInConfig.test.js src/lib/biometricAuth.test.js src/lib/presence.test.js src/lib/textMessageNotifications.test.js src/lib/recordingMime.test.js src/lib/pttSignals.test.js src/lib/livePtt.test.js src/lib/agoraRemote.test.js src/lib/earpieceWarning.test.js src/lib/monitorChannelAccess.test.js src/lib/roleAssignment.test.js src/lib/organizationRenameCore.test.js",
     "lint": "eslint . --quiet",
     "lint:fix": "eslint . --fix",
     "typecheck": "tsc -p ./jsconfig.json",

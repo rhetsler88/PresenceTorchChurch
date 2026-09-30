@@ -36,14 +36,34 @@ export default function Organizations() {
       }
       return api.organizations.create({ name: name.trim() });
     },
-    onSuccess: () => {
+    onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: ["organizations"] });
+      queryClient.invalidateQueries({ queryKey: ["users"] });
+      queryClient.invalidateQueries({ queryKey: ["channels"] });
+      queryClient.invalidateQueries({ queryKey: ["accessRequests"] });
       setDialogOpen(false);
       setEditing(null);
       setName("");
-      toast.success(editing ? "Organization updated" : "Organization created");
+      if (editing && result?.changed) {
+        const parts = [];
+        if (result.usersUpdated) parts.push(`${result.usersUpdated} user(s)`);
+        if (result.channelsUpdated) parts.push(`${result.channelsUpdated} channel(s)`);
+        if (result.accessRequestsUpdated) {
+          parts.push(`${result.accessRequestsUpdated} access request(s)`);
+        }
+        toast.success(
+          parts.length
+            ? `Organization renamed and updated ${parts.join(", ")}`
+            : "Organization renamed"
+        );
+      } else {
+        toast.success(editing ? "Organization updated" : "Organization created");
+      }
     },
-    onError: () => toast.error("Couldn't save organization"),
+    onError: (err) => {
+      const msg = err?.message?.replace(/^Firebase: /, "").trim();
+      toast.error(msg || "Couldn't save organization");
+    },
   });
 
   const deleteMutation = useMutation({

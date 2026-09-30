@@ -610,6 +610,13 @@ export const organizationsApi = {
   },
 
   async update(id, data) {
+    const keys = Object.keys(data || {}).filter((key) => data[key] !== undefined);
+    const trimmedName = typeof data?.name === "string" ? data.name.trim() : "";
+    if (keys.length === 1 && keys[0] === "name" && trimmedName) {
+      await waitForFirestoreAuth({ forceRefresh: true });
+      const callable = httpsCallable(functions, "renameOrganization");
+      return (await callable({ orgId: id, name: trimmedName })).data;
+    }
     await updateDoc(doc(db, "organizations", id), data);
     return { id, ...data };
   },
@@ -1191,6 +1198,12 @@ export const adminApi = {
     await waitForFirestoreAuth({ forceRefresh: true });
     const callable = httpsCallable(functions, "removeChannelMember");
     return (await callable({ channelId, memberId })).data;
+  },
+
+  async renameOrganization(orgId, name) {
+    await waitForFirestoreAuth({ forceRefresh: true });
+    const callable = httpsCallable(functions, "renameOrganization");
+    return (await callable({ orgId, name: name.trim() })).data;
   },
 };
 

@@ -39,6 +39,7 @@ const {
 } = require("./channelMembership");
 const { logProtectionLevelChange } = require("./protectionLevelHistory");
 const { syncPresenceToFirestore } = require("./presenceSync");
+const { renameOrganization } = require("./organizationRename");
 
 initializeApp();
 setGlobalOptions({ region: "us-east5" });
@@ -269,6 +270,44 @@ exports.syncChannelMembershipProfiles = onDocumentWritten(
     }
   }
 );
+
+exports.renameOrganization = onCall(CALLABLE_OPTIONS, async (request) => {
+  if (!request.auth) {
+    throw new HttpsError("unauthenticated", "Sign in required");
+  }
+
+  const orgId = request.data?.orgId;
+  const name = request.data?.name;
+  if (!orgId || typeof orgId !== "string") {
+    throw new HttpsError("invalid-argument", "orgId is required");
+  }
+  if (!name || typeof name !== "string") {
+    throw new HttpsError("invalid-argument", "name is required");
+  }
+
+  const db = getFirestore();
+  const callerSnap = await db.collection("users").doc(request.auth.uid).get();
+  const role = callerSnap.data()?.role || "user";
+  if (role !== "super_admin") {
+    throw new HttpsError("permission-denied", "Super admin access required");
+  }
+
+  try {
+    return await renameOrganization(db, orgId, name);
+  } catch (err) {
+    if (err.code === "not-found") {
+      throw new HttpsError("not-found", err.message);
+    }
+    if (err.code === "invalid-argument") {
+      throw new HttpsError("invalid-argument", err.message);
+    }
+    if (err.code === "already-exists") {
+      throw new HttpsError("already-exists", err.message);
+    }
+    console.error("renameOrganization failed:", err);
+    throw new HttpsError("internal", "Failed to rename organization");
+  }
+});
 
 exports.backfillChannelMemberships = onCall(CALLABLE_OPTIONS, async (request) => {
   if (!request.auth) {

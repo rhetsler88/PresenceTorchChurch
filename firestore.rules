@@ -259,9 +259,36 @@ service cloud.firestore {
         && !resource.data.get(field, []).hasAny([request.auth.uid]);
     }
 
+    function authEmailLower() {
+      return request.auth.token.get('email', '').lower();
+    }
+
+    function isSelfWithdrawRequest(field) {
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly([field])
+        && resource.data.get(field, []).hasAll(request.resource.data.get(field, []))
+        && resource.data.get(field, []).hasAny([request.auth.uid])
+        && !request.resource.data.get(field, []).hasAny([request.auth.uid]);
+    }
+
+    function isSelfLeaveMembers() {
+      let oldMembers = resource.data.get('members', []);
+      let newMembers = request.resource.data.get('members', []);
+      let email = authEmailLower();
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly(['members'])
+        && oldMembers.hasAll(newMembers)
+        && oldMembers.size() == newMembers.size() + 1
+        && (
+          (oldMembers.hasAny([request.auth.uid]) && !newMembers.hasAny([request.auth.uid]))
+          || (email != '' && oldMembers.hasAny([email]) && !newMembers.hasAny([email]))
+        );
+    }
+
     function isSelfChannelRequest() {
       return isSelfJoinRequest('pending_members')
-        || isSelfJoinRequest('pending_notification_members');
+        || isSelfJoinRequest('pending_notification_members')
+        || isSelfWithdrawRequest('pending_members')
+        || isSelfWithdrawRequest('pending_notification_members')
+        || isSelfLeaveMembers();
     }
 
     function isAssignedToChannel(channelId) {

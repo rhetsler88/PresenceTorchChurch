@@ -399,14 +399,8 @@ export function filterUsersByOrganization(user, users) {
   return users.filter((u) => matchesOrganization(org, u.organization));
 }
 
-/** Org-scoped channel list (matches Admin.jsx). Empty org => all channels. */
-export function filterChannelsByOrganization(user, channels) {
-  if (!channels?.length) return [];
-  if (isSuperAdmin(user)) return channels;
-  const org = user?.organization?.trim();
-  if (!org) return channels;
-  return channels.filter((c) => matchesOrganization(org, c.organization));
-}
+import { filterChannelsByOrganization } from "./filterChannelsByOrganizationCore.js";
+export { filterChannelsByOrganization };
 
 function isUserOnChannel(user, channel) {
   if (!user || !channel) return false;

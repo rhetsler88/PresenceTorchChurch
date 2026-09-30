@@ -29,6 +29,7 @@ import {
   releasePttSignals,
 } from "@/lib/pttSignals";
 import { pttDebugLog } from "@/lib/pttDebugLog";
+import { PTT_MAX_TRANSMISSION_MS } from "@/lib/pttLimits";
 import { playAudioUrl, stopAudio } from "@/lib/audioPlayer";
 import { formatAudioPlaybackToast } from "@/lib/secureAudio";
 import { needsTranscription, requestTranscription } from "@/lib/transcription";
@@ -38,12 +39,11 @@ import {
   canAccessChannel,
   isPlatformAdmin,
   canReadVoiceMessageForChannel,
-  canAccessChannelAlertsForChannel,
-  canSendOnChannelForChannel,
   bypassesDailyCode,
   canAccessMonitorPage,
 } from "@/lib/userUtils";
 import { isDailyCodeVerified } from "@/lib/dailyCode";
+import { assertCanSendText, canSendText } from "@/lib/talkSendGate";
 import { useRegisterTalkPresence } from "@/components/presence/PresenceProvider";
 import useChannelPresence from "@/hooks/useChannelPresence";
 import { useAuth } from "@/lib/AuthContext";
@@ -53,6 +53,9 @@ import {
 } from "@/lib/channelMembership";
 import { toast } from "@/lib/toast";
 import { recordSessionInteraction } from "@/lib/logoutOnClose";
+import { assertPlayableSendPayload } from "@/lib/playableSendPayload";
+import { createVoiceMessageArchive } from "@/lib/voiceMessageArchive";
+import { resolveChannelSwitch } from "@/lib/channelSwitchDuringPtt";
 import { Button } from "@/components/ui/button";
 import { Clock, Trash2, CheckSquare } from "lucide-react";
 
@@ -81,6 +84,7 @@ export default function Talk() {
   const pttStopPendingRef = useRef(false);
   const pttSessionChannelIdRef = useRef(null);
   const pttSessionUserRef = useRef(null);
+  const pendingChannelIdRef = useRef(null);
   const receivingTimeoutRef = useRef(null);
   const pttMaxDurationStopRef = useRef(() => {});
 
@@ -103,15 +107,7 @@ export default function Talk() {
   const canReadMessages = Boolean(
     activeChannel && user && canReadVoiceMessageForChannel(user, activeChannel)
   );
-  const canAccessAlerts = Boolean(
-    activeChannel && user && canAccessChannelAlertsForChannel(user, activeChannel)
-  );
-  const canSendPtt = Boolean(
-    activeChannel
-    && user
-    && canSendOnChannelForChannel(user, activeChannel)
-    && (bypassesDailyCode(user) || isDailyCodeVerified(user))
-  );
+  const canSendPtt = canSendText(user, activeChannel);
   const canPublishPresence = Boolean(
     effectiveChannelId
     && user
@@ -199,12 +195,14 @@ export default function Talk() {
   const {
     startRecording,
     stopRecording,
+    retryLastSend,
     stopLiveTransmit,
     isRecording,
   } = usePttBroadcast({
     channelId: effectiveChannelId,
     userId: user?.id,
     userName: user ? getDisplayName(user) : "",
+    userEmail: user?.email || "",
     listenActive: false,
     receiveEnabled: false,
     warmJoin: false,
@@ -218,7 +216,7 @@ export default function Talk() {
   const { isAnyChannelBusy } = usePttBusyChannels({
     channelIds: watchedChannelIds,
     userId: user?.id ?? null,
-    enabled: Boolean(canAccessAlerts && canQueryFirestore),
+    enabled: Boolean(canReadMessages && canQueryFirestore),
   });
   const signalBusy = isAnyChannelBusy(watchedChannelIds);
   const channelLiveActive = hasPassiveMonitor
@@ -232,6 +230,41 @@ export default function Talk() {
         && passiveTalk?.listenChannelId === effectiveChannelId
       );
 
+  const isPttTransmitting = useCallback(() => (
+    isPTTPressedRef.current
+    || Boolean(pttStartInFlightRef.current)
+    || pttRecordingActiveRef.current
+  ), []);
+
+  const flushPendingChannelSelection = useCallback(() => {
+    const resolved = resolveChannelSwitch({
+      settle: true,
+      pendingId: pendingChannelIdRef.current,
+      isTransmitting: isPttTransmitting(),
+    });
+    if (resolved.pendingId !== undefined) {
+      pendingChannelIdRef.current = resolved.pendingId;
+    }
+    if (resolved.action === "apply" && resolved.channelId != null) {
+      setActiveChannelId(resolved.channelId);
+    }
+  }, [isPttTransmitting]);
+
+  const requestActiveChannelId = useCallback((requestedId) => {
+    const resolved = resolveChannelSwitch({
+      requestedId,
+      currentId: activeChannelId,
+      isTransmitting: isPttTransmitting(),
+      pendingId: pendingChannelIdRef.current,
+    });
+    if (resolved.pendingId !== undefined) {
+      pendingChannelIdRef.current = resolved.pendingId;
+    }
+    if (resolved.action === "apply") {
+      setActiveChannelId(resolved.channelId ?? null);
+    }
+  }, [activeChannelId, isPttTransmitting]);
+
   // Auto-select channel from URL param, last selected, or first approved channel
   useEffect(() => {
     if (myChannels.length === 0) return;
@@ -239,7 +272,7 @@ export default function Talk() {
     const fromUrl = channelParam && myChannels.find((c) => c.id === channelParam);
     if (fromUrl) {
       if (activeChannelId !== fromUrl.id) {
-        setActiveChannelId(fromUrl.id);
+        requestActiveChannelId(fromUrl.id);
       }
       return;
     }
@@ -248,17 +281,17 @@ export default function Talk() {
       const fromStorage = localStorage.getItem("lastChannelId");
       const fromLast = fromStorage && myChannels.find((c) => c.id === fromStorage);
       const fallback = myChannels[0].id;
-      setActiveChannelId(fromLast ? fromLast.id : fallback);
+      requestActiveChannelId(fromLast ? fromLast.id : fallback);
     }
-  }, [myChannels, activeChannelId, channelParam]);
+  }, [myChannels, activeChannelId, channelParam, requestActiveChannelId]);
 
   // Drop stale selection when membership or admin scope changes
   useEffect(() => {
     if (!user) return;
     if (activeChannelId && !myChannels.some((c) => c.id === activeChannelId)) {
-      setActiveChannelId(myChannels[0]?.id ?? null);
+      requestActiveChannelId(myChannels[0]?.id ?? null);
     }
-  }, [user, myChannels, activeChannelId]);
+  }, [user, myChannels, activeChannelId, requestActiveChannelId]);
 
   // Persist channel selection
   useEffect(() => {
@@ -451,32 +484,16 @@ export default function Talk() {
       try {
         await ensureFirestoreMembership();
 
-        const result = await stopRecording();
+        const result = assertPlayableSendPayload(await stopRecording());
         recordingFinalized = true;
 
-        if (!result) {
-          throw Object.assign(new Error("Recording produced no audio or upload failed"), {
-            code: "app/recording-failed",
-          });
-        }
-        const { file_url, duration, broadcast_id } = result;
-
-        const now = new Date();
+        const { broadcast_id } = result;
         let msg;
         try {
-          msg = await api.entities.VoiceMessage.create({
-            channel_id: channelId,
-            sender_id: resolvedUser.id,
-            sender_name: getDisplayName(resolvedUser),
-            sender_email: resolvedUser.email || "",
-            audio_url: file_url,
-            duration_seconds: Math.round(duration * 10) / 10,
-            is_transcribed: false,
-            device_time: now.toLocaleTimeString('en-US', {
-              hour: 'numeric', minute: '2-digit', hour12: true
-            }),
-            device_date: deviceDayKey(now),
-            broadcast_id,
+          msg = await createVoiceMessageArchive({
+            channelId,
+            user: resolvedUser,
+            result,
           });
         } catch (err) {
           err.logged = true;
@@ -486,9 +503,9 @@ export default function Talk() {
             error: err,
             channelId,
             broadcastId: broadcast_id,
-            durationSeconds: duration,
+            durationSeconds: result.duration,
             user: resolvedUser,
-            extra: { audio_url: file_url },
+            extra: { audio_url: result.file_url, retryable: err.retryable === true },
           });
           throw err;
         }
@@ -529,6 +546,7 @@ export default function Talk() {
     onSettled: () => {
       pttSessionChannelIdRef.current = null;
       pttSessionUserRef.current = null;
+      flushPendingChannelSelection();
     },
     onError: (err) => {
       const channelId = pttSessionChannelIdRef.current || effectiveChannelId;
@@ -537,13 +555,16 @@ export default function Talk() {
       }
       if (!err?.logged) {
         const isRecordingStage =
-          err?.code === "app/recording-failed" || err?.code === "storage/unauthorized";
+          err?.code === "app/recording-failed"
+          || err?.code === "app/upload-failed"
+          || err?.code === "storage/unauthorized";
         void logVoiceMessageFailure({
           source: "talk",
           stage: isRecordingStage ? "recording" : "create",
           error: err,
           channelId,
           user,
+          extra: err?.retryable === true ? { retryable: true } : undefined,
         });
       }
       console.error("Voice message send failed:", err, {
@@ -553,6 +574,15 @@ export default function Talk() {
       });
       if (err?.code === "auth/not-authenticated") {
         toast.error("Session expired — please sign in again");
+        return;
+      }
+      if (err?.code === "app/upload-failed") {
+        toast.error(err.message || "Audio upload did not return a playable URL", {
+          action: {
+            label: "Retry",
+            onClick: () => retryArchiveSendMutation.mutate(),
+          },
+        });
         return;
       }
       if (err?.code === "app/recording-failed") {
@@ -573,8 +603,45 @@ export default function Talk() {
     },
   });
 
+  const retryArchiveSendMutation = useMutation({
+    mutationFn: () => retryLastSend(),
+    onSuccess: (msg) => {
+      if (!msg) return;
+      mergeChannelMessage(msg);
+      queryClient.invalidateQueries({ queryKey: ["all-messages"] });
+      queryClient.invalidateQueries({ queryKey: ["all-channel-messages"] });
+      toast.success("Message saved to history");
+    },
+    onError: (err) => {
+      console.error("Voice message archive retry failed:", err);
+      void logVoiceMessageFailure({
+        source: "talk",
+        stage: "recording",
+        error: err,
+        channelId: effectiveChannelId,
+        user,
+        extra: err?.retryable === true ? { retryable: true } : undefined,
+      });
+      if (err?.code === "app/no-retry") {
+        toast.error("Nothing to retry — record a new message");
+        return;
+      }
+      if (err?.code === "app/upload-failed") {
+        toast.error(err.message || "Audio upload did not return a playable URL", {
+          action: {
+            label: "Retry",
+            onClick: () => retryArchiveSendMutation.mutate(),
+          },
+        });
+        return;
+      }
+      toast.error("Could not save message to history");
+    },
+  });
+
   const sendTextMutation = useMutation({
     mutationFn: async (text) => {
+      assertCanSendText(user, activeChannel);
       await ensureFirestoreMembership();
       const now = new Date();
       return api.entities.VoiceMessage.create({
@@ -599,9 +666,13 @@ export default function Talk() {
     },
     onError: (err) => {
       console.error("Text message send failed:", err);
+      if (err?.code === "daily-code-required") {
+        toast.error(err.message);
+        return;
+      }
       toast.error(err?.code === "permission-denied" || err?.message?.includes("permission")
         ? `Permission denied — ${describePermissionFailure(user)}`
-        : "Could not send text message");
+        : err?.message || "Could not send text message");
     },
   });
 
@@ -652,7 +723,8 @@ export default function Talk() {
     });
     pttSessionChannelIdRef.current = null;
     pttSessionUserRef.current = null;
-  }, [sendMutation, effectiveChannelId, user, stopLiveTransmit, stopRecording]);
+    flushPendingChannelSelection();
+  }, [sendMutation, effectiveChannelId, user, stopLiveTransmit, stopRecording, flushPendingChannelSelection]);
 
   const releasePttSignal = useCallback((signalId) => {
     if (!signalId) return;
@@ -777,6 +849,7 @@ export default function Talk() {
     pttStopPendingRef.current = false;
 
     if (result.pendingSend) {
+      isPTTPressedRef.current = false;
       setIsPTTPressed(false);
       finishPttStop();
       return;
@@ -787,6 +860,8 @@ export default function Talk() {
       setIsPTTPressed(false);
       if (pttRecordingActiveRef.current || cancelled) {
         finishPttStop();
+      } else {
+        flushPendingChannelSelection();
       }
       return;
     }
@@ -796,6 +871,7 @@ export default function Talk() {
       setIsPTTPressed(false);
       playBusyTone();
       toast.error("Channel busy");
+      flushPendingChannelSelection();
       return;
     }
 
@@ -809,18 +885,22 @@ export default function Talk() {
         user,
         reason: "PTT startup failed after claim",
       });
+      isPTTPressedRef.current = false;
       setIsPTTPressed(false);
       toast.error(
         result.error?.code === "permission-denied"
           ? "Permission denied — cannot claim this channel"
           : "Could not start transmission"
       );
+      flushPendingChannelSelection();
       return;
     }
 
     if (result.micDenied) {
+      isPTTPressedRef.current = false;
       setIsPTTPressed(false);
       toast.error("Microphone access denied — check browser permissions");
+      flushPendingChannelSelection();
       return;
     }
   }, [
@@ -835,6 +915,7 @@ export default function Talk() {
     isRecording,
     releasePttSignal,
     finishPttStop,
+    flushPendingChannelSelection,
     ensureFirestoreMembership,
   ]);
 
@@ -896,7 +977,7 @@ export default function Talk() {
     receivingTimeoutRef.current = setTimeout(() => {
       setPlayingId(null);
       setIsReceiving(false);
-    }, 30000);
+    }, PTT_MAX_TRANSMISSION_MS);
     let playErrorReported = false;
     const reportPlayError = (err) => {
       if (playErrorReported) return;
@@ -1022,7 +1103,7 @@ export default function Talk() {
           />
           <TextInputBar
             onSend={(text) => sendTextMutation.mutate(text)}
-            disabled={!activeChannel || sendTextMutation.isPending}
+            disabled={!activeChannel || sendTextMutation.isPending || !canSendPtt}
           />
         </div>
       )}

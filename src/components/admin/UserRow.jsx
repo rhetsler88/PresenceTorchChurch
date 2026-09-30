@@ -1,5 +1,5 @@
 import React from "react";
-import { Shield, Eye, User, ChevronDown, Crown, Bell } from "lucide-react";
+import { Shield, Eye, User, ChevronDown, Crown, Bell, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -9,7 +9,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import DirectorControls from "@/components/admin/DirectorControls";
 import MonitorBroadcastControls from "@/components/admin/MonitorBroadcastControls";
-import { getInitials } from "@/lib/userUtils";
+import { getInitials, isDedicatedMonitorUser } from "@/lib/userUtils";
 import { useCompactLayout } from "@/hooks/useViewportWidth";
 
 export const ROLE_CONFIG = {
@@ -35,6 +35,7 @@ export default function UserRow({
   assignableRoles,
   showMonitorToggle = true,
   showChannelAssignment = true,
+  onDeleteUser,
 }) {
   const cfg = ROLE_CONFIG[user.role || "user"];
   const Icon = cfg.icon;
@@ -43,7 +44,7 @@ export default function UserRow({
   const isLeadUser = user.role === "lead";
   const isDirectorUser = user.role === "director";
   const hasAssignedChannels = isLeadUser || isDirectorUser;
-  const isMonitor = user.role === "monitor" || user.is_monitor === true;
+  const isMonitor = isDedicatedMonitorUser(user);
   const roleOptions = assignableRoles
     ? Object.entries(ROLE_CONFIG).filter(([role]) => assignableRoles.includes(role))
     : Object.entries(ROLE_CONFIG);
@@ -70,10 +71,10 @@ export default function UserRow({
         <div className={`flex items-center gap-1.5 xs:gap-2 shrink-0 ${compact ? "w-full pl-11" : "ml-auto"}`}>
         {adminControls && showMonitorToggle && (
           <Button
-            variant={user.is_monitor ? "default" : "outline"}
+            variant={isMonitor ? "default" : "outline"}
             size="sm"
             className={`h-8 px-2.5 ${
-              user.is_monitor
+              isMonitor
                 ? "bg-amber-500 text-white hover:bg-amber-600 border-amber-500"
                 : "text-muted-foreground"
             }`}
@@ -99,6 +100,19 @@ export default function UserRow({
             title="Staff alerts — any channel Code Red, even when signed out (native push)"
           >
             <Bell className="w-3.5 h-3.5" />
+          </Button>
+        )}
+
+        {onDeleteUser && (
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-8 px-2.5 text-destructive border-destructive/30 hover:bg-destructive/10"
+            onClick={() => onDeleteUser(user)}
+            disabled={isCurrentUser}
+            title="Delete user account"
+          >
+            <Trash2 className="w-3.5 h-3.5" />
           </Button>
         )}
 

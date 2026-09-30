@@ -16,6 +16,7 @@ import { needsTranscription, transcribeMessagesForExport } from "@/lib/transcrip
 import { toast } from "@/lib/toast";
 import DayGroup from "@/components/transcripts/DayGroup";
 import { exportContentToGoogleDoc } from "@/lib/googleDocsExport";
+import { chunkIds } from "@/lib/chunkIds";
 
 const ETZ = "America/New_York";
 
@@ -122,19 +123,25 @@ export default function Transcripts() {
 
   const deleteMessagesMutation = useMutation({
     mutationFn: async (/** @type {string[]} */ ids) => {
-      await api.entities.VoiceMessage.deleteAsModerator(ids);
+      const batches = chunkIds(ids, 100);
+      let totalDeleted = 0;
+      for (const batch of batches) {
+        const result = await api.entities.VoiceMessage.deleteAsModerator(batch);
+        totalDeleted += result?.deleted ?? batch.length;
+      }
+      return totalDeleted;
     },
-    onSuccess: () => {
+    onSuccess: (totalDeleted) => {
       queryClient.invalidateQueries({ queryKey: ["all-messages"] });
       queryClient.invalidateQueries({ queryKey: ["messages"] });
       setSelectionMode(false);
       setSelectedIds(new Set());
-      toast.success("Messages deleted");
+      toast.success(`${totalDeleted} message${totalDeleted === 1 ? "" : "s"} deleted`);
     },
     onError: (err) => {
       console.error("Delete messages failed:", err);
       if (err?.code === "permission-denied") {
-        toast.error("Permission denied — confirm your account role is admin or team lead.");
+        toast.error("Permission denied — message deletion is limited to platform admins.");
         return;
       }
       toast.error("Could not delete messages. Please try again.");
@@ -159,21 +166,21 @@ export default function Transcripts() {
     queryKey: ["all-messages", user?.id, readableChannelIdKey],
     enabled: !!user?.id && !!user?.role && readableChannelIds.length > 0,
     placeholderData: keepPreviousData,
-    refetchInterval: 15000,
+    staleTime: 30_000,
+    refetchInterval: 30_000,
     queryFn: async () => {
       const batches = await Promise.all(
         readableChannelIds.map(async (id) => {
           try {
-            return await api.entities.VoiceMessage.filter({ channel_id: id }, "-created_date", 100);
+            return await api.entities.VoiceMessage.filter({ channel_id: id }, "-created_date", 500);
           } catch (err) {
             if (err?.code === "permission-denied") return [];
             throw err;
           }
         })
       );
-      let items = batches.flat();
+      const items = batches.flat();
       items.sort((a, b) => String(b.created_date || "").localeCompare(String(a.created_date || "")));
-      items = items.slice(0, 300);
       return items.filter(
         (m) => (m.audio_url || m.text_content || m.transcript) && isMessageWithinRetention(m)
       );

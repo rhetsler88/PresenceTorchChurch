@@ -33,13 +33,14 @@ export default function usePttBroadcast(options) {
     channelId,
     userId,
     userName,
+    userEmail = "",
     onRemoteLiveAudio,
     onMaxDurationRef,
   } = options;
   const agoraEnabled = isAgoraEnabled();
   const maxDurationTimerRef = useRef(null);
   const agoraMulti = useAgoraMultiPublish({ userId });
-  const relay = useRelayBroadcast({ channelId, userId, userName });
+  const relay = useRelayBroadcast({ channelId, userId, userName, userEmail });
   const usingAgoraRef = useRef(false);
   const usingMultiPublishRef = useRef(false);
   const relayActiveRef = useRef(false);
@@ -206,6 +207,7 @@ export default function usePttBroadcast(options) {
       startRecording,
       stopLiveTransmit,
       stopRecording,
+      retryLastSend: relay.retryLastSend,
       isLiveReceiving: agora.isReceiving,
       isChannelReady: agora.isChannelReady,
       heardBroadcastsRef: relay.heardBroadcastsRef,
@@ -218,6 +220,7 @@ export default function usePttBroadcast(options) {
     startRecording,
     stopLiveTransmit,
     stopRecording,
+    retryLastSend: relay.retryLastSend,
     isLiveReceiving: false,
     isChannelReady: true,
     heardBroadcastsRef: relay.heardBroadcastsRef,

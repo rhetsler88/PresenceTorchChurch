@@ -3,7 +3,10 @@ import { QueryClientProvider } from '@tanstack/react-query'
 import { queryClientInstance } from '@/lib/query-client'
 import { Capacitor } from '@capacitor/core';
 import { isPwaInstalled } from '@/lib/pushDevice';
+import { useEffect } from 'react';
 import { BrowserRouter, HashRouter, Navigate, Route, Routes } from 'react-router-dom';
+import { toast } from '@/lib/toast';
+import { canAccessMonitorPage } from '@/lib/userUtils';
 
 const Router = Capacitor.isNativePlatform() ? HashRouter : BrowserRouter;
 import PageNotFound from './lib/PageNotFound';
@@ -34,6 +37,23 @@ function AppRoutes() {
       </Routes>
     </div>
   );
+}
+
+function MonitorRoute() {
+  const { user } = useAuth();
+  const allowed = canAccessMonitorPage(user);
+
+  useEffect(() => {
+    if (!allowed) {
+      toast.error("Monitor is for admins, team leads, coordinators, and monitors only.");
+    }
+  }, [allowed]);
+
+  if (!allowed) {
+    return <Navigate to="/" replace />;
+  }
+
+  return <Monitor />;
 }
 
 const AuthenticatedApp = () => {
@@ -78,7 +98,7 @@ const AuthenticatedApp = () => {
           <Route path="/contacts" element={<Contacts />} />
           <Route path="/channels" element={<Channels />} />
           <Route path="/transcripts" element={<Navigate to="/admin/logs" replace />} />
-          <Route path="/monitor" element={<Monitor />} />
+          <Route path="/monitor" element={<MonitorRoute />} />
           <Route path="/admin" element={<AdminShell />}>
             <Route index element={<Admin />} />
             <Route path="logs" element={<Transcripts />} />

@@ -1,5 +1,6 @@
 import { collection, doc, getDocs, updateDoc, arrayUnion, arrayRemove } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase";
+import { leaveChannelUpdates } from "./leaveChannelUpdatesCore.js";
 
 async function waitForFirestoreAuth() {
   await auth.authStateReady();
@@ -42,6 +43,25 @@ export async function removeUserChannelMembership(userId, channelId) {
   await updateDoc(doc(db, "users", userId), {
     member_of_channels: arrayRemove(channelId),
   });
+}
+
+/** Self-leave or withdraw pending access (updates channel doc and user profile). */
+export async function applyLeaveChannelUpdates(userId, email, channel, intent) {
+  if (!userId || !channel?.id) return;
+  const { channel: channelPatch, user: userPatch } = leaveChannelUpdates({
+    channel,
+    userId,
+    email,
+    intent,
+  });
+
+  await waitForFirestoreAuth();
+  await updateDoc(doc(db, "channels", channel.id), channelPatch);
+  if (userPatch?.member_of_channels?.remove) {
+    await updateDoc(doc(db, "users", userId), {
+      member_of_channels: arrayRemove(userPatch.member_of_channels.remove),
+    });
+  }
 }
 
 /**

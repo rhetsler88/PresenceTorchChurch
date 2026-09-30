@@ -8,8 +8,23 @@ import { beginSensitiveOperation, endSensitiveOperation } from "@/lib/sensitiveO
 import { destroyMicDenoise, openMicSession } from "@/lib/micDenoise";
 import { logVoiceMessageFailure } from "@/lib/voiceMessageLogging";
 import { extensionForRecordingMime } from "@/lib/recordingMime";
+import { createVoiceMessageArchive } from "@/lib/voiceMessageArchive";
 
 const CHUNK_MS = 1000;
+
+async function uploadArchiveRecording(blob, mime, channelId, broadcastId) {
+  const ext = extensionForRecordingMime(mime);
+  const file = new File([blob], `message.${ext}`, { type: mime });
+  const { file_url, file_uri } = await uploadPrivateAudio(
+    file,
+    `${channelId}/messages/${broadcastId}.${ext}`
+  );
+  return { file_url, file_uri };
+}
+
+function stashFailedArchiveSend(ref, payload) {
+  ref.current = payload;
+}
 
 function isUploadPermissionError(err) {
   const code = err?.code || "";
@@ -95,11 +110,12 @@ async function stopMediaRecorder(recorder, chunkIntervalRef) {
  * - Relay recorder (timeslice) for live chunk playback
  * - Full recorder (single blob on stop) for chat voice messages
  */
-export default function useRelayBroadcast({ channelId, userId, userName }) {
+export default function useRelayBroadcast({ channelId, userId, userName, userEmail = "" }) {
   const [isRecording, setIsRecording] = useState(false);
 
-  const paramsRef = useRef({ channelId, userId, userName });
-  paramsRef.current = { channelId, userId, userName };
+  const paramsRef = useRef({ channelId, userId, userName, userEmail });
+  paramsRef.current = { channelId, userId, userName, userEmail };
+  const lastFailedSendRef = useRef(null);
 
   const streamRef = useRef(null);
   const recordStreamRef = useRef(null);
@@ -462,13 +478,33 @@ export default function useRelayBroadcast({ channelId, userId, userName }) {
         });
       }
 
+      const { channelId: archiveChannelId, userId, userName, userEmail } = paramsRef.current;
+      const stashPayload = {
+        blob: fullBlob,
+        mime: recordingMime,
+        broadcastId,
+        channelId: archiveChannelId,
+        duration,
+        userId,
+        userName,
+        userEmail,
+      };
+
       try {
-        const ext = extensionForRecordingMime(recordingMime);
-        const file = new File([fullBlob], `message.${ext}`, { type: recordingMime });
-        const { file_url, file_uri } = await uploadPrivateAudio(
-          file,
-          `${paramsRef.current.channelId}/messages/${broadcastId}.${ext}`
+        const { file_url, file_uri } = await uploadArchiveRecording(
+          fullBlob,
+          recordingMime,
+          archiveChannelId,
+          broadcastId
         );
+        if (!file_url) {
+          stashFailedArchiveSend(lastFailedSendRef, stashPayload);
+          throw Object.assign(new Error("Audio upload did not return a playable URL"), {
+            code: "app/upload-failed",
+            retryable: true,
+          });
+        }
+        lastFailedSendRef.current = null;
         return {
           file_url,
           file_uri,
@@ -478,6 +514,12 @@ export default function useRelayBroadcast({ channelId, userId, userName }) {
       } catch (err) {
         console.error("Private audio upload failed:", err);
         if (isUploadPermissionError(err)) {
+          throw err;
+        }
+        if (err?.code !== "app/upload-failed") {
+          stashFailedArchiveSend(lastFailedSendRef, stashPayload);
+        }
+        if (err?.code === "app/upload-failed") {
           throw err;
         }
         throw Object.assign(new Error("Private audio upload failed"), {
@@ -497,6 +539,49 @@ export default function useRelayBroadcast({ channelId, userId, userName }) {
       }
     }
   }, [releaseSensitiveOperation]);
+
+  const retryLastSend = useCallback(async () => {
+    const stash = lastFailedSendRef.current;
+    if (!stash?.blob || !stash.channelId || !stash.userId) {
+      throw Object.assign(new Error("Nothing to retry"), { code: "app/no-retry" });
+    }
+
+    const { file_url, file_uri } = await uploadArchiveRecording(
+      stash.blob,
+      stash.mime,
+      stash.channelId,
+      stash.broadcastId
+    );
+    if (!file_url) {
+      throw Object.assign(new Error("Audio upload did not return a playable URL"), {
+        code: "app/upload-failed",
+        retryable: true,
+      });
+    }
+
+    const user = {
+      id: stash.userId,
+      email: stash.userEmail || "",
+      first_name: stash.userName || "",
+    };
+    const msg = await createVoiceMessageArchive({
+      channelId: stash.channelId,
+      user,
+      result: {
+        file_url,
+        file_uri,
+        duration: stash.duration,
+        broadcast_id: stash.broadcastId,
+      },
+    });
+
+    if (stash.broadcastId) {
+      api.entities.AudioChunk.deleteMany({ broadcast_id: stash.broadcastId }).catch(() => {});
+    }
+
+    lastFailedSendRef.current = null;
+    return msg;
+  }, []);
 
   const getMediaStream = useCallback(() => streamRef.current, []);
 
@@ -543,6 +628,7 @@ export default function useRelayBroadcast({ channelId, userId, userName }) {
     startRecording,
     stopLiveRelay,
     stopRecording,
+    retryLastSend,
     enableLiveRelay,
     heardBroadcastsRef,
     getMediaStream,

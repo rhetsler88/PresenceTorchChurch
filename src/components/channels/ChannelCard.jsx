@@ -1,6 +1,16 @@
-import React from "react";
-import { Radio, Users, ChevronRight, Pencil, Shield, UserPlus, Clock3 } from "lucide-react";
+import React, { useState, useEffect } from "react";
+import { Radio, Users, ChevronRight, Pencil, Shield, UserPlus, Clock3, LogOut } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import ProtectionLevelControl from "@/components/monitor/ProtectionLevelControl";
 import { PROTECTION_LEVELS } from "@/components/ptt/ProtectionLevelBadge";
 import { getVisibleChannelMemberEntries } from "@/lib/userUtils";
@@ -16,8 +26,16 @@ export default function ChannelCard({
   canManageProtection,
   protectionLevel,
   onProtectionChange,
+  onConfirmLeaveChannel,
+  onWithdrawRequest,
+  leaveChannelPending = false,
 }) {
+  const [leaveDialogOpen, setLeaveDialogOpen] = useState(false);
   const memberCount = getVisibleChannelMemberEntries(channel).length;
+
+  useEffect(() => {
+    if (!leaveChannelPending) setLeaveDialogOpen(false);
+  }, [leaveChannelPending]);
   const protConfig = PROTECTION_LEVELS[protectionLevel] || PROTECTION_LEVELS.green;
 
   const channelInfo = (
@@ -110,9 +128,14 @@ export default function ChannelCard({
       {!isActive && (
         <div className="px-4 pb-3 pt-1">
           {isPending ? (
-            <Button variant="outline" size="sm" className="w-full gap-2" disabled>
+            <Button
+              variant="outline"
+              size="sm"
+              className="w-full gap-2 text-amber-600 border-amber-500/30 hover:bg-amber-500/10"
+              onClick={() => onWithdrawRequest?.(channel)}
+            >
               <Clock3 className="w-4 h-4" />
-              Pending approval
+              Withdraw request
             </Button>
           ) : (
             <Button
@@ -126,6 +149,47 @@ export default function ChannelCard({
             </Button>
           )}
         </div>
+      )}
+      {isActive && onConfirmLeaveChannel && (
+        <>
+          <div className="px-4 pb-3 pt-0">
+            <Button
+              variant="outline"
+              size="sm"
+              className="w-full gap-2 text-destructive border-destructive/30 hover:bg-destructive/10"
+              onClick={() => setLeaveDialogOpen(true)}
+            >
+              <LogOut className="w-4 h-4" />
+              Leave channel
+            </Button>
+          </div>
+          <AlertDialog
+            open={leaveDialogOpen}
+            onOpenChange={(open) => !leaveChannelPending && setLeaveDialogOpen(open)}
+          >
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Leave {channel.name}?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  You will lose access to this channel until you request to join again.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel disabled={leaveChannelPending}>Cancel</AlertDialogCancel>
+                <AlertDialogAction
+                  className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                  disabled={leaveChannelPending}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    onConfirmLeaveChannel(channel);
+                  }}
+                >
+                  {leaveChannelPending ? "Leaving..." : "Leave channel"}
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+        </>
       )}
     </div>
   );

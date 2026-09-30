@@ -8,7 +8,16 @@ import { Radio, Volume2, VolumeX, Eye, Play, Pause, WifiOff, GripVertical } from
 import { Button } from "@/components/ui/button";
 import { etzTime } from "@/lib/etz";
 import { deviceDayKey, deviceDayLabel } from "@/lib/deviceDate";
-import { getDisplayName, getInitials, getInitialsFromName, getMonitorChannels, canSendOnChannelForChannel, filterAppVisibleMessages } from "@/lib/userUtils";
+import {
+  getDisplayName,
+  getInitials,
+  getInitialsFromName,
+  getMonitorChannels,
+  canSendOnChannelForChannel,
+  canManageChannelProtection,
+  filterAppVisibleMessages,
+} from "@/lib/userUtils";
+import { applyBulkProtectionLevelUpdate } from "@/lib/protectionSetAll";
 import { playClearTone, playBusyTone, ensureAudioReady, unlockAudioForPTT } from "@/lib/pttTones";
 import { logVoiceMessageFailure } from "@/lib/voiceMessageLogging";
 import { markBroadcastHeard, hasHeardBroadcast } from "@/lib/heardBroadcasts";
@@ -33,10 +42,8 @@ import ProtectionLevelControl from "../components/monitor/ProtectionLevelControl
 import SetAllProtectionLevel from "../components/monitor/SetAllProtectionLevel";
 import { toast } from "@/lib/toast";
 import { recordSessionInteraction } from "@/lib/logoutOnClose";
-import {
-  recordProtectionLevelChange,
-  recordProtectionLevelChanges,
-} from "@/lib/protectionLevelHistory";
+import { recordProtectionLevelChange } from "@/lib/protectionLevelHistory";
+import { partitionBroadcastTargets } from "@/lib/partitionBroadcastTargets";
 
 const MONITOR_BROADCAST_MODE_KEY = "monitorBroadcastMode";
 const MONITOR_BROADCAST_SELECTION_KEY = "monitorBroadcastSelection";
@@ -248,6 +255,8 @@ export default function Monitor() {
   const pttStartInFlightRef = useRef(null);
   const pttStopPendingRef = useRef(false);
   const pttRecordingActiveRef = useRef(false);
+  /** Channel ids claimed for the in-flight / active monitor PTT (may exclude busy targets). */
+  const pttSessionTargetIdsRef = useRef(null);
   const isPTTPressedRef = useRef(false);
   const pttMaxDurationStopRef = useRef(() => {});
   const heardBroadcastsRef = useRef(new Set());
@@ -649,6 +658,10 @@ export default function Monitor() {
   const handleSetProtectionLevel = async (channelId, level) => {
     const channels = queryClient.getQueryData(["channels"]) || [];
     const channel = channels.find((c) => c.id === channelId);
+    if (!channel || !canManageChannelProtection(user, channel)) {
+      toast.error("Only admins and team leads can change protection levels.");
+      return;
+    }
     const fromLevel = channel?.protection_level || "green";
 
     await api.entities.Channel.update(channelId, { protection_level: level });
@@ -666,10 +679,19 @@ export default function Monitor() {
   const handleSetAllProtectionLevel = async (level) => {
     try {
       const channels = queryClient.getQueryData(["channels"]) || [];
-      await api.entities.Channel.updateMany({}, { $set: { protection_level: level } });
-      await recordProtectionLevelChanges(channels, level, queryClient);
+      const { targetIds } = await applyBulkProtectionLevelUpdate({
+        channels,
+        user,
+        level,
+        queryClient,
+      });
+      if (targetIds.length === 0) {
+        toast.info("No channels in your organization to update");
+        return;
+      }
+      const idSet = new Set(targetIds);
       queryClient.setQueryData(["channels"], (/** @type {any[] | undefined} */ old) =>
-        (old ?? []).map((c) => ({ ...c, protection_level: level }))
+        (old ?? []).map((c) => (idSet.has(c.id) ? { ...c, protection_level: level } : c))
       );
       queryClient.invalidateQueries({ queryKey: ["channels"] });
       toast.success(`All channels set to ${level}`);
@@ -682,13 +704,17 @@ export default function Monitor() {
   // PTT send � uses relay broadcast result (already uploaded)
   const sendMutation = useMutation({
     mutationFn: async () => {
-      const targetIds = broadcastModeRef.current === "multi"
-        ? selectedBroadcastIdsRef.current.filter((id) =>
-            sendableChannelIdsRef.current.includes(id)
-          )
-        : [targetChannelIdRef.current].filter(
-            (id) => id && sendableChannelIdsRef.current.includes(id)
-          );
+      const sessionTargets = pttSessionTargetIdsRef.current;
+      const targetIds =
+        sessionTargets?.length
+          ? sessionTargets
+          : broadcastModeRef.current === "multi"
+            ? selectedBroadcastIdsRef.current.filter((id) =>
+                sendableChannelIdsRef.current.includes(id)
+              )
+            : [targetChannelIdRef.current].filter(
+                (id) => id && sendableChannelIdsRef.current.includes(id)
+              );
       const targetId = targetChannelIdRef.current;
 
       const result = await stopRecording();
@@ -798,7 +824,12 @@ export default function Monitor() {
     return targetChannelId ? [targetChannelId] : [];
   }, [broadcastMode, selectedBroadcastIds, sendableChannelIds, targetChannelId]);
 
-  const isTargetChannelBusy = activeTargetIds.some((id) => busyChannelIds.has(id));
+  const { freeIds: freeBroadcastTargetIds, busyIds: busyBroadcastTargetIds } = useMemo(
+    () => partitionBroadcastTargets(activeTargetIds, busyChannelIds),
+    [activeTargetIds, busyChannelIds]
+  );
+  const allBroadcastTargetsBusy =
+    activeTargetIds.length > 0 && freeBroadcastTargetIds.length === 0;
 
   const finishPttStop = useCallback(() => {
     const signalIds = [...pttSignalRefs.current];
@@ -806,6 +837,7 @@ export default function Monitor() {
     signalIds.forEach((id) => {
       api.entities.PTTSignal.delete(id).catch(() => {});
     });
+    pttSessionTargetIdsRef.current = null;
 
     if (pttRecordingActiveRef.current) {
       pttRecordingActiveRef.current = false;
@@ -827,18 +859,32 @@ export default function Monitor() {
 
   const handlePTTStart = useCallback(async () => {
     if (isPTTPressed || !user?.id || pttStartInFlightRef.current || pttRecordingActiveRef.current) return;
-    if (isTargetChannelBusy || isPlayingRef.current) {
-      playBusyTone();
-      return;
-    }
+    if (isPlayingRef.current) return;
 
-    const targetIds = getActiveTargetIds();
-    const primaryChannelId = targetIds[0] || sendableChannelIds[0];
+    const activeIds = getActiveTargetIds();
+    const { freeIds, busyIds } = partitionBroadcastTargets(activeIds, busyChannelIds);
 
-    if (targetIds.length === 0) {
+    if (activeIds.length === 0) {
       toast.error("No channels available to respond on");
       return;
     }
+
+    if (freeIds.length === 0) {
+      playBusyTone();
+      toast.error("Channel busy");
+      return;
+    }
+
+    if (busyIds.length > 0) {
+      const skippedNames = busyIds
+        .map((id) => monitorChannels.find((c) => c.id === id)?.name || id)
+        .join(", ");
+      toast.info(`Skipped busy channel${busyIds.length === 1 ? "" : "s"}: ${skippedNames}`);
+    }
+
+    const targetIds = freeIds;
+    pttSessionTargetIdsRef.current = freeIds;
+    const primaryChannelId = targetIds[0] || sendableChannelIds[0];
 
     recordSessionInteraction();
     unlockAudioForPTT();
@@ -958,6 +1004,8 @@ export default function Monitor() {
       setIsPTTPressed(false);
       if (pttRecordingActiveRef.current || cancelled) {
         finishPttStop();
+      } else {
+        pttSessionTargetIdsRef.current = null;
       }
       return;
     }
@@ -965,6 +1013,7 @@ export default function Monitor() {
     if (result.channelBusy) {
       isPTTPressedRef.current = false;
       setIsPTTPressed(false);
+      pttSessionTargetIdsRef.current = null;
       playBusyTone();
       toast.error("Channel busy");
       return;
@@ -972,6 +1021,7 @@ export default function Monitor() {
 
     if (result.startFailed) {
       console.error("PTT start failed:", result.error);
+      pttSessionTargetIdsRef.current = null;
       await releasePttSignals([...pttSignalRefs.current]);
       pttSignalRefs.current = [];
       await discardPttRecording(stopRecording, {
@@ -987,13 +1037,15 @@ export default function Monitor() {
     }
 
     if (result.micDenied) {
+      pttSessionTargetIdsRef.current = null;
       setIsPTTPressed(false);
       toast.error("Microphone access denied");
       return;
     }
   }, [
     isPTTPressed,
-    isTargetChannelBusy,
+    busyChannelIds,
+    monitorChannels,
     startRecording,
     stopRecording,
     getActiveTargetIds,
@@ -1167,7 +1219,7 @@ export default function Monitor() {
           isPressed={isPTTPressed}
           isReceiving={showReceiving}
           receivingChannel={primaryLiveChannel}
-          isChannelBusy={isTargetChannelBusy && !isPTTPressed && !showReceiving}
+          isChannelBusy={allBroadcastTargetsBusy && !isPTTPressed && !showReceiving}
           isSending={sendMutation.isPending}
           onStart={handlePTTStart}
           onStop={handlePTTStop}

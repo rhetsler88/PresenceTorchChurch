@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { api } from "@/api/client";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import useChannels from "@/hooks/useChannels";
@@ -9,27 +9,38 @@ import ChannelCard from "../components/channels/ChannelCard";
 import CreateChannelDialog from "../components/channels/CreateChannelDialog";
 import RenameChannelDialog from "../components/channels/RenameChannelDialog";
 import JoinChannelDialog from "../components/channels/JoinChannelDialog";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import { toast } from "@/lib/toast";
-import { addUserChannelMembership } from "@/lib/channelMembership";
+import { addUserChannelMembership, applyLeaveChannelUpdates } from "@/lib/channelMembership";
 import {
-  recordProtectionLevelChange,
-  recordProtectionLevelChanges,
-} from "@/lib/protectionLevelHistory";
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { recordProtectionLevelChange } from "@/lib/protectionLevelHistory";
 import {
   canAccessChannel,
   canCreateChannel,
   canEditAssignedChannel,
   canManageChannelProtection,
+  filterChannelsByOrganization,
 } from "@/lib/userUtils";
+import { applyBulkProtectionLevelUpdate } from "@/lib/protectionSetAll";
 
 export default function Channels() {
   const [showCreate, setShowCreate] = useState(false);
   const [renameChannel, setRenameChannel] = useState(null);
   const [joinChannel, setJoinChannel] = useState(null);
+  const [withdrawConfirmChannel, setWithdrawConfirmChannel] = useState(null);
   const [user, setUser] = useState(null);
   const queryClient = useQueryClient();
   const navigate = useNavigate();
+  const location = useLocation();
 
   useEffect(() => {
     api.auth.me().then(setUser);
@@ -47,6 +58,11 @@ export default function Channels() {
 
   const { data: channels = [], isLoading } = useChannels();
 
+  const visibleChannels = useMemo(
+    () => filterChannelsByOrganization(user, channels),
+    [user, channels]
+  );
+
   const createMutation = useMutation({
     mutationFn: async (data) => {
       const channel = await api.entities.Channel.create(data);
@@ -56,6 +72,35 @@ export default function Channels() {
       return channel;
     },
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["channels"] }),
+  });
+
+  const clearActiveTalkChannelIfNeeded = (channelId) => {
+    if (localStorage.getItem("lastChannelId") === channelId) {
+      localStorage.removeItem("lastChannelId");
+    }
+    if (location.pathname === "/") {
+      const params = new URLSearchParams(location.search);
+      if (params.get("channel") === channelId) {
+        navigate("/", { replace: true });
+      }
+    }
+  };
+
+  const membershipChangeMutation = useMutation({
+    mutationFn: async (/** @type {{ channel: any, intent: 'leave' | 'withdraw' }} */ { channel, intent }) => {
+      if (!user?.id) return;
+      await applyLeaveChannelUpdates(user.id, user.email, channel, intent);
+    },
+    onSuccess: (_, { channel, intent }) => {
+      queryClient.invalidateQueries({ queryKey: ["channels"] });
+      clearActiveTalkChannelIfNeeded(channel.id);
+      setWithdrawConfirmChannel(null);
+      toast.success(intent === "leave" ? "Left channel" : "Request withdrawn");
+    },
+    onError: (err) => {
+      console.error("Channel membership change failed:", err);
+      toast.error("Couldn't update channel membership");
+    },
   });
 
   const joinChannelMutation = useMutation({
@@ -90,6 +135,11 @@ export default function Channels() {
     mutationFn: async (/** @type {{ channelId: any, level: any }} */ { channelId, level }) => {
       const channels = queryClient.getQueryData(["channels"]) || [];
       const channel = channels.find((c) => c.id === channelId);
+      if (!channel || !canManageChannelProtection(user, channel)) {
+        throw Object.assign(new Error("Only admins and team leads can change protection levels."), {
+          code: "permission-denied",
+        });
+      }
       const fromLevel = channel?.protection_level || "green";
       await api.entities.Channel.update(channelId, { protection_level: level });
       await recordProtectionLevelChange({
@@ -105,23 +155,41 @@ export default function Channels() {
   const setAllProtectionMutation = useMutation({
     mutationFn: async (level) => {
       const channels = queryClient.getQueryData(["channels"]) || [];
-      await api.entities.Channel.updateMany({}, { $set: { protection_level: level } });
-      await recordProtectionLevelChanges(channels, level, queryClient);
-      return level;
+      const { targetIds } = await applyBulkProtectionLevelUpdate({
+        channels,
+        user,
+        level,
+        queryClient,
+      });
+      if (targetIds.length === 0) {
+        throw Object.assign(new Error("No channels in your organization to update"), {
+          code: "app/no-targets",
+        });
+      }
+      return { level, targetIds };
     },
-    onSuccess: (_data, level) => {
+    onSuccess: ({ level, targetIds }) => {
+      const idSet = new Set(targetIds);
       queryClient.setQueryData(["channels"], (/** @type {any[] | undefined} */ old) =>
-        (old ?? []).map((c) => ({ ...c, protection_level: level }))
+        (old ?? []).map((c) => (idSet.has(c.id) ? { ...c, protection_level: level } : c))
       );
       queryClient.invalidateQueries({ queryKey: ["channels"] });
       toast.success("All channels updated");
     },
-    onError: () => toast.error("Could not update protection levels"),
+    onError: (err) => {
+      if (err?.code === "app/no-targets") {
+        toast.info(err.message);
+        return;
+      }
+      toast.error("Could not update protection levels");
+    },
   });
 
   const showCreateButton = canCreateChannel(user);
-  const canManageAnyProtection = channels.some((ch) => canManageChannelProtection(user, ch));
-  const hasAssignedChannel = channels.some((ch) => canAccessChannel(user, ch));
+  const canManageAnyProtection = visibleChannels.some((ch) =>
+    canManageChannelProtection(user, ch)
+  );
+  const hasAssignedChannel = visibleChannels.some((ch) => canAccessChannel(user, ch));
 
   const handleOpenTalk = (channel) => {
     navigate(`/?channel=${channel.id}`);
@@ -155,7 +223,7 @@ export default function Channels() {
             </p>
           </div>
           <div className="flex items-center gap-2 flex-wrap shrink-0">
-            {canManageAnyProtection && channels.length > 0 && (
+            {canManageAnyProtection && visibleChannels.length > 0 && (
               <SetAllProtectionLevel onApply={(level) => setAllProtectionMutation.mutateAsync(level)} />
             )}
             {showCreateButton && (
@@ -173,9 +241,9 @@ export default function Channels() {
           <div className="flex justify-center py-16">
             <div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin" />
           </div>
-        ) : channels.length > 0 ? (
+        ) : visibleChannels.length > 0 ? (
           <div className="flex flex-col gap-4 w-full">
-            {channels.map((channel) => (
+            {visibleChannels.map((channel) => (
               <ChannelCard
                 key={channel.id}
                 channel={channel}
@@ -192,6 +260,11 @@ export default function Channels() {
                 canManageProtection={canManageChannelProtection(user, channel)}
                 protectionLevel={channel.protection_level || "green"}
                 onProtectionChange={(level) => protectionMutation.mutateAsync({ channelId: channel.id, level })}
+                onConfirmLeaveChannel={(ch) =>
+                  membershipChangeMutation.mutate({ channel: ch, intent: "leave" })
+                }
+                leaveChannelPending={membershipChangeMutation.isPending}
+                onWithdrawRequest={setWithdrawConfirmChannel}
               />
             ))}
           </div>
@@ -226,6 +299,39 @@ export default function Channels() {
         loading={joinChannelMutation.isPending}
         onRequest={() => joinChannel && joinChannelMutation.mutate({ channel: joinChannel })}
       />
+
+      <AlertDialog
+        open={!!withdrawConfirmChannel}
+        onOpenChange={(open) =>
+          !open && !membershipChangeMutation.isPending && setWithdrawConfirmChannel(null)
+        }
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Withdraw access request?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Remove your pending request for {withdrawConfirmChannel?.name}. You can request access again later.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={membershipChangeMutation.isPending}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={membershipChangeMutation.isPending}
+              onClick={(e) => {
+                e.preventDefault();
+                if (withdrawConfirmChannel) {
+                  membershipChangeMutation.mutate({
+                    channel: withdrawConfirmChannel,
+                    intent: "withdraw",
+                  });
+                }
+              }}
+            >
+              {membershipChangeMutation.isPending ? "Withdrawing..." : "Withdraw request"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

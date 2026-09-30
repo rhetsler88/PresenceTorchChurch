@@ -16,6 +16,13 @@ describe("monitorChannelAccess", () => {
     assert.ok(!userUtils.includes("directed.includes(c.id)"));
   });
 
+  it("guards the /monitor route in App.jsx", () => {
+    const app = readFileSync(join(root, "src/App.jsx"), "utf8");
+    assert.ok(app.includes("canAccessMonitorPage"));
+    assert.ok(app.includes("<MonitorRoute />") || app.includes("element={<MonitorRoute"));
+    assert.equal(app.includes('element={<Monitor />}'), false);
+  });
+
   it("enforces monitor exclusions in Firestore and Storage send rules", () => {
     const firestore = readFileSync(join(root, "firestore.rules"), "utf8");
     const storage = readFileSync(join(root, "storage.rules"), "utf8");

@@ -40,6 +40,10 @@ const {
 const { logProtectionLevelChange } = require("./protectionLevelHistory");
 const { syncPresenceToFirestore } = require("./presenceSync");
 const { renameOrganization } = require("./organizationRename");
+const {
+  storagePathFromDownloadUrl,
+  resolveVoiceMessageStoragePath,
+} = require("./storagePathFromDownloadUrl");
 
 initializeApp();
 setGlobalOptions({ region: "us-east5" });
@@ -57,29 +61,14 @@ const VOICE_MESSAGE_RETENTION_DAYS = 10;
 const CLEANUP_BATCH_SIZE = 500;
 
 function toGcsUri(audioUrl) {
-  if (!audioUrl) return null;
-  if (audioUrl.startsWith("gs://")) return audioUrl;
-
-  if (audioUrl.startsWith("http")) {
-    const firebaseMatch = audioUrl.match(/\/o\/([^?]+)/);
-    if (firebaseMatch) {
-      const bucket = getStorage().bucket();
-      return `gs://${bucket.name}/${decodeURIComponent(firebaseMatch[1])}`;
-    }
-  }
-
-  if (audioUrl.startsWith("audio/")) {
-    const bucket = getStorage().bucket();
-    return `gs://${bucket.name}/${audioUrl}`;
-  }
-
-  return null;
+  const storagePath = storagePathFromDownloadUrl(audioUrl);
+  if (!storagePath) return null;
+  const bucket = getStorage().bucket();
+  return `gs://${bucket.name}/${storagePath}`;
 }
 
 function resolveStoragePath(audioUrl) {
-  const gcsUri = toGcsUri(audioUrl);
-  if (!gcsUri) return null;
-  return gcsUri.replace(/^gs:\/\/[^/]+\//, "");
+  return storagePathFromDownloadUrl(audioUrl);
 }
 
 const SPEECH_TRY_CONFIGS = [
@@ -550,6 +539,32 @@ exports.deleteVoiceMessages = onCall(CALLABLE_OPTIONS, async (request) => {
 
   const userSnap = await db.collection("users").doc(request.auth.uid).get();
   await applyAuthClaims(request.auth.uid, userSnap.data());
+
+  const docRefs = messageIds.map((messageId) => db.collection("voiceMessages").doc(messageId));
+  const messageSnaps = await db.getAll(...docRefs);
+
+  const storagePaths = new Set();
+  for (const snap of messageSnaps) {
+    if (!snap.exists) continue;
+    const path = resolveVoiceMessageStoragePath(snap.data());
+    if (path) storagePaths.add(path);
+  }
+
+  if (storagePaths.size > 0) {
+    const bucket = getStorage().bucket();
+    const results = await Promise.allSettled(
+      [...storagePaths].map((path) => bucket.file(path).delete())
+    );
+    results.forEach((result, index) => {
+      if (result.status === "rejected") {
+        console.warn(
+          "deleteVoiceMessages storage delete failed:",
+          [...storagePaths][index],
+          result.reason
+        );
+      }
+    });
+  }
 
   const batch = db.batch();
   for (const messageId of messageIds) {

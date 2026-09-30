@@ -4,19 +4,30 @@ import { api } from "@/api/client";
 import { Button } from "@/components/ui/button";
 import { Key, Copy, Check } from "lucide-react";
 import { getCodeRolloverLabel } from "@/lib/dailyCode";
-import { normalizeOrganization } from "@/lib/userUtils";
+import { dailyCodeCardMode } from "@/lib/dailyCodeCardMode";
 
-export default function DailyCodeCard({ organization }) {
-  const hasOrg = Boolean(normalizeOrganization(organization));
+export default function DailyCodeCard({ user }) {
+  const mode = dailyCodeCardMode(user);
   const { data, isLoading, isError, error } = useQuery({
     queryKey: ["dailyAccessCode"],
     queryFn: () => api.dailyCode.getForAdmin(),
-    enabled: hasOrg,
+    enabled: mode === "code",
     staleTime: 60_000,
   });
   const [copied, setCopied] = useState(false);
 
-  if (!hasOrg) {
+  if (mode === "bypassed") {
+    return (
+      <div className="mx-4 mb-4 bg-muted/30 border border-border rounded-2xl p-4">
+        <p className="text-sm text-muted-foreground text-center">
+          Your super-admin account bypasses daily access codes. Codes are not displayed for super
+          admins.
+        </p>
+      </div>
+    );
+  }
+
+  if (mode === "no-org") {
     return (
       <div className="mx-4 mb-4 bg-muted/30 border border-border rounded-2xl p-4">
         <p className="text-sm text-muted-foreground text-center">

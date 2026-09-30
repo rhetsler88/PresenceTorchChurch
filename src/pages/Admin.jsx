@@ -1,10 +1,12 @@
-import React from "react";
+import React, { useState } from "react";
 import { api } from "@/api/client";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import useChannels from "@/hooks/useChannels";
 import { Shield, Crown, User } from "lucide-react";
 import UserRow, { ROLE_CONFIG } from "@/components/admin/UserRow";
 import PendingRequests from "@/components/admin/PendingRequests";
+import ApprovedChannelMembers from "@/components/admin/ApprovedChannelMembers";
+import DeleteUserConfirmDialog from "@/components/admin/DeleteUserConfirmDialog";
 import StaffAlertRequests from "@/components/admin/StaffAlertRequests";
 import DailyCodeCard from "@/components/dailycode/DailyCodeCard";
 import { toast } from "@/lib/toast";
@@ -21,8 +23,18 @@ import {
   filterChannelsByOrganization,
   filterUsersInManagedChannels,
   canManageChannelMembership,
+  isDedicatedMonitorUser,
+  isSuperAdmin,
 } from "@/lib/userUtils";
+import { resolveMonitorToggle } from "@/lib/resolveMonitorToggle";
 import { adminApi } from "@/api/client";
+
+function canDeleteUser(actor, targetUser) {
+  if (!isPlatformAdmin(actor) || !targetUser) return false;
+  if (actor.id === targetUser.id) return false;
+  if (targetUser.role === "super_admin" && !isSuperAdmin(actor)) return false;
+  return true;
+}
 
 function mutationErrorToast(action) {
   return (err) => {
@@ -40,6 +52,7 @@ function mutationErrorToast(action) {
 export default function Admin() {
   const { user: currentUser, checkUserAuth } = useAuth();
   const queryClient = useQueryClient();
+  const [deletingUser, setDeletingUser] = useState(null);
 
   React.useEffect(() => {
     checkUserAuth?.({ silent: true }).catch((err) => {
@@ -71,11 +84,35 @@ export default function Admin() {
   });
 
   const toggleMonitorMutation = useMutation({
-    mutationFn: (/** @type {{ user: any }} */ { user }) =>
-      api.entities.User.update(user.id, { is_monitor: !user.is_monitor }),
+    mutationFn: (/** @type {{ user: any }} */ { user }) => {
+      const turningOn = !isDedicatedMonitorUser(user);
+      const payload = resolveMonitorToggle({ user, turningOn });
+      if (
+        payload.role &&
+        !canAssignRoleToUser(currentUser, user, payload.role, channels)
+      ) {
+        const err = new Error("permission-denied");
+        err.code = "permission-denied";
+        return Promise.reject(err);
+      }
+      return api.entities.User.update(user.id, payload);
+    },
     onSuccess: (_, { user }) => {
       queryClient.invalidateQueries({ queryKey: ["users"] });
-      toast.success(`${[user.first_name, user.last_name].filter(Boolean).join(" ") || user.full_name || "User"} monitoring ${user.is_monitor ? "disabled" : "enabled"}`);
+      const wasMonitor = isDedicatedMonitorUser(user);
+      const label =
+        [user.first_name, user.last_name].filter(Boolean).join(" ") ||
+        user.full_name ||
+        "User";
+      if (wasMonitor) {
+        if (user.role === "monitor") {
+          toast.success(`${label} is now ${ROLE_CONFIG.user.label}`);
+        } else {
+          toast.success(`${label} monitoring disabled`);
+        }
+      } else {
+        toast.success(`${label} monitoring enabled`);
+      }
     },
     onError: mutationErrorToast("update monitoring"),
   });
@@ -128,6 +165,35 @@ export default function Admin() {
       toast.success("Request rejected");
     },
     onError: mutationErrorToast("reject request"),
+  });
+
+  const removeMemberMutation = useMutation({
+    mutationFn: async (/** @type {{ channel: any, memberId: string }} */ { channel, memberId }) => {
+      await adminApi.removeChannelMember(channel.id, memberId);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["channels"] });
+      queryClient.invalidateQueries({ queryKey: ["users"] });
+      toast.success("Member removed");
+    },
+    onError: mutationErrorToast("remove member"),
+  });
+
+  const deleteUserMutation = useMutation({
+    mutationFn: (/** @type {string} */ targetUserId) => adminApi.deleteUser(targetUserId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["users"] });
+      queryClient.invalidateQueries({ queryKey: ["channels"] });
+      setDeletingUser(null);
+      toast.success("User deleted");
+    },
+    onError: (err) => {
+      if (err?.code === "functions/permission-denied") {
+        toast.error("You don't have permission to delete this user");
+        return;
+      }
+      mutationErrorToast("delete user")(err);
+    },
   });
 
   const approveStaffAlertMutation = useMutation({
@@ -226,6 +292,10 @@ export default function Admin() {
 
   const assignableRolesForActor = getAssignableRolesForActor(currentUser);
 
+  const memberListChannels = orgChannels.filter(
+    (c) => canManageChannelMembership(currentUser, c) && (c.members || []).length > 0
+  );
+
   const rowProps = (u, { assignableRoles = assignableRolesForActor, showMonitorToggle = true, showChannelAssignment = true } = {}) => ({
     key: u.id,
     user: u,
@@ -243,6 +313,8 @@ export default function Admin() {
     showMonitorToggle,
     showChannelAssignment,
     adminControls: isAdmin,
+    onDeleteUser:
+      isAdmin && canDeleteUser(currentUser, u) ? () => setDeletingUser(u) : undefined,
   });
 
   // Lead-only view: approve membership only
@@ -258,7 +330,7 @@ export default function Admin() {
             Approve members for your assigned channels
           </p>
         </div>
-        <DailyCodeCard organization={currentUser?.organization} />
+        <DailyCodeCard user={currentUser} />
         <PendingRequests
           channels={pendingRequests}
           users={users}
@@ -285,13 +357,19 @@ export default function Admin() {
             Approve members and assign roles for your channels
           </p>
         </div>
-        <DailyCodeCard organization={currentUser?.organization} />
+        <DailyCodeCard user={currentUser} />
         <PendingRequests
           channels={pendingRequests}
           users={users}
           onApprove={(ch, memberId) => approveMutation.mutate({ channel: ch, memberId })}
           onReject={(ch, memberId) => rejectMutation.mutate({ channel: ch, memberId })}
           showEmpty
+        />
+        <ApprovedChannelMembers
+          channels={memberListChannels}
+          users={users}
+          removing={removeMemberMutation.isPending}
+          onConfirmRemove={(payload) => removeMemberMutation.mutate(payload)}
         />
         <div className="px-2 pb-24 xs:px-4">
           {isLoading ? (
@@ -301,7 +379,7 @@ export default function Admin() {
           ) : channelMembers.length > 0 ? (
             <div className="space-y-1">
               <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest px-1 mb-1">
-                Channel Members ({channelMembers.length})
+                Roles &amp; settings ({channelMembers.length})
               </p>
               {channelMembers.map((u) => (
                 <UserRow
@@ -354,7 +432,7 @@ export default function Admin() {
         </div>
       </div>
 
-      <DailyCodeCard organization={currentUser?.organization} />
+      <DailyCodeCard user={currentUser} />
 
       <StaffAlertRequests
         users={staffAlertCandidates}
@@ -367,6 +445,13 @@ export default function Admin() {
         users={users}
         onApprove={(ch, memberId) => approveMutation.mutate({ channel: ch, memberId })}
         onReject={(ch, memberId) => rejectMutation.mutate({ channel: ch, memberId })}
+      />
+
+      <ApprovedChannelMembers
+        channels={memberListChannels}
+        users={users}
+        removing={removeMemberMutation.isPending}
+        onConfirmRemove={(payload) => removeMemberMutation.mutate(payload)}
       />
 
       <div className="px-2 pb-24 xs:px-4">
@@ -440,6 +525,14 @@ export default function Admin() {
           </div>
         )}
       </div>
+
+      <DeleteUserConfirmDialog
+        user={deletingUser}
+        open={!!deletingUser}
+        onOpenChange={(open) => !open && !deleteUserMutation.isPending && setDeletingUser(null)}
+        isPending={deleteUserMutation.isPending}
+        onConfirm={(u) => u?.id && deleteUserMutation.mutate(u.id)}
+      />
     </div>
   );
 }

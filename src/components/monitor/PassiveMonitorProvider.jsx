@@ -24,6 +24,7 @@ import useAgoraMultiListen from "@/hooks/useAgoraMultiListen";
 import usePttReceiver from "@/hooks/usePttReceiver";
 import useBackgroundRelayListen from "@/hooks/useBackgroundRelayListen";
 import { playClearTone } from "@/lib/pttTones";
+import { shouldPlayClearTone } from "@/lib/monitorClearTone";
 import { maybeNotifyIncomingTextMessage, isIncomingVoiceMessage } from "@/lib/textMessageNotifications";
 import { hasHeardBroadcast } from "@/lib/heardBroadcasts";
 import { recordSessionInteraction } from "@/lib/logoutOnClose";
@@ -121,7 +122,7 @@ export function PassiveMonitorProvider({ user, children }) {
 
   const isLiveReceiving = passiveListenActive && (agoraReceiving || relayReceiving);
 
-  // Clear tones for all readable monitor channels (independent of mute / passive listen).
+  // Clear tones for readable monitor channels; muted channels stay silent (live audio already filtered).
   useEffect(() => {
     if (!enabled || !user?.id || clearToneIds.length === 0) return undefined;
 
@@ -141,14 +142,16 @@ export function PassiveMonitorProvider({ user, children }) {
             channelId,
             broadcastId: event.data?.broadcast_id ?? null,
           });
-          playClearTone(event.data?.broadcast_id);
+          if (shouldPlayClearTone({ channelId, mutedChannelIds })) {
+            playClearTone(event.data?.broadcast_id);
+          }
         }
       },
       clearToneIds.map((channelId) => ({ channel_id: channelId }))
     );
 
     return unsub;
-  }, [enabled, clearToneKey, user?.id, clearToneIds]);
+  }, [enabled, clearToneKey, user?.id, clearToneIds, mutedChannelIds]);
 
   useEffect(() => {
     if (!enabled || !user?.id) return;
@@ -160,11 +163,13 @@ export function PassiveMonitorProvider({ user, children }) {
         for (const signal of active) {
           if (!signal.broadcast_id || !clearToneIds.includes(signal.channel_id)) continue;
           recordLivePttSignal(signal);
-          playClearTone(signal.broadcast_id);
+          if (shouldPlayClearTone({ channelId: signal.channel_id, mutedChannelIds })) {
+            playClearTone(signal.broadcast_id);
+          }
         }
       })
       .catch(() => {});
-  }, [enabled, clearToneKey, clearToneIds, user?.id]);
+  }, [enabled, clearToneKey, clearToneIds, user?.id, mutedChannelIds]);
 
   useEffect(() => {
     if (!passiveListenActive || !user?.id || listenChannelIds.length === 0) return undefined;

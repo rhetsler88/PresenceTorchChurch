@@ -22,13 +22,13 @@ export default function UserMenu() {
   const [showEditProfile, setShowEditProfile] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [showAudioSettings, setShowAudioSettings] = useState(false);
+  const compact = useCompactLayout();
 
   if (!user) return null;
 
   const displayName = getDisplayName(user);
   const initials = getInitials(user);
   const isPlatformAdmin = user.role === "super_admin" || user.role === "admin";
-  const compact = useCompactLayout();
 
   return (
     <>

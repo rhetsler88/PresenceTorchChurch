@@ -50,13 +50,20 @@ function bumpForegroundUnread(channelId) {
   return next;
 }
 
+/** Keep in sync with BackgroundAudioService.FOREGROUND_LISTEN_NOTIFICATION_ID (41001). */
+const ANDROID_BACKGROUND_LISTEN_NOTIFICATION_ID = 41001;
+
 export function notificationIdForChannel(channelId) {
   let hash = 0;
   const value = String(channelId || "channel");
   for (let i = 0; i < value.length; i += 1) {
     hash = (hash * 31 + value.charCodeAt(i)) >>> 0;
   }
-  return (hash % 90000) + 10000;
+  let id = (hash % 90000) + 10000;
+  if (id === ANDROID_BACKGROUND_LISTEN_NOTIFICATION_ID) {
+    id += 1;
+  }
+  return id;
 }
 
 export async function showTextMessageTrayNotification({

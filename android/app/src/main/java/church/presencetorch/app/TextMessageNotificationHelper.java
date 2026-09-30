@@ -47,10 +47,18 @@ public final class TextMessageNotificationHelper {
         }
 
         for (StatusBarNotification status : manager.getActiveNotifications()) {
+            if (status.getId() == BackgroundAudioService.FOREGROUND_LISTEN_NOTIFICATION_ID) {
+                continue;
+            }
             if (!isTextMessageNotification(status)) {
                 continue;
             }
-            manager.cancel(status.getTag(), status.getId());
+            String tag = status.getTag();
+            if (tag == null || tag.isEmpty()) {
+                manager.cancel(status.getId());
+            } else {
+                manager.cancel(tag, status.getId());
+            }
         }
     }
 
@@ -83,6 +91,16 @@ public final class TextMessageNotificationHelper {
 
         if ("text_message".equals(extras.getString("type"))) {
             return true;
+        }
+
+        CharSequence title = extras.getCharSequence(Notification.EXTRA_TITLE);
+        CharSequence text = extras.getCharSequence(Notification.EXTRA_TEXT);
+        if (title != null && text != null) {
+            String titleStr = title.toString().trim();
+            String textStr = text.toString().trim();
+            if ("Presence Torch".equals(titleStr) && textStr.matches("(?i)\\d+ new text messages? in .+")) {
+                return true;
+            }
         }
 
         for (String key : extras.keySet()) {

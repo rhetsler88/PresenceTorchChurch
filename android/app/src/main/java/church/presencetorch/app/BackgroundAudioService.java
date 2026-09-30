@@ -33,7 +33,9 @@ public class BackgroundAudioService extends Service {
     public static final String EXTRA_BODY = "body";
     public static final String EXTRA_SILENT = "silent";
 
-    private static final int NOTIFICATION_ID = 41001;
+    /** Must stay in sync with JS push clear logic (do not cancel this id for text clears). */
+    public static final int FOREGROUND_LISTEN_NOTIFICATION_ID = 41001;
+    private static final int NOTIFICATION_ID = FOREGROUND_LISTEN_NOTIFICATION_ID;
     private static final int NOTIFICATION_DISMISS_REQUEST_CODE = 41002;
     private static final String CHANNEL_ID = "presence_torch_background_listen_v3";
     private static final int SAMPLE_RATE = 44100;
@@ -271,7 +273,12 @@ public class BackgroundAudioService extends Service {
             builder.setPriority(NotificationCompat.PRIORITY_DEFAULT);
         }
 
-        return builder.build();
+        Notification notification = builder.build();
+        notification.flags |= Notification.FLAG_NO_CLEAR;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            notification.flags |= Notification.FLAG_FOREGROUND_SERVICE;
+        }
+        return notification;
     }
 
     private void createNotificationChannel() {

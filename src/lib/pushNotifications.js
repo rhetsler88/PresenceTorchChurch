@@ -28,6 +28,10 @@ import {
 const PUSH_CHANNEL_ID = "red_alerts";
 const TEXT_MESSAGE_CHANNEL_ID = "text_messages";
 const YELLOW_ALERT_CHANNEL_ID = "yellow_alerts";
+/** Must match BackgroundAudioService.FOREGROUND_LISTEN_NOTIFICATION_ID on Android. */
+const ANDROID_BACKGROUND_LISTEN_NOTIFICATION_ID = 41001;
+const TEXT_MESSAGE_NOTIFICATION_TITLE = "Presence Torch";
+const TEXT_MESSAGE_TAG_PREFIX = "text_message_";
 const VAPID_KEY = import.meta.env.VITE_FIREBASE_VAPID_KEY;
 const NATIVE_PUSH_INIT_DELAY_MS = 2000;
 
@@ -102,12 +106,85 @@ async function resetTextMessageUnreadCounts(uid) {
   }
 }
 
+function isDeliveredTextMessagePushNotification(notification) {
+  if (!notification) return false;
+
+  const id = Number(notification.id);
+  if (Number.isFinite(id) && id === ANDROID_BACKGROUND_LISTEN_NOTIFICATION_ID) {
+    return false;
+  }
+
+  const tag = String(notification.tag || "");
+  if (tag.startsWith(TEXT_MESSAGE_TAG_PREFIX)) {
+    return true;
+  }
+
+  const data = notification.data || {};
+  if (data.type === "text_message") {
+    return true;
+  }
+  for (const key of Object.keys(data)) {
+    if (key.endsWith("type") && String(data[key]) === "text_message") {
+      return true;
+    }
+  }
+
+  const title = String(notification.title || "").trim();
+  const body = String(notification.body || "").trim();
+  if (
+    title === TEXT_MESSAGE_NOTIFICATION_TITLE
+    && /\d+ new text messages? in /i.test(body)
+  ) {
+    return true;
+  }
+
+  if (Capacitor.getPlatform() === "android") {
+    const channelId = notification.channelId
+      || data.channelId
+      || data.channel_id
+      || data["android.channelId"]
+      || data["android.channel_id"];
+    if (channelId === TEXT_MESSAGE_CHANNEL_ID) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+async function clearDeliveredPushTextNotifications() {
+  if (!Capacitor.isNativePlatform()) return;
+  try {
+    const { notifications = [] } = await PushNotifications.getDeliveredNotifications();
+    const toRemove = notifications
+      .filter(isDeliveredTextMessagePushNotification)
+      .map((notification) => {
+        const entry = { id: notification.id };
+        if (notification.tag != null && notification.tag !== "") {
+          entry.tag = notification.tag;
+        }
+        return entry;
+      });
+    if (toRemove.length > 0) {
+      await PushNotifications.removeDeliveredNotifications({ notifications: toRemove });
+    }
+  } catch {
+    /* ignore */
+  }
+}
+
 async function clearLocalTextMessageNotifications() {
   if (!Capacitor.isNativePlatform()) return;
   try {
     const delivered = await LocalNotifications.getDeliveredNotifications();
     const ids = (delivered?.notifications || [])
-      .filter((notification) => notification?.extra?.type === "text_message")
+      .filter((notification) => {
+        const id = Number(notification?.id);
+        if (Number.isFinite(id) && id === ANDROID_BACKGROUND_LISTEN_NOTIFICATION_ID) {
+          return false;
+        }
+        return notification?.extra?.type === "text_message";
+      })
       .map((notification) => ({ id: notification.id }));
     if (ids.length > 0) {
       await LocalNotifications.removeDeliveredNotifications({ notifications: ids });
@@ -129,23 +206,25 @@ async function clearAppIconBadge() {
 
 /** Remove text-message push notifications and reset unread counts when the app opens. */
 export async function clearTextMessageNotificationsOnForeground() {
-  const uid = auth.currentUser?.uid || currentUid;
-  if (!uid) {
+  resetForegroundTextMessageUnreadCounts();
+  await Promise.all([
+    clearNativeTextMessageNotificationsFromTray(),
+    clearDeliveredPushTextNotifications(),
+    clearLocalTextMessageNotifications(),
+    clearWebTextMessageNotifications(),
+    clearAppIconBadge(),
+  ]);
+
+  let resolvedUid = auth.currentUser?.uid || currentUid;
+  if (!resolvedUid) {
     try {
       await auth.authStateReady();
+      resolvedUid = auth.currentUser?.uid || currentUid;
     } catch {
       return;
     }
   }
-  const resolvedUid = auth.currentUser?.uid || currentUid;
-  resetForegroundTextMessageUnreadCounts();
-  await Promise.all([
-    clearNativeTextMessageNotificationsFromTray(),
-    clearLocalTextMessageNotifications(),
-    clearWebTextMessageNotifications(),
-    resetTextMessageUnreadCounts(resolvedUid),
-    clearAppIconBadge(),
-  ]);
+  await resetTextMessageUnreadCounts(resolvedUid);
 }
 
 function installTextMessageNotificationLifecycle() {

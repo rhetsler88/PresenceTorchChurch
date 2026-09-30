@@ -32,4 +32,12 @@ describe("textMessageNotifications", () => {
     assert.ok(source.includes("notification_members"));
     assert.ok(source.includes("receivesChannelTextMessage(userData, channelData, channelId)"));
   });
+
+  it("clears FCM text notifications on foreground without touching the listen FGS id", () => {
+    const source = readFileSync(join(root, "src/lib/pushNotifications.js"), "utf8");
+    assert.ok(source.includes("getDeliveredNotifications"));
+    assert.ok(source.includes("removeDeliveredNotifications"));
+    assert.ok(source.includes("ANDROID_BACKGROUND_LISTEN_NOTIFICATION_ID"));
+    assert.ok(source.includes("clearDeliveredPushTextNotifications"));
+  });
 });

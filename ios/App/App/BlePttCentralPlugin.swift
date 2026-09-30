@@ -126,7 +126,7 @@ public class BlePttCentralPlugin: CAPPlugin, CAPBridgedPlugin, CBCentralManagerD
     private static func parsePressed(_ data: Data) -> Bool {
         if data.isEmpty { return false }
         let bytes = [UInt8](data)
-        if let text = String(bytes: bytes, encoding: .ascii)?.upperc() {
+        if let text = String(bytes: bytes, encoding: .ascii)?.uppercased() {
             if text.contains("+PTTS=P") || text.contains("+PTT=P") { return true }
             if text.contains("+PTTS=R") || text.contains("+PTT=R") { return false }
         }

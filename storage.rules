@@ -173,23 +173,21 @@ service firebase.storage {
 
     // Match Firestore canSendOnChannel — PTT upload + voice message storage.
     function canSendOnChannel(channelId) {
-      if (isMonitorBroadcastExcluded(channelId)) {
-        return false;
-      }
-      return isElevatedFromToken()
-        || isPlatformAdmin()
-        || isChannelTalkMember(channelId)
-        || isOrgAdminForChannel(channelId)
-        || isLeadOrDirectorInOrgChannel(channelId)
-        || isMonitorForChannel(channelId);
+      return !isMonitorBroadcastExcluded(channelId)
+        && (
+          isElevatedFromToken()
+          || isPlatformAdmin()
+          || isChannelTalkMember(channelId)
+          || isOrgAdminForChannel(channelId)
+          || isLeadOrDirectorInOrgChannel(channelId)
+          || isMonitorForChannel(channelId)
+        );
     }
 
     function canAccessChannelAudio(channelId) {
-      if (isMonitorBroadcastExcluded(channelId)) {
-        return false;
-      }
       // Anyone who can transmit can also read/play (incl. getDownloadURL right after upload).
-      return canSendOnChannel(channelId) || canViewAllVoiceMessages();
+      return !isMonitorBroadcastExcluded(channelId)
+        && (canSendOnChannel(channelId) || canViewAllVoiceMessages());
     }
 
     // Legacy relay + message paths (pre channel-scoped layout)

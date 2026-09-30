@@ -178,15 +178,15 @@ service cloud.firestore {
 
     // PTT / voice create — members plus roles that can monitor/respond on a channel.
     function canSendOnChannel(channelId) {
-      if (isMonitorBroadcastExcluded(channelId)) {
-        return false;
-      }
-      return isElevatedFromToken()
-        || isPlatformAdmin()
-        || isChannelTalkMember(channelId)
-        || isOrgAdminForChannel(channelId)
-        || isLeadOrDirectorInOrgChannel(channelId)
-        || isMonitorForChannel(channelId);
+      return !isMonitorBroadcastExcluded(channelId)
+        && (
+          isElevatedFromToken()
+          || isPlatformAdmin()
+          || isChannelTalkMember(channelId)
+          || isOrgAdminForChannel(channelId)
+          || isLeadOrDirectorInOrgChannel(channelId)
+          || isMonitorForChannel(channelId)
+        );
     }
 
     // Talk / Monitor "users online" — anyone who can read the channel voice log.
@@ -316,10 +316,8 @@ service cloud.firestore {
     function platformAdminRoleChangeValid() {
       let next = request.resource.data.get('role', 'user');
       let prev = resource.data.get('role', 'user');
-      if (isSuperAdmin() || tokenRole() == 'super_admin') return true;
-      if (next == 'super_admin') return false;
-      if (prev == 'super_admin') return false;
-      return true;
+      return (isSuperAdmin() || tokenRole() == 'super_admin')
+        || (next != 'super_admin' && prev != 'super_admin');
     }
 
     function directorRoleOnlyUpdateValid() {
